@@ -67,7 +67,10 @@ function EditProfile() {
       cover_url: form.cover_url || null,
     }).eq("id", me!.id);
     setBusy(false);
-    if (error) return toast.error("Couldn't save your profile. Please try again.");
+    if (error) {
+      toast.error("Couldn't save your profile. Please try again.");
+      return;
+    }
     const fresh = await qc.fetchQuery({ ...myProfileQuery(), staleTime: 0 });
     qc.invalidateQueries({ queryKey: ["profile"] });
     if (fresh && fresh.points_balance > before) toast.success(`Profile complete! +${fresh.points_balance - before} VIDA POINTS 🌹`);
