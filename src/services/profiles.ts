@@ -57,7 +57,7 @@ export async function checkUsernameAvailable(username: string) {
 export async function uploadProfileImage(userId: string, file: File, kind: "avatar" | "cover") {
   if (!IMAGE_TYPES.includes(file.type)) throw new Error("Please choose a JPG, PNG, WEBP or GIF image.");
   if (file.size > MAX_IMAGE_BYTES) throw new Error("Images must be 5 MB or smaller.");
-  const ext = file.type.split("/")[1].replace("jpeg", "jpg");
+  const ext = (file.type.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
   const path = `${userId}/${kind}-${Date.now()}.${ext}`;
   const { error } = await supabase.storage.from("profile-media").upload(path, file, { contentType: file.type });
   if (error) throw error;

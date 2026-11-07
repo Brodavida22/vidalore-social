@@ -1,7 +1,7 @@
 import rose from "@/assets/vidalore-rose.png";
 import { cn } from "@/lib/utils";
 
-export function RoseMark({ className }: { className?: string }) {
+export function RoseMark({ className }: { className?: string | undefined }) {
   return <img src={rose} alt="" aria-hidden="true" width={816} height={816} className={cn("h-9 w-9 drop-shadow-[0_0_14px_var(--color-primary)]", className)} />;
 }
 
