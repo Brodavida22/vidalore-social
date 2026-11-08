@@ -88,6 +88,22 @@ function getOtherMember(
   );
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error
+  ) {
+    return String(error.message);
+  }
+
+  return "An unexpected error occurred.";
+}
+
 function MessagesPage() {
   const queryClient = useQueryClient();
 
@@ -185,41 +201,57 @@ function MessagesPage() {
     },
   });
 
+  // START DIRECT CHAT
   const startChatMutation = useMutation({
-    mutationFn: (otherUserId: string) =>
-      createDirectConversation(otherUserId),
+    mutationFn: async (otherUserId: string) => {
+      if (!currentUserId) {
+        throw new Error("Your account is still loading. Please try again.");
+      }
+
+      if (!otherUserId) {
+        throw new Error("The selected user's ID is missing.");
+      }
+
+      if (otherUserId === currentUserId) {
+        throw new Error("You cannot start a conversation with yourself.");
+      }
+
+      return createDirectConversation(otherUserId);
+    },
 
     onMutate: (otherUserId) => {
       setStartingChatUser(otherUserId);
     },
 
     onSuccess: async (conversation) => {
-      await queryClient.invalidateQueries({
-        queryKey: ["messages", "conversations"],
-      });
+      try {
+        const updatedConversations = await getMyConversations();
 
-      const updatedConversations = await queryClient.fetchQuery({
-        queryKey: ["messages", "conversations"],
-        queryFn: getMyConversations,
-      });
-
-      const matchingConversation = updatedConversations.find(
-        (item) => item.id === conversation.id
-      );
-
-      if (matchingConversation) {
-        setSelectedConversation(matchingConversation);
-      } else {
-        console.error(
-          "Conversation was created but could not be loaded into the list."
+        queryClient.setQueryData(
+          ["messages", "conversations"],
+          updatedConversations
         );
-      }
 
-      setSearchText("");
+        const matchingConversation = updatedConversations.find(
+          (item) => item.id === conversation.id
+        );
+
+        if (!matchingConversation) {
+          throw new Error(
+            "The conversation exists, but it could not be loaded for your account. Check conversation membership permissions."
+          );
+        }
+
+        setSelectedConversation(matchingConversation);
+        setSearchText("");
+      } catch (error) {
+        console.error("Conversation loading error:", error);
+        throw error;
+      }
     },
 
     onError: (error) => {
-      console.error("Could not start conversation:", error);
+      console.error("START CHAT ERROR:", error);
     },
 
     onSettled: () => {
@@ -280,15 +312,13 @@ function MessagesPage() {
   }
 
   function startChat(profile: SearchProfile) {
-    if (!currentUserId || profile.id === currentUserId) return;
+    if (!currentUserId || startChatMutation.isPending) return;
 
     startChatMutation.mutate(profile.id);
   }
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-90px)] max-w-7xl flex-col p-3 md:h-[calc(100dvh-40px)] md:p-6">
-      {/* PAGE HEADER */}
-
       <div className="mb-5">
         <div className="flex items-center gap-3">
           <div className="rounded-2xl bg-pink-500/15 p-3 text-pink-400">
@@ -296,10 +326,7 @@ function MessagesPage() {
           </div>
 
           <div>
-            <h1 className="text-2xl font-bold text-white">
-              Messages
-            </h1>
-
+            <h1 className="text-2xl font-bold text-white">Messages</h1>
             <p className="text-sm text-gray-400">
               Connect privately with your people.
             </p>
@@ -309,7 +336,6 @@ function MessagesPage() {
 
       <div className="grid min-h-0 flex-1 overflow-hidden rounded-3xl border border-white/10 bg-[#110d12] md:grid-cols-[340px_1fr]">
         {/* CONVERSATION LIST */}
-
         <aside
           className={`${
             selectedConversation ? "hidden md:flex" : "flex"
@@ -322,6 +348,7 @@ function MessagesPage() {
               </h2>
 
               <button
+                type="button"
                 onClick={() =>
                   queryClient.invalidateQueries({
                     queryKey: ["messages", "conversations"],
@@ -334,8 +361,7 @@ function MessagesPage() {
               </button>
             </div>
 
-            {/* SEARCH USERS */}
-
+            {/* USER SEARCH */}
             <div className="relative">
               <Search
                 size={18}
@@ -344,7 +370,10 @@ function MessagesPage() {
 
               <input
                 value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
+                onChange={(event) => {
+                  setSearchText(event.target.value);
+                  startChatMutation.reset();
+                }}
                 placeholder="Search people by name or username..."
                 className="w-full rounded-xl border border-white/10 bg-[#211923] py-3 pl-10 pr-10 text-sm text-white outline-none placeholder:text-gray-500 focus:border-pink-500/60"
                 maxLength={50}
@@ -353,7 +382,10 @@ function MessagesPage() {
               {searchText && (
                 <button
                   type="button"
-                  onClick={() => setSearchText("")}
+                  onClick={() => {
+                    setSearchText("");
+                    startChatMutation.reset();
+                  }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
                   aria-label="Clear search"
                 >
@@ -364,7 +396,6 @@ function MessagesPage() {
           </div>
 
           {/* SEARCH RESULTS */}
-
           {searchText.trim().length >= 2 && (
             <div className="border-b border-white/10">
               <div className="px-4 pb-2 pt-3">
@@ -373,7 +404,7 @@ function MessagesPage() {
                 </p>
               </div>
 
-              {searchQuery.isLoading && (
+              {searchQuery.isFetching && (
                 <div className="flex items-center justify-center gap-2 p-5 text-sm text-gray-400">
                   <Loader2 size={16} className="animate-spin" />
                   Searching...
@@ -382,7 +413,7 @@ function MessagesPage() {
 
               {searchQuery.isError && (
                 <p className="px-4 pb-4 text-sm text-red-400">
-                  Could not search users. Please try again.
+                  {getErrorMessage(searchQuery.error)}
                 </p>
               )}
 
@@ -394,8 +425,7 @@ function MessagesPage() {
                 )}
 
               {searchQuery.data?.map((profile) => {
-                const isStarting =
-                  startingChatUser === profile.id;
+                const isStarting = startingChatUser === profile.id;
 
                 return (
                   <button
@@ -437,10 +467,7 @@ function MessagesPage() {
                         className="animate-spin text-pink-400"
                       />
                     ) : (
-                      <MessageCircle
-                        size={18}
-                        className="text-pink-400"
-                      />
+                      <MessageCircle size={18} className="text-pink-400" />
                     )}
                   </button>
                 );
@@ -453,15 +480,28 @@ function MessagesPage() {
               )}
 
               {startChatMutation.isError && (
-                <p className="px-4 pb-3 text-xs text-red-400">
-                  Could not start chat. Please try again.
-                </p>
+                <div className="mx-4 mb-3 rounded-xl border border-red-500/20 bg-red-500/10 p-3">
+                  <p className="text-xs font-semibold text-red-400">
+                    CHAT ERROR
+                  </p>
+
+                  <p className="mt-1 break-words text-xs text-red-300">
+                    {getErrorMessage(startChatMutation.error)}
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => startChatMutation.reset()}
+                    className="mt-2 text-xs font-semibold text-pink-400"
+                  >
+                    Dismiss
+                  </button>
+                </div>
               )}
             </div>
           )}
 
           {/* EXISTING CONVERSATIONS */}
-
           <div className="min-h-0 flex-1 overflow-y-auto">
             {conversationsQuery.isLoading && (
               <div className="p-6 text-center text-sm text-gray-400">
@@ -476,6 +516,7 @@ function MessagesPage() {
                 </p>
 
                 <button
+                  type="button"
                   onClick={() => conversationsQuery.refetch()}
                   className="mt-3 text-sm text-pink-400"
                 >
@@ -513,6 +554,7 @@ function MessagesPage() {
               return (
                 <button
                   key={conversation.id}
+                  type="button"
                   onClick={() => openConversation(conversation)}
                   className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left transition ${
                     active ? "bg-pink-500/10" : "hover:bg-white/5"
@@ -554,7 +596,6 @@ function MessagesPage() {
         </aside>
 
         {/* CHAT WINDOW */}
-
         <section
           className={`${
             selectedConversation ? "flex" : "hidden md:flex"
@@ -578,9 +619,9 @@ function MessagesPage() {
           ) : (
             <>
               {/* CHAT HEADER */}
-
               <div className="flex items-center gap-3 border-b border-white/10 p-4">
                 <button
+                  type="button"
                   onClick={() => setSelectedConversation(null)}
                   className="rounded-xl p-2 text-gray-400 hover:bg-white/10 md:hidden"
                   aria-label="Back to conversations"
@@ -614,7 +655,6 @@ function MessagesPage() {
               </div>
 
               {/* MESSAGE HISTORY */}
-
               <div className="flex-1 space-y-4 overflow-y-auto p-4">
                 {messagesQuery.isLoading && (
                   <p className="py-8 text-center text-sm text-gray-400">
@@ -625,10 +665,11 @@ function MessagesPage() {
                 {messagesQuery.isError && (
                   <div className="py-8 text-center">
                     <p className="text-sm text-red-400">
-                      Could not load messages.
+                      {getErrorMessage(messagesQuery.error)}
                     </p>
 
                     <button
+                      type="button"
                       onClick={() => messagesQuery.refetch()}
                       className="mt-3 text-sm text-pink-400"
                     >
@@ -656,9 +697,8 @@ function MessagesPage() {
                     </div>
                   )}
 
-                {messages.map((message: Message) => {
-                  const isMine =
-                    message.sender_id === currentUserId;
+                {messages.map((message) => {
+                  const isMine = message.sender_id === currentUserId;
 
                   return (
                     <div
@@ -706,16 +746,13 @@ function MessagesPage() {
               </div>
 
               {/* MESSAGE COMPOSER */}
-
               <form
                 onSubmit={handleSendMessage}
                 className="border-t border-white/10 p-3"
               >
                 {sendMutation.isError && (
                   <p className="mb-2 px-2 text-xs text-red-400">
-                    {sendMutation.error instanceof Error
-                      ? sendMutation.error.message
-                      : "Message could not be sent. Please try again."}
+                    {getErrorMessage(sendMutation.error)}
                   </p>
                 )}
 
@@ -739,7 +776,11 @@ function MessagesPage() {
                     className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-pink-500 to-rose-700 text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                     aria-label="Send message"
                   >
-                    <Send size={18} />
+                    {sendMutation.isPending ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : (
+                      <Send size={18} />
+                    )}
                   </button>
                 </div>
               </form>
@@ -749,4 +790,4 @@ function MessagesPage() {
       </div>
     </div>
   );
-    }
+  }
