@@ -46,14 +46,21 @@ function ReelsPage() {
   const touchStartY = useRef<number | null>(null);
 
   const reloadReels = useCallback(async () => {
-    try { setReels(await getStoredReels()); }
-    catch (error) { console.error("Failed to load reels", error); }
+    try {
+      setReels(await getStoredReels());
+    } catch (error) {
+      console.error("Failed to load reels", error);
+    }
   }, []);
 
-  useEffect(() => { void reloadReels(); }, [reloadReels]);
+  useEffect(() => {
+    void reloadReels();
+  }, [reloadReels]);
 
   useEffect(() => {
-    const handleUpdate = () => { void reloadReels(); };
+    const handleUpdate = () => {
+      void reloadReels();
+    };
     window.addEventListener("vidalore:reels-updated", handleUpdate);
     return () => window.removeEventListener("vidalore:reels-updated", handleUpdate);
   }, []);

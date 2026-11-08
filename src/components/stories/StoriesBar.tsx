@@ -6,7 +6,6 @@ import { StoryComposerModal } from "@/components/stories/StoryComposerModal";
 import { getStoryGroups, type UserStoryGroup } from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
 
-
 export function StoriesBar({ me }: { me?: Profile | null }) {
   const [storyGroups, setStoryGroups] = useState<UserStoryGroup[]>([]);
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -14,14 +13,21 @@ export function StoriesBar({ me }: { me?: Profile | null }) {
   const [composerOpen, setComposerOpen] = useState(false);
 
   const reloadStories = useCallback(async () => {
-    try { setStoryGroups(await getStoryGroups(me?.id)); }
-    catch (error) { console.error("Failed to load stories", error); }
+    try {
+      setStoryGroups(await getStoryGroups(me?.id));
+    } catch (error) {
+      console.error("Failed to load stories", error);
+    }
   }, [me?.id]);
 
-  useEffect(() => { void reloadStories(); }, [reloadStories]);
+  useEffect(() => {
+    void reloadStories();
+  }, [reloadStories]);
 
   useEffect(() => {
-    const handleUpdate = () => { void reloadStories(); };
+    const handleUpdate = () => {
+      void reloadStories();
+    };
     window.addEventListener("vidalore:reels-updated", handleUpdate);
     return () => window.removeEventListener("vidalore:reels-updated", handleUpdate);
   }, [reloadStories]);

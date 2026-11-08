@@ -23,10 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Logo } from "@/components/brand/Logo";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { myProfileQuery } from "@/services/profiles";
-import {
-  getStoredNotifications,
-  getStoredRelationships,
-} from "@/services/social";
+import { getStoredNotifications, getStoredRelationships } from "@/services/social";
 import { NotificationsModal } from "@/components/social/NotificationsModal";
 import { FriendsModal } from "@/components/social/FriendsModal";
 import { SavedPostsModal } from "@/components/social/SavedPostsModal";
@@ -68,8 +65,7 @@ export function AppShell() {
 
     window.addEventListener("vidalore:social-updated", handleUpdate);
 
-    return () =>
-      window.removeEventListener("vidalore:social-updated", handleUpdate);
+    return () => window.removeEventListener("vidalore:social-updated", handleUpdate);
   }, []);
 
   async function signOut() {
@@ -83,8 +79,7 @@ export function AppShell() {
     "flex items-center gap-3 rounded-2xl px-4 py-2.5 text-sm font-medium text-muted-foreground transition-all hover:bg-secondary hover:text-foreground";
 
   const activeCls = {
-    className:
-      "bg-secondary text-foreground [&_svg]:text-primary font-semibold shadow-sm",
+    className: "bg-secondary text-foreground [&_svg]:text-primary font-semibold shadow-sm",
   };
 
   return (
@@ -109,10 +104,7 @@ export function AppShell() {
           </Button>
         </div>
 
-        <nav
-          className="mt-5 flex flex-1 flex-col gap-1 overflow-y-auto pr-1"
-          aria-label="Main"
-        >
+        <nav className="mt-5 flex flex-1 flex-col gap-1 overflow-y-auto pr-1" aria-label="Main">
           <Link to="/home" className={linkCls} activeProps={activeCls}>
             <Home className="h-5 w-5" />
             Home
@@ -201,11 +193,7 @@ export function AppShell() {
             </Link>
           )}
 
-          <Link
-            to="/settings/profile"
-            className={linkCls}
-            activeProps={activeCls}
-          >
+          <Link to="/settings/profile" className={linkCls} activeProps={activeCls}>
             <Settings className="h-5 w-5" />
             Settings
           </Link>
@@ -216,10 +204,7 @@ export function AppShell() {
         {me && (
           <div className="glass mt-auto flex items-center gap-3 rounded-2xl border border-border/70 p-3">
             <Link to="/u/$username" params={{ username: me.username }}>
-              <UserAvatar
-                profile={me}
-                className="h-10 w-10 shrink-0 ring-2 ring-primary/40"
-              />
+              <UserAvatar profile={me} className="h-10 w-10 shrink-0 ring-2 ring-primary/40" />
             </Link>
 
             <div className="min-w-0 flex-1">
@@ -326,15 +311,10 @@ export function AppShell() {
 
             {me && (
               <div className="glass flex items-center gap-3 rounded-2xl p-3">
-                <UserAvatar
-                  profile={me}
-                  className="h-10 w-10 shrink-0 ring-2 ring-primary/40"
-                />
+                <UserAvatar profile={me} className="h-10 w-10 shrink-0 ring-2 ring-primary/40" />
 
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold">
-                    {me.display_name || me.username}
-                  </p>
+                  <p className="truncate text-xs font-semibold">{me.display_name || me.username}</p>
 
                   <p className="text-[0.65rem] text-rose-soft">
                     🌹 {me.points_balance} VIDA POINTS
@@ -516,11 +496,7 @@ export function AppShell() {
           Messages
         </Link>
 
-        <Link
-          to="/create"
-          className="flex items-center justify-center"
-          aria-label="Create Post"
-        >
+        <Link to="/create" className="flex items-center justify-center" aria-label="Create Post">
           <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-rose text-primary-foreground shadow-glow transition-transform active:scale-95">
             <Plus className="h-6 w-6 stroke-[2.5]" />
           </span>
@@ -542,10 +518,7 @@ export function AppShell() {
             className="flex flex-col items-center justify-center gap-0.5 rounded-2xl py-1.5 text-[0.6rem] text-muted-foreground transition-colors"
             activeProps={{ className: "text-primary font-semibold" }}
           >
-            <UserAvatar
-              profile={me}
-              className="h-5 w-5 ring-1 ring-primary/40"
-            />
+            <UserAvatar profile={me} className="h-5 w-5 ring-1 ring-primary/40" />
             Profile
           </Link>
         ) : (
@@ -575,11 +548,7 @@ export function AppShell() {
         me={me ?? null}
       />
 
-      <SavedPostsModal
-        open={savedOpen}
-        onOpenChange={setSavedOpen}
-        me={me ?? null}
-      />
+      <SavedPostsModal open={savedOpen} onOpenChange={setSavedOpen} me={me ?? null} />
     </div>
   );
-        }
+}

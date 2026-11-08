@@ -111,14 +111,28 @@ export function ReelPlayer({
   function handleLike() {
     setHeartBurst(true);
     setTimeout(() => setHeartBurst(false), 600);
-    void toggleReelLike(reel.id).then((updated) => { if (updated) setReel({ ...updated }); }).catch((error) => toast.error(error instanceof Error ? error.message : "Could not update like."));
+    void toggleReelLike(reel.id)
+      .then((updated) => {
+        if (updated) setReel({ ...updated });
+      })
+      .catch((error) =>
+        toast.error(error instanceof Error ? error.message : "Could not update like."),
+      );
   }
 
   function handleSave() {
-    void toggleReelSave(reel.id).then((saved) => {
-      setReel((prev) => ({ ...prev, hasSaved: saved, savesCount: Math.max(0, prev.savesCount + (saved ? 1 : -1)) }));
-      toast.info(saved ? "Saved to your Rose Collection 🌹" : "Removed from saved");
-    }).catch((error) => toast.error(error instanceof Error ? error.message : "Could not update saved reel."));
+    void toggleReelSave(reel.id)
+      .then((saved) => {
+        setReel((prev) => ({
+          ...prev,
+          hasSaved: saved,
+          savesCount: Math.max(0, prev.savesCount + (saved ? 1 : -1)),
+        }));
+        toast.info(saved ? "Saved to your Rose Collection 🌹" : "Removed from saved");
+      })
+      .catch((error) =>
+        toast.error(error instanceof Error ? error.message : "Could not update saved reel."),
+      );
   }
 
   function handleFollowToggle() {

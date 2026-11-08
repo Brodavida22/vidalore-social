@@ -5,6 +5,11 @@ export type Conversation = Tables<"conversations">;
 export type ConversationMember = Tables<"conversation_members">;
 export type Message = Tables<"messages">;
 export type Profile = Tables<"profiles">;
+export type MessageRead = Tables<"message_reads">;
+
+export type MessageWithReads = Message & {
+  reads?: MessageRead[];
+};
 
 export type ConversationListItem = Conversation & {
   members: Array<
@@ -37,9 +42,7 @@ export async function getMyConversations(): Promise<ConversationListItem[]> {
 
   if (membershipError) throw membershipError;
 
-  const conversationIds = [
-    ...new Set((memberships ?? []).map((item) => item.conversation_id)),
-  ];
+  const conversationIds = [...new Set((memberships ?? []).map((item) => item.conversation_id))];
 
   if (conversationIds.length === 0) return [];
 
@@ -61,17 +64,12 @@ export async function getMyConversations(): Promise<ConversationListItem[]> {
 
   if (membersError) throw membersError;
 
-  const profileIds = [
-    ...new Set((members ?? []).map((member) => member.user_id)),
-  ];
+  const profileIds = [...new Set((members ?? []).map((member) => member.user_id))];
 
   let profiles: Profile[] = [];
 
   if (profileIds.length > 0) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .in("id", profileIds);
+    const { data, error } = await supabase.from("profiles").select("*").in("id", profileIds);
 
     if (error) throw error;
     profiles = data ?? [];
@@ -86,9 +84,7 @@ export async function getMyConversations(): Promise<ConversationListItem[]> {
 
   if (messagesError) throw messagesError;
 
-  const profileMap = new Map(
-    profiles.map((profile) => [profile.id, profile])
-  );
+  const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
 
   const lastMessageMap = new Map<string, Message>();
 
@@ -111,13 +107,13 @@ export async function getMyConversations(): Promise<ConversationListItem[]> {
 }
 
 /**
- * Load messages from one conversation.
+ * Load messages from one conversation, including their read receipts.
  */
 export async function getConversationMessages(
   conversationId: string,
-  limit = 100
-): Promise<Message[]> {
-  const { data, error } = await supabase
+  limit = 100,
+): Promise<MessageWithReads[]> {
+  const { data: messages, error } = await supabase
     .from("messages")
     .select("*")
     .eq("conversation_id", conversationId)
@@ -125,21 +121,41 @@ export async function getConversationMessages(
     .limit(limit);
 
   if (error) throw error;
+  if (!messages || messages.length === 0) return [];
 
-  return data ?? [];
+  const messageIds = messages.map((item) => item.id);
+
+  // Load read receipts for loaded messages
+  const { data: reads, error: readsError } = await supabase
+    .from("message_reads")
+    .select("*")
+    .in("message_id", messageIds);
+
+  if (readsError) {
+    console.warn("VIDALORE GET MESSAGE READS WARNING:", readsError);
+  }
+
+  const readsMap = new Map<string, MessageRead[]>();
+  for (const read of reads ?? []) {
+    const list = readsMap.get(read.message_id) ?? [];
+    list.push(read);
+    readsMap.set(read.message_id, list);
+  }
+
+  return messages.map((message) => ({
+    ...message,
+    reads: readsMap.get(message.id) ?? [],
+  }));
 }
 
 /**
  * Create a direct conversation with another user.
  */
-export async function createDirectConversation(
-  otherUserId: string
-): Promise<Conversation> {
+export async function createDirectConversation(otherUserId: string): Promise<Conversation> {
   const user = await getCurrentUser();
 
   // AUTHENTICATION DIAGNOSTIC
-  const { data: sessionData, error: sessionError } =
-    await supabase.auth.getSession();
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
 
   console.log("VIDALORE AUTH DIAGNOSTIC:", {
     userId: user.id,
@@ -174,9 +190,7 @@ export async function createDirectConversation(
 
     if (sharedError) throw sharedError;
 
-    const sharedIds = [
-      ...new Set((sharedMemberships ?? []).map((item) => item.conversation_id)),
-    ];
+    const sharedIds = [...new Set((sharedMemberships ?? []).map((item) => item.conversation_id))];
 
     if (sharedIds.length > 0) {
       const { data: existing, error: existingError } = await supabase
@@ -192,20 +206,21 @@ export async function createDirectConversation(
     }
   }
 
-  // Create a new conversation.
+  // 1. Generate a UUID using crypto.randomUUID() before inserting.
+  const conversationId = crypto.randomUUID();
+
   console.log("VIDALORE CONVERSATION INSERT:", {
+    id: conversationId,
     createdBy: user.id,
     kind: "direct",
   });
 
-  const { data: conversation, error: conversationError } = await supabase
-    .from("conversations")
-    .insert({
-      kind: "direct",
-      created_by: user.id,
-    })
-    .select("*")
-    .single();
+  // 2. Insert the conversations row without chaining .select() or .single().
+  const { error: conversationError } = await supabase.from("conversations").insert({
+    id: conversationId,
+    kind: "direct",
+    created_by: user.id,
+  });
 
   if (conversationError) {
     console.error("VIDALORE CONVERSATION INSERT ERROR:", {
@@ -218,25 +233,45 @@ export async function createDirectConversation(
     throw conversationError;
   }
 
-  // Add both participants.
-  const { error: membersError } = await supabase
-    .from("conversation_members")
-    .insert([
-      {
-        conversation_id: conversation.id,
-        user_id: user.id,
-        role: "member",
-      },
-      {
-        conversation_id: conversation.id,
-        user_id: otherUserId,
-        role: "member",
-      },
-    ]);
+  // 3. Insert both users into conversation_members using the generated conversation ID.
+  const { error: membersError } = await supabase.from("conversation_members").insert([
+    {
+      conversation_id: conversationId,
+      user_id: user.id,
+      role: "member",
+    },
+    {
+      conversation_id: conversationId,
+      user_id: otherUserId,
+      role: "member",
+    },
+  ]);
 
   if (membersError) {
-    console.error("VIDALORE MEMBERS INSERT ERROR:", membersError);
-    throw membersError;
+    console.error("VIDALORE MEMBERS INSERT ERROR:", {
+      message: membersError.message,
+      code: membersError.code,
+      details: membersError.details,
+      hint: membersError.hint,
+    });
+    throw new Error(
+      `Failed to add conversation members: ${membersError.message || membersError.details || "Database permission denied"}`,
+    );
+  }
+
+  // 4. Only after the membership INSERT succeeds, fetch the conversation.
+  const { data: conversation, error: fetchError } = await supabase
+    .from("conversations")
+    .select("*")
+    .eq("id", conversationId)
+    .single();
+
+  if (fetchError || !conversation) {
+    console.error("VIDALORE CONVERSATION FETCH ERROR:", fetchError);
+    throw (
+      fetchError ||
+      new Error("Conversation was created, but could not be retrieved after adding members.")
+    );
   }
 
   return conversation;
@@ -245,10 +280,7 @@ export async function createDirectConversation(
 /**
  * Send a text message.
  */
-export async function sendTextMessage(
-  conversationId: string,
-  content: string
-): Promise<Message> {
+export async function sendTextMessage(conversationId: string, content: string): Promise<Message> {
   const user = await getCurrentUser();
   const cleanContent = content.trim();
 
@@ -277,7 +309,7 @@ export async function sendTextMessage(
  */
 export function subscribeToMessages(
   conversationId: string,
-  onNewMessage: (message: Message) => void
+  onNewMessage: (message: Message) => void,
 ) {
   const channel = supabase
     .channel(`conversation-${conversationId}`)
@@ -291,7 +323,87 @@ export function subscribeToMessages(
       },
       (payload) => {
         onNewMessage(payload.new as Message);
-      }
+      },
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}
+
+/**
+ * Mark specified messages as read by the signed-in user.
+ * Uses upsert with onConflict ("message_id,user_id") to prevent duplicates.
+ */
+export async function markMessagesAsRead(
+  conversationId: string,
+  messageIds: string[],
+): Promise<void> {
+  if (!messageIds || messageIds.length === 0) return;
+
+  const user = await getCurrentUser();
+  const now = new Date().toISOString();
+
+  const rows = messageIds.map((messageId) => ({
+    message_id: messageId,
+    user_id: user.id,
+    read_at: now,
+  }));
+
+  const { error: upsertError } = await supabase.from("message_reads").upsert(rows, {
+    onConflict: "message_id,user_id",
+    ignoreDuplicates: true,
+  });
+
+  if (upsertError) {
+    console.error("VIDALORE MARK MESSAGES READ ERROR:", upsertError);
+    return;
+  }
+
+  // Update conversation_members last_read_at timestamp
+  if (conversationId) {
+    void supabase
+      .from("conversation_members")
+      .update({ last_read_at: now })
+      .eq("conversation_id", conversationId)
+      .eq("user_id", user.id);
+  }
+}
+
+/**
+ * Subscribe to message_reads changes in Realtime.
+ */
+export function subscribeToMessageReads(onNewRead: (read: MessageRead) => void) {
+  const channelId = `reads-${crypto.randomUUID()}`;
+
+  const channel = supabase
+    .channel(channelId)
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "message_reads",
+      },
+      (payload) => {
+        if (payload.new && "message_id" in payload.new) {
+          onNewRead(payload.new as MessageRead);
+        }
+      },
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "message_reads",
+      },
+      (payload) => {
+        if (payload.new && "message_id" in payload.new) {
+          onNewRead(payload.new as MessageRead);
+        }
+      },
     )
     .subscribe();
 

@@ -42,7 +42,9 @@ export function StoryViewerModal({
   // Mark current story as seen
   useEffect(() => {
     if (currentStory && me) {
-      void markStorySeen(currentStory.id, me.id).catch((error) => console.error("Could not record story view", error));
+      void markStorySeen(currentStory.id, me.id).catch((error) =>
+        console.error("Could not record story view", error),
+      );
     }
   }, [currentStory, me]);
 

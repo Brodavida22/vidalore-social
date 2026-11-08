@@ -52,9 +52,15 @@ export function StoryComposerModal({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 25 * 1024 * 1024) { toast.error("Story media must be 25 MB or smaller."); return; }
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error("Story media must be 25 MB or smaller.");
+      return;
+    }
     const isVideo = file.type.startsWith("video/");
-    if (!isVideo && !file.type.startsWith("image/")) { toast.error("Choose an image or video file."); return; }
+    if (!isVideo && !file.type.startsWith("image/")) {
+      toast.error("Choose an image or video file.");
+      return;
+    }
     setMediaFile(file);
     setMediaType(isVideo ? "video" : "image");
 
@@ -73,12 +79,28 @@ export function StoryComposerModal({
 
     setIsSubmitting(true);
     try {
-      await addStory(me, { mediaUrl, mediaFile: mediaFile ?? undefined, mediaType, caption: caption.trim() || undefined, sticker: selectedSticker ?? undefined });
+      await addStory(me, {
+        mediaUrl,
+        mediaFile: mediaFile ?? undefined,
+        mediaType,
+        caption: caption.trim() || undefined,
+        sticker: selectedSticker ?? undefined,
+      });
       if (mediaFile && mediaUrl.startsWith("blob:")) URL.revokeObjectURL(mediaUrl);
-      setIsSubmitting(false); setMediaUrl(""); setMediaFile(null); setCaption(""); setSelectedSticker(null);
-      toast.success("Story planted in the Rose Garden 🌹", { description: "Visible for the next 24 hours to your circle." });
-      onStoryPublished?.(); onOpenChange(false);
-    } catch (error) { setIsSubmitting(false); toast.error(error instanceof Error ? error.message : "Could not publish story."); }
+      setIsSubmitting(false);
+      setMediaUrl("");
+      setMediaFile(null);
+      setCaption("");
+      setSelectedSticker(null);
+      toast.success("Story planted in the Rose Garden 🌹", {
+        description: "Visible for the next 24 hours to your circle.",
+      });
+      onStoryPublished?.();
+      onOpenChange(false);
+    } catch (error) {
+      setIsSubmitting(false);
+      toast.error(error instanceof Error ? error.message : "Could not publish story.");
+    }
   }
 
   return (
@@ -174,7 +196,11 @@ export function StoryComposerModal({
 
                 <button
                   type="button"
-                  onClick={() => { if (mediaUrl.startsWith("blob:")) URL.revokeObjectURL(mediaUrl); setMediaUrl(""); setMediaFile(null); }}
+                  onClick={() => {
+                    if (mediaUrl.startsWith("blob:")) URL.revokeObjectURL(mediaUrl);
+                    setMediaUrl("");
+                    setMediaFile(null);
+                  }}
                   className="absolute top-3 left-3 rounded-full bg-black/70 p-1.5 text-white hover:bg-destructive transition-colors"
                 >
                   <X className="h-4 w-4" />

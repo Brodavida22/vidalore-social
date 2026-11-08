@@ -107,11 +107,19 @@ export function VideoUploadModal({
         tags: ["RoseGarden", "VidaloreReels"],
       });
       setUploadProgress(100);
-      setIsUploading(false); setUploadProgress(0); removeSelectedVideo(); setCaption(""); setAudioTitle("");
-      toast.success("Reel published to the Rose Garden 🌹", { description: "Your video is now live in the global reels stream." });
-      onUploaded?.(); onOpenChange(false);
+      setIsUploading(false);
+      setUploadProgress(0);
+      removeSelectedVideo();
+      setCaption("");
+      setAudioTitle("");
+      toast.success("Reel published to the Rose Garden 🌹", {
+        description: "Your video is now live in the global reels stream.",
+      });
+      onUploaded?.();
+      onOpenChange(false);
     } catch (error) {
-      setIsUploading(false); setUploadProgress(0);
+      setIsUploading(false);
+      setUploadProgress(0);
       toast.error(error instanceof Error ? error.message : "Could not publish reel.");
     }
   }

@@ -6,7 +6,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import type { Profile } from "@/services/profiles";
-import { getReelComments, addReelComment, toggleCommentReaction, type ReelComment } from "@/services/reelsAndStories";
+import {
+  getReelComments,
+  addReelComment,
+  toggleCommentReaction,
+  type ReelComment,
+} from "@/services/reelsAndStories";
 
 const EMOJIS = ["🌹", "🔥", "✨", "💖", "👏", "🍷", "🖤"];
 
@@ -26,7 +31,11 @@ export function ReelCommentsDrawer({
   const [comments, setComments] = useState<ReelComment[]>([]);
   useEffect(() => {
     if (!open) return;
-    void getReelComments(reelId).then(setComments).catch((error) => toast.error(error instanceof Error ? error.message : "Could not load comments."));
+    void getReelComments(reelId)
+      .then(setComments)
+      .catch((error) =>
+        toast.error(error instanceof Error ? error.message : "Could not load comments."),
+      );
   }, [open, reelId]);
   const [text, setText] = useState("");
 
@@ -39,15 +48,32 @@ export function ReelCommentsDrawer({
 
     try {
       const newComment = await addReelComment(me, reelId, text.trim());
-      setComments((prev) => [...prev, newComment]); setText(""); toast.success("Comment added 🌹"); onCommentAdded?.();
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not add comment."); }
+      setComments((prev) => [...prev, newComment]);
+      setText("");
+      toast.success("Comment added 🌹");
+      onCommentAdded?.();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not add comment.");
+    }
   }
 
   async function handleLike(commentId: string) {
     try {
       const hasReacted = await toggleCommentReaction(commentId);
-      setComments((prev) => prev.map((c) => c.id === commentId ? { ...c, hasReacted, reactionsCount: Math.max(0, c.reactionsCount + (hasReacted ? 1 : -1)) } : c));
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not react to comment."); }
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === commentId
+            ? {
+                ...c,
+                hasReacted,
+                reactionsCount: Math.max(0, c.reactionsCount + (hasReacted ? 1 : -1)),
+              }
+            : c,
+        ),
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not react to comment.");
+    }
   }
 
   return (

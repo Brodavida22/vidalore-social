@@ -1,34 +1,15 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import {
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import {
-  Users,
-  UserPlus,
-  UserCheck,
-  Search,
-  Check,
-  X,
-  Loader2,
-} from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Users, UserPlus, UserCheck, Search, Check, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 
-import {
-  communityProfilesQuery,
-  type Profile,
-} from "@/services/profiles";
+import { communityProfilesQuery, type Profile } from "@/services/profiles";
 
 import {
   getFriends,
@@ -43,12 +24,7 @@ import {
   declineFriendRequest,
 } from "@/services/relationships";
 
-type Tab =
-  | "friends"
-  | "requests"
-  | "following"
-  | "followers"
-  | "suggested";
+type Tab = "friends" | "requests" | "following" | "followers" | "suggested";
 
 interface PersonInfo {
   id: string;
@@ -149,9 +125,7 @@ export function FriendsModal({
   const followingIds = following.map((person) => person.id);
   const followerIds = followers.map((person) => person.id);
 
-  const outgoingIds = outgoingRequests.map(
-    (request) => request.recipient_id,
-  );
+  const outgoingIds = outgoingRequests.map((request) => request.recipient_id);
 
   const currentList: PersonInfo[] = useMemo(() => {
     let list: PersonInfo[] = [];
@@ -174,9 +148,7 @@ export function FriendsModal({
           .filter((request) => request.profile)
           .map((request) => ({
             id: request.requester_id,
-            name:
-              request.profile!.display_name ||
-              request.profile!.username,
+            name: request.profile!.display_name || request.profile!.username,
             username: request.profile!.username,
             avatarUrl: request.profile!.avatar_url,
             points: request.profile!.points_balance,
@@ -200,8 +172,7 @@ export function FriendsModal({
 
       list = list.filter(
         (person) =>
-          person.name.toLowerCase().includes(term) ||
-          person.username.toLowerCase().includes(term),
+          person.name.toLowerCase().includes(term) || person.username.toLowerCase().includes(term),
       );
     }
 
@@ -221,11 +192,7 @@ export function FriendsModal({
 
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  async function runAction(
-    id: string,
-    action: () => Promise<unknown>,
-    successMessage: string,
-  ) {
+  async function runAction(id: string, action: () => Promise<unknown>, successMessage: string) {
     try {
       setBusyId(id);
       await action();
@@ -233,9 +200,7 @@ export function FriendsModal({
       toast.success(successMessage);
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong. Please try again.",
+        error instanceof Error ? error.message : "Something went wrong. Please try again.",
       );
     } finally {
       setBusyId(null);
@@ -247,22 +212,13 @@ export function FriendsModal({
 
     return runAction(
       person.id,
-      () =>
-        isNowFollowing
-          ? unfollowUser(person.id)
-          : followUser(person.id),
-      isNowFollowing
-        ? "Unfollowed successfully."
-        : "Following in the Garden 🌹",
+      () => (isNowFollowing ? unfollowUser(person.id) : followUser(person.id)),
+      isNowFollowing ? "Unfollowed successfully." : "Following in the Garden 🌹",
     );
   }
 
   function handleFriendRequest(person: PersonInfo) {
-    return runAction(
-      person.id,
-      () => sendFriendRequest(person.id),
-      "Friend request sent 🌹",
-    );
+    return runAction(person.id, () => sendFriendRequest(person.id), "Friend request sent 🌹");
   }
 
   function handleAccept(person: PersonInfo) {
@@ -305,9 +261,7 @@ export function FriendsModal({
             Garden Circle
           </DialogTitle>
 
-          <p className="text-xs text-muted-foreground">
-            Your people, your community. 🌹
-          </p>
+          <p className="text-xs text-muted-foreground">Your people, your community. 🌹</p>
         </DialogHeader>
 
         <div className="relative pt-2">
@@ -365,9 +319,7 @@ export function FriendsModal({
             <div className="py-12 text-center space-y-2">
               <span className="text-3xl">🥀</span>
 
-              <p className="font-semibold text-foreground">
-                No one here yet
-              </p>
+              <p className="font-semibold text-foreground">No one here yet</p>
 
               <p className="text-xs text-muted-foreground">
                 {tab === "requests"
@@ -384,9 +336,7 @@ export function FriendsModal({
               const isFollowing = followingIds.includes(person.id);
               const isFriend = friendIds.includes(person.id);
               const hasSentRequest = outgoingIds.includes(person.id);
-              const isBusy =
-                busyId === person.id ||
-                busyId === person.requestId;
+              const isBusy = busyId === person.id || busyId === person.requestId;
 
               return (
                 <div
@@ -413,9 +363,7 @@ export function FriendsModal({
                         {person.name}
                       </p>
 
-                      <p className="text-[0.65rem] text-muted-foreground">
-                        @{person.username}
-                      </p>
+                      <p className="text-[0.65rem] text-muted-foreground">@{person.username}</p>
 
                       {person.bio && (
                         <p className="text-[0.65rem] text-foreground/70 truncate mt-0.5">
@@ -482,9 +430,7 @@ export function FriendsModal({
                             size="sm"
                             variant="glass"
                             disabled={isBusy}
-                            onClick={() =>
-                              handleFriendRequest(person)
-                            }
+                            onClick={() => handleFriendRequest(person)}
                             className="h-7 px-2.5 rounded-full text-[0.7rem]"
                           >
                             + Friend
@@ -492,15 +438,11 @@ export function FriendsModal({
                         )}
 
                         {hasSentRequest && (
-                          <span className="text-[0.65rem] text-rose-soft px-1">
-                            Pending
-                          </span>
+                          <span className="text-[0.65rem] text-rose-soft px-1">Pending</span>
                         )}
 
                         {isFriend && (
-                          <span className="text-[0.65rem] text-rose-soft px-1">
-                            Friends ✓
-                          </span>
+                          <span className="text-[0.65rem] text-rose-soft px-1">Friends ✓</span>
                         )}
                       </>
                     )}
@@ -513,4 +455,4 @@ export function FriendsModal({
       </DialogContent>
     </Dialog>
   );
-  }
+}
