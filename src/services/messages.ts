@@ -137,6 +137,18 @@ export async function createDirectConversation(
 ): Promise<Conversation> {
   const user = await getCurrentUser();
 
+  // AUTHENTICATION DIAGNOSTIC
+  const { data: sessionData, error: sessionError } =
+    await supabase.auth.getSession();
+
+  console.log("VIDALORE AUTH DIAGNOSTIC:", {
+    userId: user.id,
+    sessionUserId: sessionData.session?.user.id ?? null,
+    hasAccessToken: Boolean(sessionData.session?.access_token),
+    sameUser: user.id === sessionData.session?.user.id,
+    sessionError: sessionError?.message ?? null,
+  });
+
   if (user.id === otherUserId) {
     throw new Error("You cannot start a conversation with yourself.");
   }
@@ -181,6 +193,11 @@ export async function createDirectConversation(
   }
 
   // Create a new conversation.
+  console.log("VIDALORE CONVERSATION INSERT:", {
+    createdBy: user.id,
+    kind: "direct",
+  });
+
   const { data: conversation, error: conversationError } = await supabase
     .from("conversations")
     .insert({
@@ -190,7 +207,16 @@ export async function createDirectConversation(
     .select("*")
     .single();
 
-  if (conversationError) throw conversationError;
+  if (conversationError) {
+    console.error("VIDALORE CONVERSATION INSERT ERROR:", {
+      message: conversationError.message,
+      code: conversationError.code,
+      details: conversationError.details,
+      hint: conversationError.hint,
+    });
+
+    throw conversationError;
+  }
 
   // Add both participants.
   const { error: membersError } = await supabase
@@ -208,7 +234,10 @@ export async function createDirectConversation(
       },
     ]);
 
-  if (membersError) throw membersError;
+  if (membersError) {
+    console.error("VIDALORE MEMBERS INSERT ERROR:", membersError);
+    throw membersError;
+  }
 
   return conversation;
 }
