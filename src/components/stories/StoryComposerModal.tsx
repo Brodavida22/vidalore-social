@@ -40,6 +40,7 @@ export function StoryComposerModal({
   onStoryPublished?: () => void;
 }) {
   const [mediaUrl, setMediaUrl] = useState<string>("");
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaType, setMediaType] = useState<"image" | "video">("image");
   const [caption, setCaption] = useState("");
   const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
@@ -51,19 +52,16 @@ export function StoryComposerModal({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 25 * 1024 * 1024) { toast.error("Story media must be 25 MB or smaller."); return; }
     const isVideo = file.type.startsWith("video/");
+    if (!isVideo && !file.type.startsWith("image/")) { toast.error("Choose an image or video file."); return; }
+    setMediaFile(file);
     setMediaType(isVideo ? "video" : "image");
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setMediaUrl(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    setMediaUrl(URL.createObjectURL(file));
   }
 
-  function handlePublish() {
+  async function handlePublish() {
     if (!mediaUrl) {
       toast.error("Please select a photo or video first.");
       return;
@@ -74,26 +72,13 @@ export function StoryComposerModal({
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      addStory(me, {
-        mediaUrl,
-        mediaType,
-        caption: caption.trim() || undefined,
-        sticker: selectedSticker ?? undefined,
-      });
-
-      setIsSubmitting(false);
-      setMediaUrl("");
-      setCaption("");
-      setSelectedSticker(null);
-
-      toast.success("Story planted in the Rose Garden 🌹", {
-        description: "Visible for the next 24 hours to your circle.",
-      });
-
-      onStoryPublished?.();
-      onOpenChange(false);
-    }, 700);
+    try {
+      await addStory(me, { mediaUrl, mediaFile: mediaFile ?? undefined, mediaType, caption: caption.trim() || undefined, sticker: selectedSticker ?? undefined });
+      if (mediaFile && mediaUrl.startsWith("blob:")) URL.revokeObjectURL(mediaUrl);
+      setIsSubmitting(false); setMediaUrl(""); setMediaFile(null); setCaption(""); setSelectedSticker(null);
+      toast.success("Story planted in the Rose Garden 🌹", { description: "Visible for the next 24 hours to your circle." });
+      onStoryPublished?.(); onOpenChange(false);
+    } catch (error) { setIsSubmitting(false); toast.error(error instanceof Error ? error.message : "Could not publish story."); }
   }
 
   return (
@@ -140,6 +125,7 @@ export function StoryComposerModal({
                       key={preset.name}
                       type="button"
                       onClick={() => {
+                        setMediaFile(null);
                         setMediaUrl(preset.url);
                         setMediaType(preset.type);
                         setCaption(preset.name);
@@ -188,7 +174,7 @@ export function StoryComposerModal({
 
                 <button
                   type="button"
-                  onClick={() => setMediaUrl("")}
+                  onClick={() => { if (mediaUrl.startsWith("blob:")) URL.revokeObjectURL(mediaUrl); setMediaUrl(""); setMediaFile(null); }}
                   className="absolute top-3 left-3 rounded-full bg-black/70 p-1.5 text-white hover:bg-destructive transition-colors"
                 >
                   <X className="h-4 w-4" />
