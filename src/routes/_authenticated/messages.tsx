@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   useMutation,
@@ -10,23 +10,74 @@ import {
   MessageCircle,
   Send,
   RefreshCw,
+  Search,
+  UserPlus,
+  X,
+  Loader2,
 } from "lucide-react";
+
+import { supabase } from "@/integrations/supabase/client";
 
 import {
   getMyConversations,
   getConversationMessages,
   sendTextMessage,
   subscribeToMessages,
+  createDirectConversation,
 } from "@/services/messages";
 
 import type {
   ConversationListItem,
   Message,
+  Profile,
 } from "@/services/messages";
 
 export const Route = createFileRoute("/_authenticated/messages")({
   component: MessagesPage,
 });
+
+type SearchProfile = Pick<
+  Profile,
+  "id" | "username" | "display_name" | "avatar_url"
+>;
+
+async function searchProfiles(term: string): Promise<SearchProfile[]> {
+  const cleaned = term.trim();
+
+  if (cleaned.length < 2) return [];
+
+  const pattern = `%${cleaned}%`;
+
+  const [usernameResult, displayNameResult] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url")
+      .ilike("username", pattern)
+      .limit(15),
+
+    supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url")
+      .ilike("display_name", pattern)
+      .limit(15),
+  ]);
+
+  if (usernameResult.error) throw usernameResult.error;
+  if (displayNameResult.error) throw displayNameResult.error;
+
+  const combined = [
+    ...(usernameResult.data ?? []),
+    ...(displayNameResult.data ?? []),
+  ];
+
+  const uniqueProfiles = new Map<string, SearchProfile>();
+
+  for (const profile of combined) {
+    uniqueProfiles.set(profile.id, profile as SearchProfile);
+  }
+
+  return Array.from(uniqueProfiles.values()).slice(0, 15);
+}
 
 function getOtherMember(
   conversation: ConversationListItem,
@@ -46,12 +97,28 @@ function MessagesPage() {
   const [messageText, setMessageText] = useState("");
   const [currentUserId, setCurrentUserId] = useState("");
 
+  const [searchText, setSearchText] = useState("");
+  const [startingChatUser, setStartingChatUser] = useState<string | null>(
+    null
+  );
+
   useEffect(() => {
-    import("@/integrations/supabase/client").then(({ supabase }) => {
-      supabase.auth.getUser().then(({ data }) => {
-        setCurrentUserId(data.user?.id ?? "");
-      });
+    let active = true;
+
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (!active) return;
+
+      if (error) {
+        console.error("Could not get current user:", error);
+        return;
+      }
+
+      setCurrentUserId(data.user?.id ?? "");
     });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const conversationsQuery = useQuery({
@@ -70,6 +137,13 @@ function MessagesPage() {
   });
 
   const messages = messagesQuery.data ?? [];
+
+  const searchQuery = useQuery({
+    queryKey: ["messages", "user-search", searchText.trim()],
+    queryFn: () => searchProfiles(searchText),
+    enabled: searchText.trim().length >= 2,
+    staleTime: 15000,
+  });
 
   useEffect(() => {
     if (!selectedId) return;
@@ -111,7 +185,49 @@ function MessagesPage() {
     },
   });
 
-  function handleSendMessage(event: React.FormEvent) {
+  const startChatMutation = useMutation({
+    mutationFn: (otherUserId: string) =>
+      createDirectConversation(otherUserId),
+
+    onMutate: (otherUserId) => {
+      setStartingChatUser(otherUserId);
+    },
+
+    onSuccess: async (conversation) => {
+      await queryClient.invalidateQueries({
+        queryKey: ["messages", "conversations"],
+      });
+
+      const updatedConversations = await queryClient.fetchQuery({
+        queryKey: ["messages", "conversations"],
+        queryFn: getMyConversations,
+      });
+
+      const matchingConversation = updatedConversations.find(
+        (item) => item.id === conversation.id
+      );
+
+      if (matchingConversation) {
+        setSelectedConversation(matchingConversation);
+      } else {
+        console.error(
+          "Conversation was created but could not be loaded into the list."
+        );
+      }
+
+      setSearchText("");
+    },
+
+    onError: (error) => {
+      console.error("Could not start conversation:", error);
+    },
+
+    onSettled: () => {
+      setStartingChatUser(null);
+    },
+  });
+
+  function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const content = messageText.trim();
@@ -163,8 +279,16 @@ function MessagesPage() {
     return message.content || "Message";
   }
 
+  function startChat(profile: SearchProfile) {
+    if (!currentUserId || profile.id === currentUserId) return;
+
+    startChatMutation.mutate(profile.id);
+  }
+
   return (
     <div className="mx-auto flex h-[calc(100dvh-90px)] max-w-7xl flex-col p-3 md:h-[calc(100dvh-40px)] md:p-6">
+      {/* PAGE HEADER */}
+
       <div className="mb-5">
         <div className="flex items-center gap-3">
           <div className="rounded-2xl bg-pink-500/15 p-3 text-pink-400">
@@ -183,7 +307,7 @@ function MessagesPage() {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 overflow-hidden rounded-3xl border border-white/10 bg-[#110d12] md:grid-cols-[320px_1fr]">
+      <div className="grid min-h-0 flex-1 overflow-hidden rounded-3xl border border-white/10 bg-[#110d12] md:grid-cols-[340px_1fr]">
         {/* CONVERSATION LIST */}
 
         <aside
@@ -191,23 +315,152 @@ function MessagesPage() {
             selectedConversation ? "hidden md:flex" : "flex"
           } min-h-0 flex-col border-r border-white/10`}
         >
-          <div className="flex items-center justify-between border-b border-white/10 p-4">
-            <h2 className="font-semibold text-white">
-              Your conversations
-            </h2>
+          <div className="border-b border-white/10 p-4">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-semibold text-white">
+                Your conversations
+              </h2>
 
-            <button
-              onClick={() =>
-                queryClient.invalidateQueries({
-                  queryKey: ["messages", "conversations"],
-                })
-              }
-              className="rounded-xl p-2 text-gray-400 hover:bg-white/10 hover:text-white"
-              aria-label="Refresh conversations"
-            >
-              <RefreshCw size={17} />
-            </button>
+              <button
+                onClick={() =>
+                  queryClient.invalidateQueries({
+                    queryKey: ["messages", "conversations"],
+                  })
+                }
+                className="rounded-xl p-2 text-gray-400 hover:bg-white/10 hover:text-white"
+                aria-label="Refresh conversations"
+              >
+                <RefreshCw size={17} />
+              </button>
+            </div>
+
+            {/* SEARCH USERS */}
+
+            <div className="relative">
+              <Search
+                size={18}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+              />
+
+              <input
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search people by name or username..."
+                className="w-full rounded-xl border border-white/10 bg-[#211923] py-3 pl-10 pr-10 text-sm text-white outline-none placeholder:text-gray-500 focus:border-pink-500/60"
+                maxLength={50}
+              />
+
+              {searchText && (
+                <button
+                  type="button"
+                  onClick={() => setSearchText("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                  aria-label="Clear search"
+                >
+                  <X size={17} />
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* SEARCH RESULTS */}
+
+          {searchText.trim().length >= 2 && (
+            <div className="border-b border-white/10">
+              <div className="px-4 pb-2 pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-pink-400">
+                  People
+                </p>
+              </div>
+
+              {searchQuery.isLoading && (
+                <div className="flex items-center justify-center gap-2 p-5 text-sm text-gray-400">
+                  <Loader2 size={16} className="animate-spin" />
+                  Searching...
+                </div>
+              )}
+
+              {searchQuery.isError && (
+                <p className="px-4 pb-4 text-sm text-red-400">
+                  Could not search users. Please try again.
+                </p>
+              )}
+
+              {searchQuery.isSuccess &&
+                searchQuery.data.length === 0 && (
+                  <p className="px-4 pb-4 text-sm text-gray-400">
+                    No users found.
+                  </p>
+                )}
+
+              {searchQuery.data?.map((profile) => {
+                const isStarting =
+                  startingChatUser === profile.id;
+
+                return (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    onClick={() => startChat(profile)}
+                    disabled={
+                      !currentUserId ||
+                      startChatMutation.isPending ||
+                      profile.id === currentUserId
+                    }
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-pink-500/10 disabled:opacity-50"
+                  >
+                    {profile.avatar_url ? (
+                      <img
+                        src={profile.avatar_url}
+                        alt=""
+                        className="h-11 w-11 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-rose-900 text-white">
+                        <UserPlus size={19} />
+                      </div>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-white">
+                        {profile.display_name || profile.username}
+                      </p>
+
+                      <p className="truncate text-xs text-gray-400">
+                        @{profile.username}
+                      </p>
+                    </div>
+
+                    {isStarting ? (
+                      <Loader2
+                        size={18}
+                        className="animate-spin text-pink-400"
+                      />
+                    ) : (
+                      <MessageCircle
+                        size={18}
+                        className="text-pink-400"
+                      />
+                    )}
+                  </button>
+                );
+              })}
+
+              {!currentUserId && (
+                <p className="px-4 pb-3 text-xs text-gray-500">
+                  Loading your account...
+                </p>
+              )}
+
+              {startChatMutation.isError && (
+                <p className="px-4 pb-3 text-xs text-red-400">
+                  Could not start chat. Please try again.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* EXISTING CONVERSATIONS */}
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             {conversationsQuery.isLoading && (
@@ -244,8 +497,8 @@ function MessagesPage() {
                   </h3>
 
                   <p className="mt-2 text-sm text-gray-400">
-                    Your conversations will appear here when you start
-                    chatting.
+                    Search for someone above to start your first
+                    conversation.
                   </p>
                 </div>
               )}
@@ -262,9 +515,7 @@ function MessagesPage() {
                   key={conversation.id}
                   onClick={() => openConversation(conversation)}
                   className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left transition ${
-                    active
-                      ? "bg-pink-500/10"
-                      : "hover:bg-white/5"
+                    active ? "bg-pink-500/10" : "hover:bg-white/5"
                   }`}
                 >
                   {avatar ? (
@@ -320,7 +571,7 @@ function MessagesPage() {
               </h2>
 
               <p className="mt-2 max-w-sm text-sm text-gray-400">
-                Select a conversation to view messages and continue
+                Select a conversation or search for someone to start
                 chatting.
               </p>
             </div>
@@ -433,17 +684,19 @@ function MessagesPage() {
                           </p>
                         ) : (
                           <p className="text-sm">
-                            Attachment: {message.media_name || message.message_type}
+                            Attachment:{" "}
+                            {message.media_name || message.message_type}
                           </p>
                         )}
 
                         <p className="mt-1 text-right text-[10px] opacity-60">
-                          {new Date(
-                            message.created_at
-                          ).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {new Date(message.created_at).toLocaleTimeString(
+                            [],
+                            {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            }
+                          )}
                           {message.edited_at ? " · Edited" : ""}
                         </p>
                       </div>
@@ -496,4 +749,4 @@ function MessagesPage() {
       </div>
     </div>
   );
-}
+    }
