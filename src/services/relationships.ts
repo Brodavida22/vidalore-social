@@ -16,7 +16,9 @@ export async function followUser(userId: string) {
   const { data: auth } = await supabase.auth.getUser();
 
   if (!auth.user) throw new Error("Please sign in first.");
-  if (auth.user.id === userId) throw new Error("You cannot follow yourself.");
+  if (auth.user.id === userId) {
+    throw new Error("You cannot follow yourself.");
+  }
 
   const { error } = await supabase.from("follows").insert({
     follower_id: auth.user.id,
@@ -124,6 +126,49 @@ export async function getFollowCounts(userId: string) {
 }
 
 // ==========================================
+// ACCEPTED FRIENDS
+// ==========================================
+
+export async function getFriends(): Promise<Profile[]> {
+  const { data: auth } = await supabase.auth.getUser();
+
+  if (!auth.user) return [];
+
+  const userId = auth.user.id;
+
+  const { data, error } = await supabase
+    .from("friend_requests")
+    .select("requester_id, recipient_id")
+    .eq("status", "accepted")
+    .or(
+      `requester_id.eq.${userId},recipient_id.eq.${userId}`
+    );
+
+  if (error) throw error;
+
+  const friendIds = [
+    ...new Set(
+      (data ?? []).map((request) =>
+        request.requester_id === userId
+          ? request.recipient_id
+          : request.requester_id
+      )
+    ),
+  ];
+
+  if (!friendIds.length) return [];
+
+  const { data: profiles, error: profileError } = await supabase
+    .from("profiles")
+    .select("*")
+    .in("id", friendIds);
+
+  if (profileError) throw profileError;
+
+  return profiles ?? [];
+}
+
+// ==========================================
 // FRIEND REQUEST SYSTEM
 // ==========================================
 
@@ -163,7 +208,10 @@ export async function acceptFriendRequest(requestId: string) {
     .maybeSingle();
 
   if (error) throw error;
-  if (!data) throw new Error("Friend request not found or already handled.");
+
+  if (!data) {
+    throw new Error("Friend request not found or already handled.");
+  }
 
   return data;
 }
@@ -186,7 +234,10 @@ export async function declineFriendRequest(requestId: string) {
     .maybeSingle();
 
   if (error) throw error;
-  if (!data) throw new Error("Friend request not found or already handled.");
+
+  if (!data) {
+    throw new Error("Friend request not found or already handled.");
+  }
 
   return data;
 }
@@ -204,10 +255,19 @@ export async function cancelFriendRequest(requestId: string) {
     .eq("status", "pending");
 
   if (error) throw error;
-  if (count === 0) throw new Error("Pending friend request not found.");
+
+  if (count === 0) {
+    throw new Error("Pending friend request not found.");
+  }
 }
 
-export async function getIncomingFriendRequests(): Promise<FriendRequestWithProfile[]> {
+// ==========================================
+// INCOMING FRIEND REQUESTS
+// ==========================================
+
+export async function getIncomingFriendRequests(): Promise<
+  FriendRequestWithProfile[]
+> {
   const { data: auth } = await supabase.auth.getUser();
 
   if (!auth.user) return [];
@@ -236,11 +296,20 @@ export async function getIncomingFriendRequests(): Promise<FriendRequestWithProf
 
   return requests.map((request) => ({
     ...request,
-    profile: profiles?.find((profile) => profile.id === request.requester_id) ?? null,
+    profile:
+      profiles?.find(
+        (profile) => profile.id === request.requester_id
+      ) ?? null,
   }));
 }
 
-export async function getOutgoingFriendRequests(): Promise<FriendRequestWithProfile[]> {
+// ==========================================
+// OUTGOING FRIEND REQUESTS
+// ==========================================
+
+export async function getOutgoingFriendRequests(): Promise<
+  FriendRequestWithProfile[]
+> {
   const { data: auth } = await supabase.auth.getUser();
 
   if (!auth.user) return [];
@@ -269,9 +338,16 @@ export async function getOutgoingFriendRequests(): Promise<FriendRequestWithProf
 
   return requests.map((request) => ({
     ...request,
-    profile: profiles?.find((profile) => profile.id === request.recipient_id) ?? null,
+    profile:
+      profiles?.find(
+        (profile) => profile.id === request.recipient_id
+      ) ?? null,
   }));
 }
+
+// ==========================================
+// FRIEND REQUEST STATUS
+// ==========================================
 
 export async function getFriendRequestStatus(userId: string) {
   const { data: auth } = await supabase.auth.getUser();
@@ -284,9 +360,11 @@ export async function getFriendRequestStatus(userId: string) {
     .or(
       `and(requester_id.eq.${auth.user.id},recipient_id.eq.${userId}),and(requester_id.eq.${userId},recipient_id.eq.${auth.user.id})`
     )
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (error) throw error;
 
   return data;
-    }
+                               }
