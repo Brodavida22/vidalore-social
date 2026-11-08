@@ -88,20 +88,37 @@ function getOtherMember(
   );
 }
 
+/* DISPLAY COMPLETE ERROR DETAILS */
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
+  if (error instanceof Error && error.message.trim()) {
     return error.message;
   }
 
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "message" in error
-  ) {
-    return String(error.message);
+  if (typeof error === "object" && error !== null) {
+    const details = error as Record<string, unknown>;
+
+    const parts = [
+      details.message,
+      details.code ? `Code: ${details.code}` : null,
+      details.details,
+      details.hint,
+    ].filter(
+      (item) =>
+        typeof item === "string" && item.trim().length > 0
+    );
+
+    if (parts.length > 0) {
+      return parts.join(" | ");
+    }
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "An unknown error occurred. Check the browser console.";
+    }
   }
 
-  return "An unexpected error occurred.";
+  return String(error || "Unknown error. Check the browser console.");
 }
 
 function MessagesPage() {
@@ -112,12 +129,13 @@ function MessagesPage() {
 
   const [messageText, setMessageText] = useState("");
   const [currentUserId, setCurrentUserId] = useState("");
-
   const [searchText, setSearchText] = useState("");
+
   const [startingChatUser, setStartingChatUser] = useState<string | null>(
     null
   );
 
+  /* LOAD SIGNED-IN USER */
   useEffect(() => {
     let active = true;
 
@@ -125,7 +143,7 @@ function MessagesPage() {
       if (!active) return;
 
       if (error) {
-        console.error("Could not get current user:", error);
+        console.error("Current user error:", error);
         return;
       }
 
@@ -137,6 +155,7 @@ function MessagesPage() {
     };
   }, []);
 
+  /* LOAD CONVERSATIONS */
   const conversationsQuery = useQuery({
     queryKey: ["messages", "conversations"],
     queryFn: getMyConversations,
@@ -146,6 +165,7 @@ function MessagesPage() {
 
   const selectedId = selectedConversation?.id ?? "";
 
+  /* LOAD MESSAGES */
   const messagesQuery = useQuery({
     queryKey: ["messages", selectedId],
     queryFn: () => getConversationMessages(selectedId),
@@ -154,6 +174,7 @@ function MessagesPage() {
 
   const messages = messagesQuery.data ?? [];
 
+  /* SEARCH USERS */
   const searchQuery = useQuery({
     queryKey: ["messages", "user-search", searchText.trim()],
     queryFn: () => searchProfiles(searchText),
@@ -161,29 +182,38 @@ function MessagesPage() {
     staleTime: 15000,
   });
 
+  /* REALTIME MESSAGE SUBSCRIPTION */
   useEffect(() => {
     if (!selectedId) return;
 
-    const unsubscribe = subscribeToMessages(selectedId, (newMessage) => {
-      queryClient.setQueryData<Message[]>(
-        ["messages", selectedId],
-        (oldMessages = []) => {
-          if (oldMessages.some((message) => message.id === newMessage.id)) {
-            return oldMessages;
+    const unsubscribe = subscribeToMessages(
+      selectedId,
+      (newMessage) => {
+        queryClient.setQueryData<Message[]>(
+          ["messages", selectedId],
+          (oldMessages = []) => {
+            if (
+              oldMessages.some(
+                (message) => message.id === newMessage.id
+              )
+            ) {
+              return oldMessages;
+            }
+
+            return [...oldMessages, newMessage];
           }
+        );
 
-          return [...oldMessages, newMessage];
-        }
-      );
-
-      queryClient.invalidateQueries({
-        queryKey: ["messages", "conversations"],
-      });
-    });
+        queryClient.invalidateQueries({
+          queryKey: ["messages", "conversations"],
+        });
+      }
+    );
 
     return unsubscribe;
   }, [selectedId, queryClient]);
 
+  /* SEND MESSAGE */
   const sendMutation = useMutation({
     mutationFn: (content: string) =>
       sendTextMessage(selectedId, content),
@@ -201,11 +231,11 @@ function MessagesPage() {
     },
   });
 
-  // START DIRECT CHAT
+  /* START DIRECT CHAT */
   const startChatMutation = useMutation({
     mutationFn: async (otherUserId: string) => {
       if (!currentUserId) {
-        throw new Error("Your account is still loading. Please try again.");
+        throw new Error("Your account is still loading. Try again.");
       }
 
       if (!otherUserId) {
@@ -213,7 +243,7 @@ function MessagesPage() {
       }
 
       if (otherUserId === currentUserId) {
-        throw new Error("You cannot start a conversation with yourself.");
+        throw new Error("You cannot chat with yourself.");
       }
 
       return createDirectConversation(otherUserId);
@@ -224,34 +254,30 @@ function MessagesPage() {
     },
 
     onSuccess: async (conversation) => {
-      try {
-        const updatedConversations = await getMyConversations();
+      const updatedConversations = await getMyConversations();
 
-        queryClient.setQueryData(
-          ["messages", "conversations"],
-          updatedConversations
+      queryClient.setQueryData(
+        ["messages", "conversations"],
+        updatedConversations
+      );
+
+      const matchingConversation = updatedConversations.find(
+        (item) => item.id === conversation.id
+      );
+
+      if (!matchingConversation) {
+        throw new Error(
+          "Conversation created, but membership could not be verified. Check the conversation_members permissions."
         );
-
-        const matchingConversation = updatedConversations.find(
-          (item) => item.id === conversation.id
-        );
-
-        if (!matchingConversation) {
-          throw new Error(
-            "The conversation exists, but it could not be loaded for your account. Check conversation membership permissions."
-          );
-        }
-
-        setSelectedConversation(matchingConversation);
-        setSearchText("");
-      } catch (error) {
-        console.error("Conversation loading error:", error);
-        throw error;
       }
+
+      setSelectedConversation(matchingConversation);
+      setSearchText("");
     },
 
     onError: (error) => {
       console.error("START CHAT ERROR:", error);
+      console.error("ERROR DETAILS:", getErrorMessage(error));
     },
 
     onSettled: () => {
@@ -259,6 +285,7 @@ function MessagesPage() {
     },
   });
 
+  /* SEND FORM */
   function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -269,16 +296,15 @@ function MessagesPage() {
     sendMutation.mutate(content);
   }
 
-  function openConversation(conversation: ConversationListItem) {
-    setSelectedConversation(conversation);
-  }
-
   function getConversationName(conversation: ConversationListItem) {
     if (conversation.kind === "group") {
       return conversation.title || "Group conversation";
     }
 
-    const otherMember = getOtherMember(conversation, currentUserId);
+    const otherMember = getOtherMember(
+      conversation,
+      currentUserId
+    );
 
     return (
       otherMember?.profile?.display_name ||
@@ -292,16 +318,16 @@ function MessagesPage() {
       return conversation.image_url;
     }
 
-    const otherMember = getOtherMember(conversation, currentUserId);
-
-    return otherMember?.profile?.avatar_url;
+    return getOtherMember(
+      conversation,
+      currentUserId
+    )?.profile?.avatar_url;
   }
 
   function getMessagePreview(conversation: ConversationListItem) {
     const message = conversation.lastMessage;
 
     if (!message) return "Start a conversation";
-
     if (message.deleted_at) return "Message deleted";
 
     if (message.message_type !== "text") {
@@ -319,6 +345,8 @@ function MessagesPage() {
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-90px)] max-w-7xl flex-col p-3 md:h-[calc(100dvh-40px)] md:p-6">
+
+      {/* HEADER */}
       <div className="mb-5">
         <div className="flex items-center gap-3">
           <div className="rounded-2xl bg-pink-500/15 p-3 text-pink-400">
@@ -326,7 +354,10 @@ function MessagesPage() {
           </div>
 
           <div>
-            <h1 className="text-2xl font-bold text-white">Messages</h1>
+            <h1 className="text-2xl font-bold text-white">
+              Messages
+            </h1>
+
             <p className="text-sm text-gray-400">
               Connect privately with your people.
             </p>
@@ -335,7 +366,8 @@ function MessagesPage() {
       </div>
 
       <div className="grid min-h-0 flex-1 overflow-hidden rounded-3xl border border-white/10 bg-[#110d12] md:grid-cols-[340px_1fr]">
-        {/* CONVERSATION LIST */}
+
+        {/* LEFT SIDEBAR */}
         <aside
           className={`${
             selectedConversation ? "hidden md:flex" : "flex"
@@ -361,7 +393,7 @@ function MessagesPage() {
               </button>
             </div>
 
-            {/* USER SEARCH */}
+            {/* SEARCH INPUT */}
             <div className="relative">
               <Search
                 size={18}
@@ -386,7 +418,7 @@ function MessagesPage() {
                     setSearchText("");
                     startChatMutation.reset();
                   }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
                   aria-label="Clear search"
                 >
                   <X size={17} />
@@ -412,8 +444,8 @@ function MessagesPage() {
               )}
 
               {searchQuery.isError && (
-                <p className="px-4 pb-4 text-sm text-red-400">
-                  {getErrorMessage(searchQuery.error)}
+                <p className="break-words px-4 pb-4 text-sm text-red-400">
+                  Search error: {getErrorMessage(searchQuery.error)}
                 </p>
               )}
 
@@ -425,7 +457,8 @@ function MessagesPage() {
                 )}
 
               {searchQuery.data?.map((profile) => {
-                const isStarting = startingChatUser === profile.id;
+                const isStarting =
+                  startingChatUser === profile.id;
 
                 return (
                   <button
@@ -467,7 +500,10 @@ function MessagesPage() {
                         className="animate-spin text-pink-400"
                       />
                     ) : (
-                      <MessageCircle size={18} className="text-pink-400" />
+                      <MessageCircle
+                        size={18}
+                        className="text-pink-400"
+                      />
                     )}
                   </button>
                 );
@@ -479,20 +515,21 @@ function MessagesPage() {
                 </p>
               )}
 
+              {/* FULL CHAT ERROR */}
               {startChatMutation.isError && (
-                <div className="mx-4 mb-3 rounded-xl border border-red-500/20 bg-red-500/10 p-3">
-                  <p className="text-xs font-semibold text-red-400">
-                    CHAT ERROR
+                <div className="mx-4 mb-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
+                  <p className="text-xs font-bold text-red-400">
+                    CHAT ERROR — DETAILS BELOW
                   </p>
 
-                  <p className="mt-1 break-words text-xs text-red-300">
+                  <p className="mt-2 break-all text-xs leading-5 text-red-300">
                     {getErrorMessage(startChatMutation.error)}
                   </p>
 
                   <button
                     type="button"
                     onClick={() => startChatMutation.reset()}
-                    className="mt-2 text-xs font-semibold text-pink-400"
+                    className="mt-3 text-xs font-semibold text-pink-400"
                   >
                     Dismiss
                   </button>
@@ -501,7 +538,7 @@ function MessagesPage() {
             </div>
           )}
 
-          {/* EXISTING CONVERSATIONS */}
+          {/* CONVERSATION LIST */}
           <div className="min-h-0 flex-1 overflow-y-auto">
             {conversationsQuery.isLoading && (
               <div className="p-6 text-center text-sm text-gray-400">
@@ -512,7 +549,7 @@ function MessagesPage() {
             {conversationsQuery.isError && (
               <div className="p-5 text-center">
                 <p className="text-sm text-red-400">
-                  Could not load conversations.
+                  {getErrorMessage(conversationsQuery.error)}
                 </p>
 
                 <button
@@ -538,8 +575,7 @@ function MessagesPage() {
                   </h3>
 
                   <p className="mt-2 text-sm text-gray-400">
-                    Search for someone above to start your first
-                    conversation.
+                    Search for someone above to start your first conversation.
                   </p>
                 </div>
               )}
@@ -555,7 +591,7 @@ function MessagesPage() {
                 <button
                   key={conversation.id}
                   type="button"
-                  onClick={() => openConversation(conversation)}
+                  onClick={() => setSelectedConversation(conversation)}
                   className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left transition ${
                     active ? "bg-pink-500/10" : "hover:bg-white/5"
                   }`}
@@ -573,17 +609,9 @@ function MessagesPage() {
                   )}
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate font-semibold text-white">
-                        {name}
-                      </p>
-
-                      {conversation.kind === "group" && (
-                        <span className="text-xs text-pink-400">
-                          Group
-                        </span>
-                      )}
-                    </div>
+                    <p className="truncate font-semibold text-white">
+                      {name}
+                    </p>
 
                     <p className="mt-1 truncate text-sm text-gray-400">
                       {getMessagePreview(conversation)}
@@ -612,8 +640,7 @@ function MessagesPage() {
               </h2>
 
               <p className="mt-2 max-w-sm text-sm text-gray-400">
-                Select a conversation or search for someone to start
-                chatting.
+                Select a conversation or search for someone to start chatting.
               </p>
             </div>
           ) : (
@@ -664,7 +691,7 @@ function MessagesPage() {
 
                 {messagesQuery.isError && (
                   <div className="py-8 text-center">
-                    <p className="text-sm text-red-400">
+                    <p className="break-words text-sm text-red-400">
                       {getErrorMessage(messagesQuery.error)}
                     </p>
 
@@ -698,7 +725,8 @@ function MessagesPage() {
                   )}
 
                 {messages.map((message) => {
-                  const isMine = message.sender_id === currentUserId;
+                  const isMine =
+                    message.sender_id === currentUserId;
 
                   return (
                     <div
@@ -751,7 +779,7 @@ function MessagesPage() {
                 className="border-t border-white/10 p-3"
               >
                 {sendMutation.isError && (
-                  <p className="mb-2 px-2 text-xs text-red-400">
+                  <p className="mb-2 break-words px-2 text-xs text-red-400">
                     {getErrorMessage(sendMutation.error)}
                   </p>
                 )}
@@ -790,4 +818,4 @@ function MessagesPage() {
       </div>
     </div>
   );
-  }
+                                                                 }
