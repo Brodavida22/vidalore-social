@@ -1,79 +1,30 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus } from "lucide-react";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { StoryViewerModal } from "@/components/stories/StoryViewerModal";
 import { StoryComposerModal } from "@/components/stories/StoryComposerModal";
-import { getStoredStories, type StoryItem, type UserStoryGroup } from "@/services/reelsAndStories";
+import { getStoryGroups, type UserStoryGroup } from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
 
-const FEATURED_CREATORS: Record<
-  string,
-  { username: string; displayName: string; avatarUrl: string }
-> = {
-  "creator-celeste": {
-    username: "celeste",
-    displayName: "Celeste Moreau",
-    avatarUrl:
-      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=240&auto=format&fit=crop&q=80",
-  },
-  "creator-raphael": {
-    username: "raphael",
-    displayName: "Raphaël Vance",
-    avatarUrl:
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=240&auto=format&fit=crop&q=80",
-  },
-  "creator-seraphina": {
-    username: "seraphina",
-    displayName: "Seraphina Lin",
-    avatarUrl:
-      "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=240&auto=format&fit=crop&q=80",
-  },
-};
 
 export function StoriesBar({ me }: { me?: Profile | null }) {
-  const [stories, setStories] = useState<StoryItem[]>(() => getStoredStories());
+  const [storyGroups, setStoryGroups] = useState<UserStoryGroup[]>([]);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(0);
   const [composerOpen, setComposerOpen] = useState(false);
 
-  function reloadStories() {
-    setStories(getStoredStories());
-  }
+  const reloadStories = useCallback(async () => {
+    try { setStoryGroups(await getStoryGroups(me?.id)); }
+    catch (error) { console.error("Failed to load stories", error); }
+  }, [me?.id]);
+
+  useEffect(() => { void reloadStories(); }, [reloadStories]);
 
   useEffect(() => {
-    const handleUpdate = () => reloadStories();
+    const handleUpdate = () => { void reloadStories(); };
     window.addEventListener("vidalore:reels-updated", handleUpdate);
     return () => window.removeEventListener("vidalore:reels-updated", handleUpdate);
-  }, []);
-
-  // Group stories by userId and filter only active 24-hour stories
-  const now = Date.now();
-  const validStories = stories.filter((s) => new Date(s.expiresAt).getTime() > now);
-
-  const groupMap: Record<string, StoryItem[]> = {};
-  validStories.forEach((s) => {
-    if (!groupMap[s.userId]) groupMap[s.userId] = [];
-    groupMap[s.userId]!.push(s);
-  });
-
-  const storyGroups: UserStoryGroup[] = Object.entries(groupMap).map(([userId, userStories]) => {
-    const creatorInfo = FEATURED_CREATORS[userId] || {
-      username: me?.id === userId ? me.username : "gardener",
-      displayName: me?.id === userId ? me.display_name || me.username : "Garden Member",
-      avatarUrl: me?.id === userId ? me.avatar_url : null,
-    };
-
-    const hasUnseen = me ? userStories.some((s) => !s.seenBy.includes(me.id)) : true;
-
-    return {
-      userId,
-      username: creatorInfo.username,
-      displayName: creatorInfo.displayName,
-      avatarUrl: creatorInfo.avatarUrl,
-      stories: userStories,
-      hasUnseen,
-    };
-  });
+  }, [reloadStories]);
 
   // My story group if I have posted
   const myStoryGroup = me ? storyGroups.find((g) => g.userId === me.id) : null;
