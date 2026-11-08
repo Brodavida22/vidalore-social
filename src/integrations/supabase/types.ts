@@ -1,8 +1,12 @@
-export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.18";
   };
@@ -44,6 +48,7 @@ export type Database = {
         };
         Relationships: [];
       };
+
       admin_audit_logs: {
         Row: {
           action: string;
@@ -82,6 +87,7 @@ export type Database = {
           },
         ];
       };
+
       points_transactions: {
         Row: {
           amount: number;
@@ -117,6 +123,7 @@ export type Database = {
           },
         ];
       };
+
       private_profiles: {
         Row: {
           created_at: string;
@@ -149,6 +156,7 @@ export type Database = {
           },
         ];
       };
+
       profiles: {
         Row: {
           avatar_url: string | null;
@@ -191,6 +199,209 @@ export type Database = {
         };
         Relationships: [];
       };
+
+      reel_comment_likes: {
+        Row: {
+          comment_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          comment_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          comment_id?: string;
+          user_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "reel_comment_likes_comment_id_fkey";
+            columns: ["comment_id"];
+            isOneToOne: false;
+            referencedRelation: "reel_comments";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "reel_comment_likes_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      reel_comments: {
+        Row: {
+          id: string;
+          reel_id: string;
+          author_id: string;
+          content: string;
+          reactions_count: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          reel_id: string;
+          author_id: string;
+          content: string;
+          reactions_count?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          reel_id?: string;
+          author_id?: string;
+          content?: string;
+          reactions_count?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "reel_comments_author_id_fkey";
+            columns: ["author_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "reel_comments_reel_id_fkey";
+            columns: ["reel_id"];
+            isOneToOne: false;
+            referencedRelation: "reels";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      reel_likes: {
+        Row: {
+          reel_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          reel_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          reel_id?: string;
+          user_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "reel_likes_reel_id_fkey";
+            columns: ["reel_id"];
+            isOneToOne: false;
+            referencedRelation: "reels";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "reel_likes_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      reel_saves: {
+        Row: {
+          reel_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          reel_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          reel_id?: string;
+          user_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "reel_saves_reel_id_fkey";
+            columns: ["reel_id"];
+            isOneToOne: false;
+            referencedRelation: "reels";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "reel_saves_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      reels: {
+        Row: {
+          id: string;
+          creator_id: string;
+          video_url: string;
+          thumbnail_url: string | null;
+          caption: string | null;
+          audio_title: string | null;
+          tags: string[] | null;
+          likes_count: number;
+          comments_count: number;
+          shares_count: number;
+          saves_count: number;
+          views_count: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          creator_id: string;
+          video_url: string;
+          thumbnail_url?: string | null;
+          caption?: string | null;
+          audio_title?: string | null;
+          tags?: string[] | null;
+          likes_count?: number;
+          comments_count?: number;
+          shares_count?: number;
+          saves_count?: number;
+          views_count?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          creator_id?: string;
+          video_url?: string;
+          thumbnail_url?: string | null;
+          caption?: string | null;
+          audio_title?: string | null;
+          tags?: string[] | null;
+          likes_count?: number;
+          comments_count?: number;
+          shares_count?: number;
+          saves_count?: number;
+          views_count?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "reels_creator_id_fkey";
+            columns: ["creator_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
       reward_settings: {
         Row: {
           amount: number;
@@ -215,6 +426,83 @@ export type Database = {
         };
         Relationships: [];
       };
+
+      stories: {
+        Row: {
+          id: string;
+          user_id: string;
+          media_url: string;
+          media_type: string;
+          caption: string | null;
+          sticker: string | null;
+          created_at: string;
+          expires_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          media_url: string;
+          media_type: string;
+          caption?: string | null;
+          sticker?: string | null;
+          created_at?: string;
+          expires_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          media_url?: string;
+          media_type?: string;
+          caption?: string | null;
+          sticker?: string | null;
+          created_at?: string;
+          expires_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "stories_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      story_views: {
+        Row: {
+          story_id: string;
+          viewer_id: string;
+          viewed_at: string;
+        };
+        Insert: {
+          story_id: string;
+          viewer_id: string;
+          viewed_at?: string;
+        };
+        Update: {
+          story_id?: string;
+          viewer_id?: string;
+          viewed_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "story_views_story_id_fkey";
+            columns: ["story_id"];
+            isOneToOne: false;
+            referencedRelation: "stories";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "story_views_viewer_id_fkey";
+            columns: ["viewer_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
       user_achievements: {
         Row: {
           achievement_id: string;
@@ -251,6 +539,7 @@ export type Database = {
           },
         ];
       };
+
       user_roles: {
         Row: {
           created_at: string;
@@ -273,9 +562,11 @@ export type Database = {
         Relationships: [];
       };
     };
+
     Views: {
       [_ in never]: never;
     };
+
     Functions: {
       award_points: {
         Args: { _reason: string; _reference?: string; _user_id: string };
@@ -292,11 +583,16 @@ export type Database = {
         };
         Returns: boolean;
       };
-      is_username_available: { Args: { _username: string }; Returns: boolean };
+      is_username_available: {
+        Args: { _username: string };
+        Returns: boolean;
+      };
     };
+
     Enums: {
       app_role: "admin" | "moderator" | "user";
     };
+
     CompositeTypes: {
       [_ in never]: never;
     };
@@ -311,22 +607,26 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never) = never,
+    ? keyof (
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+          DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"]
+      )
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
-      Row: infer R;
-    }
+  ? (
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"]
+    )[TableName] extends { Row: infer R }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+  : DefaultSchemaTableNameOrOptions extends keyof (
+        DefaultSchema["Tables"] & DefaultSchema["Views"]
+      )
     ? (DefaultSchema["Tables"] & DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R;
       }
@@ -336,12 +636,13 @@ export type Tables<
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-    keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
@@ -360,12 +661,13 @@ export type TablesInsert<
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-    keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
@@ -384,34 +686,38 @@ export type TablesUpdate<
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-    keyof DefaultSchema["Enums"] | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never) = never,
-> = DefaultSchemaEnumNameOrOptions extends {
+    ? keyof DatabaseWithoutInternals[DefaultSchemaNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  ? DatabaseWithoutInternals[DefaultSchemaNameOrOptions["schema"]]["Enums"][EnumName]
+  : never
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
     ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
     : never;
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    keyof DefaultSchema["CompositeTypes"] | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends DefaultSchemaNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals;
   }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never) = never,
-> = PublicCompositeTypeNameOrOptions extends {
+    ? keyof DatabaseWithoutInternals[DefaultSchemaNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = DefaultSchemaNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals;
 }
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+  ? DatabaseWithoutInternals[DefaultSchemaNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : never
+  : DefaultSchemaNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][DefaultSchemaNameOrOptions]
     : never;
 
 export const Constants = {
