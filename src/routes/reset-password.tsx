@@ -46,18 +46,41 @@ function ResetPassword() {
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-garden px-5">
-      <form onSubmit={submit} className="glass shadow-card w-full max-w-md space-y-4 rounded-3xl p-8">
+      <form
+        onSubmit={submit}
+        className="glass shadow-card w-full max-w-md space-y-4 rounded-3xl p-8"
+      >
         <Logo />
         <h1 className="text-3xl font-semibold">Choose a new password</h1>
         <div>
           <Label htmlFor="np">New password</Label>
-          <Input id="np" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1.5 h-11 rounded-xl" required />
+          <Input
+            id="np"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mt-1.5 h-11 rounded-xl"
+            required
+          />
         </div>
         <div>
           <Label htmlFor="cp">Confirm password</Label>
-          <Input id="cp" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="mt-1.5 h-11 rounded-xl" required />
+          <Input
+            id="cp"
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            className="mt-1.5 h-11 rounded-xl"
+            required
+          />
         </div>
-        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <Button type="submit" variant="rose" size="lg" className="w-full" disabled={busy}>
           {busy && <Loader2 className="animate-spin" />} Update password
         </Button>

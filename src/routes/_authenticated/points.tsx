@@ -24,7 +24,12 @@ function PointsPage() {
     queryKey: ["points", "history", me?.id],
     enabled: !!me,
     queryFn: async () => {
-      const { data, error } = await supabase.from("points_transactions").select("id, amount, reason, created_at").eq("user_id", me!.id).order("created_at", { ascending: false }).limit(50);
+      const { data, error } = await supabase
+        .from("points_transactions")
+        .select("id, amount, reason, created_at")
+        .eq("user_id", me!.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
       if (error) throw error;
       return data;
     },
@@ -32,7 +37,10 @@ function PointsPage() {
   const rewards = useQuery({
     queryKey: ["reward_settings"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("reward_settings").select("reason, amount, label").eq("is_active", true);
+      const { data, error } = await supabase
+        .from("reward_settings")
+        .select("reason, amount, label")
+        .eq("is_active", true);
       if (error) throw error;
       return data;
     },
@@ -44,36 +52,57 @@ function PointsPage() {
       <section className="relative overflow-hidden rounded-3xl bg-gradient-rose p-6 text-primary-foreground shadow-glow">
         <p className="text-xs uppercase tracking-[0.3em] opacity-85">VIDA POINTS 🌹</p>
         <p className="mt-2 font-display text-6xl font-bold">{me ? me.points_balance : "—"}</p>
-        <p className="mt-1 text-sm opacity-85">Earned through real activity — awarded securely by the garden.</p>
+        <p className="mt-1 text-sm opacity-85">
+          Earned through real activity — awarded securely by the garden.
+        </p>
       </section>
 
       <section className="glass rounded-3xl p-5">
         <h2 className="text-2xl font-semibold">Ways to earn</h2>
         <ul className="mt-3 space-y-2">
           {rewards.data?.map((r) => (
-            <li key={r.reason} className="flex justify-between rounded-2xl bg-secondary/60 px-4 py-3 text-sm">
-              <span>{r.label}</span><span className="font-semibold text-rose-soft">+{r.amount}</span>
+            <li
+              key={r.reason}
+              className="flex justify-between rounded-2xl bg-secondary/60 px-4 py-3 text-sm"
+            >
+              <span>{r.label}</span>
+              <span className="font-semibold text-rose-soft">+{r.amount}</span>
             </li>
           ))}
         </ul>
-        <p className="mt-3 text-xs text-muted-foreground">Leaderboards, achievements and games arrive in Phase 6.</p>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Leaderboards, achievements and games arrive in Phase 6.
+        </p>
       </section>
 
       <section className="glass rounded-3xl p-5">
         <h2 className="text-2xl font-semibold">History</h2>
-        {history.isLoading ? <Skeleton className="mt-3 h-20 rounded-2xl" /> : history.data?.length ? (
+        {history.isLoading ? (
+          <Skeleton className="mt-3 h-20 rounded-2xl" />
+        ) : history.data?.length ? (
           <ul className="mt-3 divide-y divide-border">
             {history.data.map((t) => (
               <li key={t.id} className="flex items-center justify-between py-3 text-sm">
                 <div>
                   <p className="font-medium">{labels[t.reason] ?? t.reason}</p>
-                  <p className="text-xs text-muted-foreground">{new Date(t.created_at).toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(t.created_at).toLocaleString()}
+                  </p>
                 </div>
-                <span className={t.amount >= 0 ? "font-semibold text-success" : "font-semibold text-destructive"}>{t.amount >= 0 ? "+" : ""}{t.amount}</span>
+                <span
+                  className={
+                    t.amount >= 0 ? "font-semibold text-success" : "font-semibold text-destructive"
+                  }
+                >
+                  {t.amount >= 0 ? "+" : ""}
+                  {t.amount}
+                </span>
               </li>
             ))}
           </ul>
-        ) : <p className="mt-3 text-sm text-muted-foreground">No points activity yet.</p>}
+        ) : (
+          <p className="mt-3 text-sm text-muted-foreground">No points activity yet.</p>
+        )}
       </section>
     </div>
   );

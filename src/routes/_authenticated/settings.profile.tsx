@@ -31,15 +31,35 @@ function EditProfile() {
   const { data: me, isLoading } = useQuery(myProfileQuery());
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ display_name: "", bio: "", location: "", is_private: false, avatar_url: "", cover_url: "" });
+  const [form, setForm] = useState({
+    display_name: "",
+    bio: "",
+    location: "",
+    is_private: false,
+    avatar_url: "",
+    cover_url: "",
+  });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState<"avatar" | "cover" | null>(null);
 
   useEffect(() => {
-    if (me) setForm({ display_name: me.display_name ?? "", bio: me.bio ?? "", location: me.location ?? "", is_private: me.is_private, avatar_url: me.avatar_url ?? "", cover_url: me.cover_url ?? "" });
+    if (me)
+      setForm({
+        display_name: me.display_name ?? "",
+        bio: me.bio ?? "",
+        location: me.location ?? "",
+        is_private: me.is_private,
+        avatar_url: me.avatar_url ?? "",
+        cover_url: me.cover_url ?? "",
+      });
   }, [me]);
 
-  if (isLoading || !me) return <div className="mx-auto max-w-xl p-4"><Skeleton className="h-96 rounded-3xl" /></div>;
+  if (isLoading || !me)
+    return (
+      <div className="mx-auto max-w-xl p-4">
+        <Skeleton className="h-96 rounded-3xl" />
+      </div>
+    );
 
   async function onFile(kind: "avatar" | "cover", file?: File) {
     if (!file) return;
@@ -58,14 +78,17 @@ function EditProfile() {
     e.preventDefault();
     setBusy(true);
     const before = me!.points_balance;
-    const { error } = await supabase.from("profiles").update({
-      display_name: form.display_name.trim() || null,
-      bio: form.bio.trim() || null,
-      location: form.location.trim() || null,
-      is_private: form.is_private,
-      avatar_url: form.avatar_url || null,
-      cover_url: form.cover_url || null,
-    }).eq("id", me!.id);
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        display_name: form.display_name.trim() || null,
+        bio: form.bio.trim() || null,
+        location: form.location.trim() || null,
+        is_private: form.is_private,
+        avatar_url: form.avatar_url || null,
+        cover_url: form.cover_url || null,
+      })
+      .eq("id", me!.id);
     setBusy(false);
     if (error) {
       toast.error("Couldn't save your profile. Please try again.");
@@ -73,7 +96,8 @@ function EditProfile() {
     }
     const fresh = await qc.fetchQuery({ ...myProfileQuery(), staleTime: 0 });
     qc.invalidateQueries({ queryKey: ["profile"] });
-    if (fresh && fresh.points_balance > before) toast.success(`Profile complete! +${fresh.points_balance - before} VIDA POINTS 🌹`);
+    if (fresh && fresh.points_balance > before)
+      toast.success(`Profile complete! +${fresh.points_balance - before} VIDA POINTS 🌹`);
     else toast.success("Profile saved");
     navigate({ to: "/u/$username", params: { username: me!.username } });
   }
@@ -81,21 +105,48 @@ function EditProfile() {
   return (
     <form onSubmit={save} className="mx-auto max-w-xl space-y-5 px-4 py-6">
       <h1 className="text-4xl font-semibold">Edit profile</h1>
-      <p className="text-sm text-muted-foreground">Add a photo, display name and bio to earn +50 VIDA POINTS (once).</p>
+      <p className="text-sm text-muted-foreground">
+        Add a photo, display name and bio to earn +50 VIDA POINTS (once).
+      </p>
 
       <div className="relative h-36 overflow-hidden rounded-3xl bg-garden">
-        {form.cover_url && <img src={form.cover_url} alt="" className="h-full w-full object-cover" />}
+        {form.cover_url && (
+          <img src={form.cover_url} alt="" className="h-full w-full object-cover" />
+        )}
         <label className="glass absolute bottom-3 right-3 flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold">
-          {uploading === "cover" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />} Cover
-          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={(e) => onFile("cover", e.target.files?.[0])} />
+          {uploading === "cover" ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Camera className="h-4 w-4" />
+          )}{" "}
+          Cover
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="sr-only"
+            onChange={(e) => onFile("cover", e.target.files?.[0])}
+          />
         </label>
       </div>
 
       <div className="flex items-center gap-4">
-        <UserAvatar profile={{ ...me, avatar_url: form.avatar_url || null }} className="h-20 w-20 text-2xl" />
+        <UserAvatar
+          profile={{ ...me, avatar_url: form.avatar_url || null }}
+          className="h-20 w-20 text-2xl"
+        />
         <label className="inline-flex cursor-pointer items-center gap-2 rounded-full glass px-4 py-2 text-sm font-semibold">
-          {uploading === "avatar" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />} Change photo
-          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={(e) => onFile("avatar", e.target.files?.[0])} />
+          {uploading === "avatar" ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Camera className="h-4 w-4" />
+          )}{" "}
+          Change photo
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="sr-only"
+            onChange={(e) => onFile("avatar", e.target.files?.[0])}
+          />
         </label>
       </div>
       <p className="text-xs text-muted-foreground">JPG, PNG, WEBP or GIF · up to 5 MB.</p>
@@ -106,25 +157,56 @@ function EditProfile() {
       </div>
       <div>
         <Label htmlFor="dn">Display name</Label>
-        <Input id="dn" maxLength={50} value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} className="mt-1.5 h-11 rounded-xl" />
+        <Input
+          id="dn"
+          maxLength={50}
+          value={form.display_name}
+          onChange={(e) => setForm({ ...form, display_name: e.target.value })}
+          className="mt-1.5 h-11 rounded-xl"
+        />
       </div>
       <div>
         <Label htmlFor="bio">Bio</Label>
-        <Textarea id="bio" maxLength={300} rows={4} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} className="mt-1.5 rounded-xl" />
+        <Textarea
+          id="bio"
+          maxLength={300}
+          rows={4}
+          value={form.bio}
+          onChange={(e) => setForm({ ...form, bio: e.target.value })}
+          className="mt-1.5 rounded-xl"
+        />
         <p className="mt-1 text-right text-xs text-muted-foreground">{form.bio.length}/300</p>
       </div>
       <div>
         <Label htmlFor="loc">Location (optional)</Label>
-        <Input id="loc" maxLength={80} value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="mt-1.5 h-11 rounded-xl" />
+        <Input
+          id="loc"
+          maxLength={80}
+          value={form.location}
+          onChange={(e) => setForm({ ...form, location: e.target.value })}
+          className="mt-1.5 h-11 rounded-xl"
+        />
       </div>
       <div className="glass flex items-center justify-between rounded-2xl p-4">
         <div>
           <Label htmlFor="priv">Private account</Label>
-          <p className="text-xs text-muted-foreground">Will limit who sees your posts once posting launches.</p>
+          <p className="text-xs text-muted-foreground">
+            Will limit who sees your posts once posting launches.
+          </p>
         </div>
-        <Switch id="priv" checked={form.is_private} onCheckedChange={(v) => setForm({ ...form, is_private: v })} />
+        <Switch
+          id="priv"
+          checked={form.is_private}
+          onCheckedChange={(v) => setForm({ ...form, is_private: v })}
+        />
       </div>
-      <Button type="submit" variant="rose" size="lg" className="w-full" disabled={busy || !!uploading}>
+      <Button
+        type="submit"
+        variant="rose"
+        size="lg"
+        className="w-full"
+        disabled={busy || !!uploading}
+      >
         {busy && <Loader2 className="animate-spin" />} Save profile
       </Button>
     </form>

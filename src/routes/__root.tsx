@@ -85,7 +85,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { name: "theme-color", content: "#090609" },
       { title: "VIDALORE SOCIAL — Connect. Express. Play. Belong." },
-      { name: "description", content: "VIDALORE SOCIAL: a premium social network for posts, reels, stories and friends." },
+      {
+        name: "description",
+        content: "VIDALORE SOCIAL: a premium social network for posts, reels, stories and friends.",
+      },
       { property: "og:title", content: "VIDALORE SOCIAL" },
       { property: "og:description", content: "Connect. Express. Play. Belong." },
       { property: "og:type", content: "website" },

@@ -43,12 +43,17 @@ function RoseGarden() {
 
   return (
     <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-garden px-5 py-10">
-      <div aria-hidden="true" className="animate-glow pointer-events-none absolute left-1/2 top-[18%] h-72 w-72 -translate-x-1/2 rounded-full bg-primary/30 blur-3xl" />
+      <div
+        aria-hidden="true"
+        className="animate-glow pointer-events-none absolute left-1/2 top-[18%] h-72 w-72 -translate-x-1/2 rounded-full bg-primary/30 blur-3xl"
+      />
       <RosePetals />
       <div className="relative z-10 grid w-full max-w-5xl items-center gap-10 lg:grid-cols-2">
         <section className="animate-rise text-center lg:text-left">
           <Logo size="lg" className="justify-center lg:justify-start" />
-          <p className="mt-6 font-display text-sm uppercase tracking-[0.4em] text-rose-soft">The Rose Garden 🌹</p>
+          <p className="mt-6 font-display text-sm uppercase tracking-[0.4em] text-rose-soft">
+            The Rose Garden 🌹
+          </p>
           <h1 className="mt-3 text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
             Connect. Express. <span className="text-gradient-rose">Play. Belong.</span>
           </h1>
@@ -57,7 +62,10 @@ function RoseGarden() {
           </p>
         </section>
 
-        <section className="animate-rise glass shadow-card mx-auto w-full max-w-md rounded-3xl p-6 sm:p-8" style={{ animationDelay: "0.15s" }}>
+        <section
+          className="animate-rise glass shadow-card mx-auto w-full max-w-md rounded-3xl p-6 sm:p-8"
+          style={{ animationDelay: "0.15s" }}
+        >
           {mode !== "check-email" && mode !== "forgot" && (
             <div role="tablist" className="mb-6 grid grid-cols-2 rounded-full bg-background/60 p-1">
               {(["signin", "signup"] as const).map((m) => (
@@ -75,15 +83,26 @@ function RoseGarden() {
           )}
           <div key={mode} className="animate-rise">
             {mode === "signin" && <SignInForm onForgot={() => setMode("forgot")} />}
-            {mode === "signup" && <SignUpForm onDone={(email) => { setSentTo(email); setMode("check-email"); }} />}
+            {mode === "signup" && (
+              <SignUpForm
+                onDone={(email) => {
+                  setSentTo(email);
+                  setMode("check-email");
+                }}
+              />
+            )}
             {mode === "forgot" && <ForgotForm onBack={() => setMode("signin")} />}
             {mode === "check-email" && (
               <div className="text-center">
                 <h2 className="text-3xl font-semibold">Check your inbox</h2>
                 <p className="mt-3 text-sm text-muted-foreground">
-                  We sent a confirmation link to <strong className="text-foreground">{sentTo}</strong>. Open it to bloom into the garden — your 100 VIDA POINTS are waiting.
+                  We sent a confirmation link to{" "}
+                  <strong className="text-foreground">{sentTo}</strong>. Open it to bloom into the
+                  garden — your 100 VIDA POINTS are waiting.
                 </p>
-                <Button variant="glass" className="mt-6" onClick={() => setMode("signin")}>Back to sign in</Button>
+                <Button variant="glass" className="mt-6" onClick={() => setMode("signin")}>
+                  Back to sign in
+                </Button>
               </div>
             )}
           </div>
@@ -110,13 +129,35 @@ function SignInForm({ onForgot }: { onForgot: () => void }) {
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <Field id="si-email" label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
-      <Field id="si-pass" label="Password" type="password" value={password} onChange={setPassword} autoComplete="current-password" />
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      <Field
+        id="si-email"
+        label="Email"
+        type="email"
+        value={email}
+        onChange={setEmail}
+        autoComplete="email"
+      />
+      <Field
+        id="si-pass"
+        label="Password"
+        type="password"
+        value={password}
+        onChange={setPassword}
+        autoComplete="current-password"
+      />
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <Button type="submit" variant="rose" size="lg" className="w-full" disabled={busy}>
         {busy && <Loader2 className="animate-spin" />} Sign in
       </Button>
-      <button type="button" onClick={onForgot} className="w-full text-center text-sm text-rose-soft hover:underline">
+      <button
+        type="button"
+        onClick={onForgot}
+        className="w-full text-center text-sm text-rose-soft hover:underline"
+      >
         Forgot your password?
       </button>
     </form>
@@ -130,7 +171,9 @@ function SignUpForm({ onDone }: { onDone: (email: string) => void }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [status, setStatus] = useState<"idle" | "checking" | "available" | "taken" | "invalid">("idle");
+  const [status, setStatus] = useState<"idle" | "checking" | "available" | "taken" | "invalid">(
+    "idle",
+  );
 
   const normalized = username.trim().toLowerCase();
 
@@ -188,19 +231,61 @@ function SignUpForm({ onDone }: { onDone: (email: string) => void }) {
         <Label htmlFor="su-user">Username</Label>
         <div className="relative mt-1.5">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">@</span>
-          <Input id="su-user" value={username} onChange={(e) => setUsername(e.target.value)} className="h-11 rounded-xl pl-7 pr-9" autoComplete="username" required maxLength={20} />
+          <Input
+            id="su-user"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="h-11 rounded-xl pl-7 pr-9"
+            autoComplete="username"
+            required
+            maxLength={20}
+          />
           <span className="absolute right-3 top-1/2 -translate-y-1/2">
-            {status === "checking" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            {status === "checking" && (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            )}
             {status === "available" && <Check className="h-4 w-4 text-success" />}
-            {(status === "taken" || status === "invalid") && <X className="h-4 w-4 text-destructive" />}
+            {(status === "taken" || status === "invalid") && (
+              <X className="h-4 w-4 text-destructive" />
+            )}
           </span>
         </div>
-        <p aria-live="polite" className={`mt-1 text-xs ${status === "available" ? "text-success" : status === "taken" || status === "invalid" ? "text-destructive" : "text-muted-foreground"}`}>{hint}</p>
+        <p
+          aria-live="polite"
+          className={`mt-1 text-xs ${status === "available" ? "text-success" : status === "taken" || status === "invalid" ? "text-destructive" : "text-muted-foreground"}`}
+        >
+          {hint}
+        </p>
       </div>
-      <Field id="su-name" label="Display name" value={displayName} onChange={setDisplayName} autoComplete="name" required={false} />
-      <Field id="su-email" label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
-      <Field id="su-pass" label="Password (8+ characters)" type="password" value={password} onChange={setPassword} autoComplete="new-password" />
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      <Field
+        id="su-name"
+        label="Display name"
+        value={displayName}
+        onChange={setDisplayName}
+        autoComplete="name"
+        required={false}
+      />
+      <Field
+        id="su-email"
+        label="Email"
+        type="email"
+        value={email}
+        onChange={setEmail}
+        autoComplete="email"
+      />
+      <Field
+        id="su-pass"
+        label="Password (8+ characters)"
+        type="password"
+        value={password}
+        onChange={setPassword}
+        autoComplete="new-password"
+      />
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <Button type="submit" variant="rose" size="lg" className="w-full" disabled={busy}>
         {busy && <Loader2 className="animate-spin" />} Create account · +100 🌹
       </Button>
@@ -230,22 +315,49 @@ function ForgotForm({ onBack }: { onBack: () => void }) {
     <form onSubmit={submit} className="space-y-4">
       <h2 className="text-3xl font-semibold">Reset password</h2>
       {sent ? (
-        <p className="text-sm text-muted-foreground">If an account exists for {email}, a reset link is on its way.</p>
+        <p className="text-sm text-muted-foreground">
+          If an account exists for {email}, a reset link is on its way.
+        </p>
       ) : (
         <>
-          <Field id="fp-email" label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
-          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+          <Field
+            id="fp-email"
+            label="Email"
+            type="email"
+            value={email}
+            onChange={setEmail}
+            autoComplete="email"
+          />
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
           <Button type="submit" variant="rose" size="lg" className="w-full" disabled={busy}>
             {busy && <Loader2 className="animate-spin" />} Send reset link
           </Button>
         </>
       )}
-      <button type="button" onClick={onBack} className="w-full text-center text-sm text-rose-soft hover:underline">Back to sign in</button>
+      <button
+        type="button"
+        onClick={onBack}
+        className="w-full text-center text-sm text-rose-soft hover:underline"
+      >
+        Back to sign in
+      </button>
     </form>
   );
 }
 
-function Field(props: { id: string; label: string; value: string; onChange: (v: string) => void; type?: string; autoComplete?: string; required?: boolean }) {
+function Field(props: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  autoComplete?: string;
+  required?: boolean;
+}) {
   return (
     <div>
       <Label htmlFor={props.id}>{props.label}</Label>

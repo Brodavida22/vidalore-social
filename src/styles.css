@@ -83,7 +83,8 @@
   --sidebar-ring: oklch(0.65 0.25 357);
 
   --gradient-rose: linear-gradient(135deg, oklch(0.65 0.25 357), oklch(0.59 0.22 2));
-  --gradient-garden: radial-gradient(ellipse at 50% 0%, oklch(0.32 0.11 355 / 0.9), transparent 60%),
+  --gradient-garden:
+    radial-gradient(ellipse at 50% 0%, oklch(0.32 0.11 355 / 0.9), transparent 60%),
     radial-gradient(ellipse at 100% 100%, oklch(0.25 0.08 350 / 0.8), transparent 55%),
     linear-gradient(180deg, oklch(0.2 0.045 350), oklch(0.11 0.01 340));
   --shadow-glow: 0 10px 40px -10px oklch(0.65 0.25 357 / 0.6);
@@ -116,17 +117,38 @@
 }
 
 @keyframes petal-fall {
-  0% { transform: translate3d(0, -10vh, 0) rotate(0deg); opacity: 0; }
-  10% { opacity: 0.9; }
-  100% { transform: translate3d(var(--drift, 40px), 110vh, 0) rotate(540deg); opacity: 0; }
+  0% {
+    transform: translate3d(0, -10vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(var(--drift, 40px), 110vh, 0) rotate(540deg);
+    opacity: 0;
+  }
 }
 @keyframes glow-pulse {
-  0%, 100% { opacity: 0.55; transform: scale(1); }
-  50% { opacity: 0.9; transform: scale(1.08); }
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.08);
+  }
 }
 @keyframes rise-in {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @utility animate-petal {
   animation: petal-fall linear infinite;
@@ -139,17 +161,29 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-petal, .animate-glow { animation: none; display: none; }
+  .animate-petal,
+  .animate-glow {
+    animation: none;
+    display: none;
+  }
 }
 
 @layer base {
-  * { border-color: var(--color-border); }
-  html { color-scheme: dark; }
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    color-scheme: dark;
+  }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-tap-highlight-color: transparent;
   }
-  h1, h2, h3 { font-family: var(--font-display); }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+  }
 }

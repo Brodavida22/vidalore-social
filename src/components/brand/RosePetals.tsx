@@ -9,7 +9,7 @@ export function RosePetals({ count = 16 }: { count?: number }) {
         delay: (i * 1.7) % 14,
         duration: 12 + ((i * 3) % 10),
         size: 10 + ((i * 7) % 14),
-        drift: ((i % 2 ? 1 : -1) * (30 + ((i * 13) % 70))) + "px",
+        drift: (i % 2 ? 1 : -1) * (30 + ((i * 13) % 70)) + "px",
       })),
     [count],
   );
