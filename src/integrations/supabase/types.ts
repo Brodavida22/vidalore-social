@@ -48,7 +48,132 @@ export type Database = {
         };
         Relationships: [];
       };
-            follows: {
+
+      admin_audit_logs: {
+        Row: {
+          action: string;
+          admin_id: string | null;
+          created_at: string;
+          details: Json;
+          id: string;
+          target_id: string | null;
+          target_type: string | null;
+        };
+        Insert: {
+          action: string;
+          admin_id?: string | null;
+          created_at?: string;
+          details?: Json;
+          id?: string;
+          target_id?: string | null;
+          target_type?: string | null;
+        };
+        Update: {
+          action?: string;
+          admin_id?: string | null;
+          created_at?: string;
+          details?: Json;
+          id?: string;
+          target_id?: string | null;
+          target_type?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "admin_audit_logs_admin_id_fkey";
+            columns: ["admin_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      conversation_members: {
+        Row: {
+          conversation_id: string;
+          user_id: string;
+          role: string;
+          joined_at: string;
+          last_read_at: string | null;
+          is_muted: boolean;
+        };
+        Insert: {
+          conversation_id: string;
+          user_id: string;
+          role?: string;
+          joined_at?: string;
+          last_read_at?: string | null;
+          is_muted?: boolean;
+        };
+        Update: {
+          conversation_id?: string;
+          user_id?: string;
+          role?: string;
+          joined_at?: string;
+          last_read_at?: string | null;
+          is_muted?: boolean;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "conversation_members_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "conversation_members_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      conversations: {
+        Row: {
+          id: string;
+          kind: string;
+          title: string | null;
+          image_url: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+          last_message_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          kind: string;
+          title?: string | null;
+          image_url?: string | null;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+          last_message_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          kind?: string;
+          title?: string | null;
+          image_url?: string | null;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+          last_message_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "conversations_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      follows: {
         Row: {
           follower_id: string;
           following_id: string;
@@ -125,38 +250,135 @@ export type Database = {
         ];
       };
 
-      admin_audit_logs: {
+      messages: {
         Row: {
-          action: string;
-          admin_id: string | null;
-          created_at: string;
-          details: Json;
           id: string;
-          target_id: string | null;
-          target_type: string | null;
+          conversation_id: string;
+          sender_id: string;
+          content: string | null;
+          message_type: string;
+          media_url: string | null;
+          media_name: string | null;
+          reply_to_id: string | null;
+          edited_at: string | null;
+          deleted_at: string | null;
+          created_at: string;
         };
         Insert: {
-          action: string;
-          admin_id?: string | null;
-          created_at?: string;
-          details?: Json;
           id?: string;
-          target_id?: string | null;
-          target_type?: string | null;
+          conversation_id: string;
+          sender_id: string;
+          content?: string | null;
+          message_type?: string;
+          media_url?: string | null;
+          media_name?: string | null;
+          reply_to_id?: string | null;
+          edited_at?: string | null;
+          deleted_at?: string | null;
+          created_at?: string;
         };
         Update: {
-          action?: string;
-          admin_id?: string | null;
-          created_at?: string;
-          details?: Json;
           id?: string;
-          target_id?: string | null;
-          target_type?: string | null;
+          conversation_id?: string;
+          sender_id?: string;
+          content?: string | null;
+          message_type?: string;
+          media_url?: string | null;
+          media_name?: string | null;
+          reply_to_id?: string | null;
+          edited_at?: string | null;
+          deleted_at?: string | null;
+          created_at?: string;
         };
         Relationships: [
           {
-            foreignKeyName: "admin_audit_logs_admin_id_fkey";
-            columns: ["admin_id"];
+            foreignKeyName: "messages_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "messages_reply_to_id_fkey";
+            columns: ["reply_to_id"];
+            isOneToOne: false;
+            referencedRelation: "messages";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "messages_sender_id_fkey";
+            columns: ["sender_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      message_reactions: {
+        Row: {
+          message_id: string;
+          user_id: string;
+          emoji: string;
+          created_at: string;
+        };
+        Insert: {
+          message_id: string;
+          user_id: string;
+          emoji: string;
+          created_at?: string;
+        };
+        Update: {
+          message_id?: string;
+          user_id?: string;
+          emoji?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "message_reactions_message_id_fkey";
+            columns: ["message_id"];
+            isOneToOne: false;
+            referencedRelation: "messages";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "message_reactions_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      message_reads: {
+        Row: {
+          message_id: string;
+          user_id: string;
+          read_at: string;
+        };
+        Insert: {
+          message_id: string;
+          user_id: string;
+          read_at?: string;
+        };
+        Update: {
+          message_id?: string;
+          user_id?: string;
+          read_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "message_reads_message_id_fkey";
+            columns: ["message_id"];
+            isOneToOne: false;
+            referencedRelation: "messages";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "message_reads_user_id_fkey";
+            columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
             referencedColumns: ["id"];
@@ -732,8 +954,7 @@ export type TablesInsert<
         Insert: infer I;
       }
       ? I
-      : never
-    : never;
+      : never;
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
@@ -757,8 +978,7 @@ export type TablesUpdate<
         Update: infer U;
       }
       ? U
-      : never
-    : never;
+      : never;
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
