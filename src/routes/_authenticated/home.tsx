@@ -1,24 +1,29 @@
 import { useState, useEffect, useCallback } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Sparkles, UserPen, Flame, Clock, Users, Compass, Plus, RefreshCw } from "lucide-react";
+import { Sparkles, UserPen, Flame, Users, Compass, RefreshCw, Search, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { UserAvatar } from "@/components/profile/UserAvatar";
 import { PostComposer } from "@/components/feed/PostComposer";
 import { PostCard } from "@/components/feed/PostCard";
 import { StoriesBar } from "@/components/stories/StoriesBar";
 import { RightSidebar } from "@/components/layout/RightSidebar";
-import { myProfileQuery, communityProfilesQuery, type Profile } from "@/services/profiles";
-import { getStoredPosts, getStoredRelationships, type SocialPost } from "@/services/social";
+import { myProfileQuery } from "@/services/profiles";
+import {
+  getStoredPosts,
+  getStoredRelationships,
+  getStoredNotifications,
+  type SocialPost,
+} from "@/services/social";
+import { NotificationsModal } from "@/components/social/NotificationsModal";
 
 export const Route = createFileRoute("/_authenticated/home")({
   head: () => ({
     meta: [
-      { title: "Home Garden — VIDALORE SOCIAL" },
-      { name: "description", content: "Your VIDALORE SOCIAL home feed and garden circle." },
-      { property: "og:title", content: "Home Garden — VIDALORE SOCIAL" },
-      { property: "og:description", content: "Connect. Express. Play. Belong." },
+      { title: "Home — VIDALORE SOCIAL" },
+      { name: "description", content: "Your VIDALORE SOCIAL feed and community updates." },
+      { property: "og:title", content: "Home — VIDALORE SOCIAL" },
+      { property: "og:description", content: "Connect, share and explore." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -26,44 +31,14 @@ export const Route = createFileRoute("/_authenticated/home")({
   component: HomePage,
 });
 
-const CIRCLE_AVATARS = [
-  {
-    username: "celeste",
-    name: "Celeste",
-    avatar:
-      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=240&auto=format&fit=crop&q=80",
-    hasStory: true,
-  },
-  {
-    username: "raphael",
-    name: "Raphaël",
-    avatar:
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=240&auto=format&fit=crop&q=80",
-    hasStory: true,
-  },
-  {
-    username: "seraphina",
-    name: "Seraphina",
-    avatar:
-      "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=240&auto=format&fit=crop&q=80",
-    hasStory: true,
-  },
-  {
-    username: "adrian",
-    name: "Adrian",
-    avatar:
-      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=240&auto=format&fit=crop&q=80",
-    hasStory: false,
-  },
-];
-
 function HomePage() {
   const { data: me, isLoading: profileLoading } = useQuery(myProfileQuery());
-  const { data: communityProfiles } = useQuery(communityProfilesQuery(8));
 
   const [posts, setPosts] = useState<SocialPost[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [feedFilter, setFeedFilter] = useState<"for-you" | "following" | "trending">("for-you");
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const reloadPosts = useCallback(() => {
     setLoadingPosts(true);
@@ -82,7 +57,7 @@ function HomePage() {
         setPosts(safe);
       }
       setLoadingPosts(false);
-    }, 250);
+    }, 150);
   }, [feedFilter, me?.id]);
 
   useEffect(() => {
@@ -92,74 +67,63 @@ function HomePage() {
     return () => window.removeEventListener("vidalore:social-updated", handleUpdate);
   }, [reloadPosts]);
 
+  useEffect(() => {
+    const notifs = getStoredNotifications();
+    setUnreadCount(notifs.filter((n) => !n.isRead).length);
+  }, []);
+
   const complete = me && me.avatar_url && me.display_name && me.bio;
 
   return (
     <div className="flex justify-center mx-auto max-w-7xl px-3 sm:px-4 lg:px-6">
       {/* Central feed column */}
-      <div className="w-full max-w-2xl min-w-0 space-y-5 py-4 sm:py-6">
-        {/* Welcome greeting banner */}
-        {profileLoading || !me ? (
-          <Skeleton className="h-28 rounded-3xl" />
-        ) : (
-          <section className="relative overflow-hidden rounded-3xl bg-garden p-5 sm:p-6 shadow-card border border-border/70">
-            <div
-              aria-hidden="true"
-              className="absolute -right-8 -top-8 h-36 w-36 rounded-full bg-primary/20 blur-3xl pointer-events-none"
-            />
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <p className="text-[0.65rem] uppercase tracking-[0.3em] text-rose-soft font-semibold">
-                  The Rose Garden 🌹
-                </p>
-                <h1 className="mt-1 font-display text-2xl sm:text-3xl font-semibold">
-                  Welcome, {me.display_name || `@${me.username}`}
-                </h1>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  You hold{" "}
-                  <strong className="text-foreground">🌹 {me.points_balance} VIDA POINTS</strong>
-                </p>
-              </div>
+      <div className="w-full max-w-2xl min-w-0 space-y-4 py-3 sm:py-5">
+        {/* 1. Top Header Bar for Feed */}
+        <div className="flex items-center justify-between pb-1">
+          <div className="flex items-center gap-1.5">
+            <span className="font-display font-black text-xl sm:text-2xl tracking-tight text-foreground">
+              VIDA<span className="text-[#E91E63]">LORE</span>
+            </span>
+          </div>
 
-              <div className="flex items-center gap-2">
-                <Button
-                  asChild
-                  variant="rose"
-                  size="sm"
-                  className="rounded-full shadow-glow text-xs"
-                >
-                  <Link to="/points">
-                    <Sparkles className="h-3.5 w-3.5 mr-1" /> Points
-                  </Link>
-                </Button>
-                {!complete && (
-                  <Button asChild variant="glass" size="sm" className="rounded-full text-xs">
-                    <Link to="/settings/profile">
-                      <UserPen className="h-3.5 w-3.5 mr-1" /> Complete profile (+50)
-                    </Link>
-                  </Button>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
+          <div className="flex items-center gap-1.5">
+            <Link
+              to="/explore"
+              className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-secondary"
+              aria-label="Search"
+            >
+              <Search className="h-5 w-5" />
+            </Link>
+            <button
+              type="button"
+              onClick={() => setNotifOpen(true)}
+              className="relative p-2 text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-secondary"
+              aria-label="Notifications"
+            >
+              <Bell className="h-5 w-5" />
+              {unreadCount > 0 && (
+                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#E91E63] ring-2 ring-background" />
+              )}
+            </button>
+          </div>
+        </div>
 
-        {/* 24h Garden Stories Bar */}
+        {/* 2. Stories Section */}
         <StoriesBar me={me} />
 
-        {/* Post Composer */}
+        {/* 3. Create Post / Composer Section */}
         {me && <PostComposer me={me} onPostCreated={reloadPosts} />}
 
-        {/* Feed Filter Tabs */}
-        <div className="flex items-center justify-between border-b border-border/60 pb-2 px-1">
-          <div className="flex items-center gap-1.5">
+        {/* 4. Feed Filter Tabs */}
+        <div className="flex items-center justify-between border-b border-border pb-2 px-1">
+          <div className="flex items-center gap-1 bg-secondary p-1 rounded-lg">
             <button
               type="button"
               onClick={() => setFeedFilter("for-you")}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 feedFilter === "for-you"
-                  ? "bg-primary text-primary-foreground shadow-glow"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  ? "bg-card text-[#E91E63] shadow-sm font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <Compass className="h-3.5 w-3.5" /> For You
@@ -168,10 +132,10 @@ function HomePage() {
             <button
               type="button"
               onClick={() => setFeedFilter("following")}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 feedFilter === "following"
-                  ? "bg-primary text-primary-foreground shadow-glow"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  ? "bg-card text-[#E91E63] shadow-sm font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <Users className="h-3.5 w-3.5" /> Following
@@ -180,10 +144,10 @@ function HomePage() {
             <button
               type="button"
               onClick={() => setFeedFilter("trending")}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 feedFilter === "trending"
-                  ? "bg-primary text-primary-foreground shadow-glow"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  ? "bg-card text-[#E91E63] shadow-sm font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <Flame className="h-3.5 w-3.5" /> Trending
@@ -194,38 +158,26 @@ function HomePage() {
             type="button"
             onClick={reloadPosts}
             title="Refresh feed"
-            className="rounded-full p-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+            className="rounded-lg p-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${loadingPosts ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${loadingPosts ? "animate-spin text-[#E91E63]" : ""}`}
+            />
           </button>
         </div>
 
-        {/* Posts Feed List */}
+        {/* 5. Actual Posts from Users / Clean Empty State */}
         {loadingPosts ? (
           <div className="space-y-4">
-            <Skeleton className="h-56 rounded-3xl" />
-            <Skeleton className="h-64 rounded-3xl" />
+            <Skeleton className="h-44 rounded-xl" />
+            <Skeleton className="h-56 rounded-xl" />
           </div>
         ) : posts.length === 0 ? (
-          <section className="glass rounded-3xl p-10 text-center space-y-3 border border-border/80">
-            <div className="flex justify-center text-4xl">🌹</div>
-            <h2 className="font-display text-2xl font-semibold">The rose garden is tranquil</h2>
+          <section className="rounded-xl p-10 text-center space-y-2 border border-border bg-card">
+            <h2 className="font-display text-base font-semibold text-foreground">No posts yet</h2>
             <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
-              {feedFilter === "following"
-                ? "You haven't followed any creators who posted yet. Explore suggested creators in your circle!"
-                : "No moments match this view yet. Be the first to plant a blooming thought!"}
+              Posts from people you follow will appear here.
             </p>
-            {feedFilter === "following" ? (
-              <Button
-                type="button"
-                variant="rose"
-                size="sm"
-                onClick={() => setFeedFilter("for-you")}
-                className="rounded-full text-xs shadow-glow"
-              >
-                View All Garden Posts
-              </Button>
-            ) : null}
           </section>
         ) : (
           <div className="space-y-4">
@@ -248,6 +200,16 @@ function HomePage() {
 
       {/* Right discovery sidebar on desktop */}
       <RightSidebar me={me} />
+
+      {/* Notifications Modal */}
+      <NotificationsModal
+        open={notifOpen}
+        onOpenChange={(v) => {
+          setNotifOpen(v);
+          const notifs = getStoredNotifications();
+          setUnreadCount(notifs.filter((n) => !n.isRead).length);
+        }}
+      />
     </div>
   );
 }

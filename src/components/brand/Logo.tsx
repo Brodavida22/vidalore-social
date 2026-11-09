@@ -1,40 +1,42 @@
-import rose from "@/assets/vidalore-rose.png";
 import { cn } from "@/lib/utils";
 
-export function RoseMark({ className }: { className?: string | undefined }) {
-  return (
-    <img
-      src={rose}
-      alt=""
-      aria-hidden="true"
-      width={816}
-      height={816}
-      className={cn("h-9 w-9 drop-shadow-[0_0_14px_var(--color-primary)]", className)}
-    />
-  );
-}
+export function Logo({
+  className,
+  size = "md",
+  showSub = true,
+}: {
+  className?: string;
+  size?: "sm" | "md" | "lg";
+  showSub?: boolean;
+}) {
+  const sizeClasses = {
+    sm: "text-base tracking-[0.05em]",
+    md: "text-xl tracking-[0.06em]",
+    lg: "text-2xl sm:text-3xl tracking-[0.07em]",
+  }[size];
 
-export function Logo({ className, size = "md" }: { className?: string; size?: "md" | "lg" }) {
+  const subSizeClasses = {
+    sm: "text-[0.55rem] tracking-[0.25em]",
+    md: "text-[0.6rem] tracking-[0.28em]",
+    lg: "text-[0.7rem] tracking-[0.3em]",
+  }[size];
+
   return (
-    <div className={cn("flex items-center gap-2.5", className)}>
-      <RoseMark className={size === "lg" ? "h-16 w-16" : undefined} />
+    <div className={cn("inline-flex items-center gap-2 select-none", className)}>
       <div className="leading-none">
-        <span
-          className={cn(
-            "font-display font-bold tracking-[0.18em] text-gradient-rose",
-            size === "lg" ? "text-4xl" : "text-xl",
-          )}
-        >
-          VIDALORE
+        <span className={cn("font-display font-black text-foreground", sizeClasses)}>
+          VIDA<span className="text-[#E91E63]">LORE</span>
         </span>
-        <span
-          className={cn(
-            "block font-sans font-semibold tracking-[0.5em] text-muted-foreground",
-            size === "lg" ? "mt-1 text-xs" : "text-[0.55rem]",
-          )}
-        >
-          SOCIAL
-        </span>
+        {showSub && (
+          <span
+            className={cn(
+              "block font-sans font-semibold text-muted-foreground uppercase mt-0.5",
+              subSizeClasses,
+            )}
+          >
+            SOCIAL
+          </span>
+        )}
       </div>
     </div>
   );

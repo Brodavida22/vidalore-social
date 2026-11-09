@@ -83,14 +83,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { name: "theme-color", content: "#090609" },
-      { title: "VIDALORE SOCIAL — Connect. Express. Play. Belong." },
+      { name: "theme-color", content: "#080808" },
+      { title: "VIDALORE SOCIAL" },
       {
         name: "description",
-        content: "VIDALORE SOCIAL: a premium social network for posts, reels, stories and friends.",
+        content:
+          "VIDALORE SOCIAL: A premium social network for posts, reels, stories and messaging.",
       },
       { property: "og:title", content: "VIDALORE SOCIAL" },
-      { property: "og:description", content: "Connect. Express. Play. Belong." },
+      { property: "og:description", content: "Connect, share and explore." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -104,7 +105,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap",
       },
     ],
   }),
@@ -120,7 +121,7 @@ function RootShell({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="bg-background text-foreground antialiased selection:bg-[#E91E63]/20 selection:text-[#E91E63]">
         {children}
         <Scripts />
       </body>

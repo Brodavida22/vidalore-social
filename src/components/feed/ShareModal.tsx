@@ -49,7 +49,7 @@ export function ShareModal({
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `Post by @${post.authorUsername} on VIDALORE SOCIAL`,
+          title: `Post by @${post.authorUsername} on VIDALORE`,
           text: post.content.slice(0, 100),
           url: postUrl,
         });
@@ -65,15 +65,13 @@ export function ShareModal({
 
   function handleRepost() {
     if (!me) {
-      toast.error("Please sign in to echo moments.");
+      toast.error("Please sign in to share posts.");
       return;
     }
     setIsReposting(true);
     try {
       sharePost(me, post.id, repostNote.trim() || undefined);
-      toast.success("Reposted to the Rose Garden 🌹", {
-        description: "Shared with your circles and followers.",
-      });
+      toast.success("Post shared to your feed");
       onShared?.();
       onOpenChange(false);
     } catch {
@@ -85,37 +83,38 @@ export function ShareModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md glass border-border/80">
+      <DialogContent className="sm:max-w-md bg-card border-border">
         <DialogHeader>
-          <DialogTitle className="font-display text-2xl">Share Moment 🌹</DialogTitle>
+          <DialogTitle className="font-display text-lg font-semibold text-foreground">
+            Share Post
+          </DialogTitle>
           <DialogDescription className="text-muted-foreground text-xs">
-            Spread blooming ideas across the garden or via link.
+            Share this post with your followers or copy the direct link.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 pt-2">
-          {/* Echo/Repost with note */}
-          <div className="rounded-2xl bg-secondary/50 p-3.5 space-y-2 border border-border/60">
-            <span className="text-xs font-semibold text-rose-soft flex items-center gap-1.5">
+          {/* Repost with note */}
+          <div className="rounded-xl bg-secondary p-3.5 space-y-2.5 border border-border">
+            <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
               <Repeat className="h-3.5 w-3.5 text-primary" />
-              Echo to Garden Feed
+              Repost to Feed
             </span>
             <Textarea
-              placeholder="Add your thoughts or quote this moment... (optional)"
+              placeholder="Add your thoughts... (optional)"
               value={repostNote}
               onChange={(e) => setRepostNote(e.target.value)}
               rows={2}
-              className="resize-none rounded-xl bg-background/60 text-xs"
+              className="resize-none rounded-lg bg-card text-xs border-border"
             />
             <Button
               type="button"
-              variant="rose"
               size="sm"
               disabled={isReposting}
               onClick={handleRepost}
-              className="w-full text-xs font-semibold shadow-glow"
+              className="w-full text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white rounded-lg"
             >
-              Echo to My Feed 🌹
+              Share to Feed
             </Button>
           </div>
 
@@ -123,22 +122,22 @@ export function ShareModal({
           <div className="grid grid-cols-2 gap-2">
             <Button
               type="button"
-              variant="glass"
+              variant="outline"
               onClick={handleCopy}
-              className="text-xs flex items-center justify-center gap-2 h-10 rounded-xl"
+              className="text-xs flex items-center justify-center gap-2 h-9 rounded-lg border-border"
             >
-              {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+              {copied ? <Check className="h-4 w-4 text-[#22C55E]" /> : <Copy className="h-4 w-4" />}
               {copied ? "Link Copied" : "Copy Link"}
             </Button>
 
             <Button
               type="button"
-              variant="glass"
+              variant="outline"
               onClick={handleNativeShare}
-              className="text-xs flex items-center justify-center gap-2 h-10 rounded-xl"
+              className="text-xs flex items-center justify-center gap-2 h-9 rounded-lg border-border"
             >
               <Share2 className="h-4 w-4 text-primary" />
-              Share Outside
+              External Share
             </Button>
           </div>
         </div>

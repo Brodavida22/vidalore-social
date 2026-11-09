@@ -13,7 +13,7 @@ import {
   UserCheck,
   Music,
   Eye,
-  Sparkles,
+  BadgeCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/profile/UserAvatar";
@@ -46,7 +46,6 @@ export function ReelPlayer({
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Sync playback with isActive
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -58,7 +57,6 @@ export function ReelPlayer({
         playPromise
           .then(() => setIsPlaying(true))
           .catch(() => {
-            // Autoplay blocked by browser policy without user gesture
             setIsPlaying(false);
           });
       }
@@ -68,7 +66,6 @@ export function ReelPlayer({
     }
   }, [isActive]);
 
-  // Sync mute state
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.muted = isMuted;
@@ -97,7 +94,7 @@ export function ReelPlayer({
       handleLike();
     } else {
       setHeartBurst(true);
-      setTimeout(() => setHeartBurst(false), 600);
+      setTimeout(() => setHeartBurst(false), 500);
     }
   }
 
@@ -110,7 +107,7 @@ export function ReelPlayer({
 
   function handleLike() {
     setHeartBurst(true);
-    setTimeout(() => setHeartBurst(false), 600);
+    setTimeout(() => setHeartBurst(false), 500);
     void toggleReelLike(reel.id)
       .then((updated) => {
         if (updated) setReel({ ...updated });
@@ -128,7 +125,7 @@ export function ReelPlayer({
           hasSaved: saved,
           savesCount: Math.max(0, prev.savesCount + (saved ? 1 : -1)),
         }));
-        toast.info(saved ? "Saved to your Rose Collection 🌹" : "Removed from saved");
+        toast.info(saved ? "Saved to your bookmarks" : "Removed from saved");
       })
       .catch((error) =>
         toast.error(error instanceof Error ? error.message : "Could not update saved reel."),
@@ -138,9 +135,7 @@ export function ReelPlayer({
   function handleFollowToggle() {
     const next = toggleFollow(reel.creatorId);
     setIsFollowing(next);
-    toast.info(
-      next ? `Following @${reel.creatorUsername} 🌹` : `Unfollowed @${reel.creatorUsername}`,
-    );
+    toast.info(next ? `Following @${reel.creatorUsername}` : `Unfollowed @${reel.creatorUsername}`);
   }
 
   async function handleShare() {
@@ -152,7 +147,7 @@ export function ReelPlayer({
           text: reel.caption.slice(0, 80),
           url,
         });
-        toast.success("Shared reel 🌹");
+        toast.success("Reel shared");
       } catch {
         // cancelled
       }
@@ -163,7 +158,7 @@ export function ReelPlayer({
   }
 
   return (
-    <div className="relative h-full w-full max-w-md mx-auto aspect-[9/16] rounded-3xl overflow-hidden bg-black select-none shadow-2xl border border-border/40 group">
+    <div className="relative h-full w-full max-w-md mx-auto aspect-[9/16] rounded-2xl overflow-hidden bg-black select-none shadow-xl border border-white/10 group">
       {/* Video Element */}
       <video
         ref={videoRef}
@@ -180,22 +175,22 @@ export function ReelPlayer({
       {/* Floating double-tap heart animation */}
       {heartBurst && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center animate-ping">
-          <span className="text-7xl drop-shadow-[0_0_20px_var(--color-primary)]">🌹</span>
+          <Heart className="h-20 w-20 fill-primary text-primary" />
         </div>
       )}
 
       {/* Play/Pause center overlay indicator */}
       {showPlayIcon && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center animate-fade-in">
-          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md">
-            {isPlaying ? <Play className="h-8 w-8 ml-1" /> : <Pause className="h-8 w-8" />}
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm">
+            {isPlaying ? <Play className="h-7 w-7 ml-0.5" /> : <Pause className="h-7 w-7" />}
           </span>
         </div>
       )}
 
-      {/* Top Controls: Sound toggle & Views */}
+      {/* Top Controls */}
       <div className="absolute top-4 inset-x-4 flex items-center justify-between z-20 pointer-events-auto">
-        <div className="flex items-center gap-1.5 rounded-full bg-black/50 px-2.5 py-1 text-[0.7rem] text-rose-soft backdrop-blur-md">
+        <div className="flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[0.7rem] text-white/90 backdrop-blur-sm">
           <Eye className="h-3 w-3" />
           <span>{reel.viewsCount.toLocaleString()}</span>
         </div>
@@ -203,7 +198,7 @@ export function ReelPlayer({
         <button
           type="button"
           onClick={onToggleMute}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/70 transition-colors"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm hover:bg-black/80 transition-colors"
           aria-label={isMuted ? "Unmute audio" : "Mute audio"}
         >
           {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4 text-primary" />}
@@ -211,7 +206,7 @@ export function ReelPlayer({
       </div>
 
       {/* Right-Side Vertical Action Column */}
-      <div className="absolute right-3 bottom-16 flex flex-col items-center gap-4 z-20 pointer-events-auto">
+      <div className="absolute right-3 bottom-16 flex flex-col items-center gap-3.5 z-20 pointer-events-auto">
         {/* Creator Avatar with Follow Button */}
         <div className="relative mb-1">
           <Link to="/u/$username" params={{ username: reel.creatorUsername }}>
@@ -221,15 +216,15 @@ export function ReelPlayer({
                 username: reel.creatorUsername,
                 display_name: reel.creatorName,
               }}
-              className="h-11 w-11 ring-2 ring-primary shadow-glow"
+              className="h-10 w-10 ring-2 ring-primary"
             />
           </Link>
           {me?.id !== reel.creatorId && (
             <button
               type="button"
               onClick={handleFollowToggle}
-              className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full border border-background shadow-md transition-transform active:scale-90 ${
-                isFollowing ? "bg-secondary text-foreground" : "bg-gradient-rose text-white"
+              className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full border border-background shadow transition-transform active:scale-90 ${
+                isFollowing ? "bg-card text-foreground" : "bg-primary text-primary-foreground"
               }`}
               title={isFollowing ? "Following" : "Follow"}
             >
@@ -242,19 +237,19 @@ export function ReelPlayer({
           )}
         </div>
 
-        {/* 🌹 Rose Like Action */}
+        {/* Heart Like Action */}
         <button
           type="button"
           onClick={handleLike}
           className="flex flex-col items-center gap-0.5 group/btn"
-          aria-label={reel.hasLiked ? "Unlike reel" : "Rose like reel"}
+          aria-label={reel.hasLiked ? "Unlike reel" : "Like reel"}
         >
           <span
-            className={`flex h-11 w-11 items-center justify-center rounded-full bg-black/50 backdrop-blur-md text-2xl transition-transform active:scale-125 ${
-              reel.hasLiked ? "drop-shadow-[0_0_12px_var(--color-primary)]" : "opacity-85"
+            className={`flex h-10 w-10 items-center justify-center rounded-full bg-black/60 backdrop-blur-sm transition-transform active:scale-125 ${
+              reel.hasLiked ? "text-primary" : "text-white"
             }`}
           >
-            🌹
+            <Heart className={`h-5 w-5 ${reel.hasLiked ? "fill-primary text-primary" : ""}`} />
           </span>
           <span className="text-[0.65rem] font-semibold text-white drop-shadow">
             {reel.likesCount}
@@ -268,7 +263,7 @@ export function ReelPlayer({
           className="flex flex-col items-center gap-0.5"
           aria-label="Comments"
         >
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/70 transition-transform active:scale-110">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm hover:bg-black/80 transition-transform active:scale-110">
             <MessageCircle className="h-5 w-5" />
           </span>
           <span className="text-[0.65rem] font-semibold text-white drop-shadow">
@@ -283,7 +278,7 @@ export function ReelPlayer({
           className="flex flex-col items-center gap-0.5"
           aria-label="Share"
         >
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/70 transition-transform active:scale-110">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm hover:bg-black/80 transition-transform active:scale-110">
             <Share2 className="h-5 w-5" />
           </span>
           <span className="text-[0.65rem] font-semibold text-white drop-shadow">
@@ -299,8 +294,8 @@ export function ReelPlayer({
           aria-label="Save"
         >
           <span
-            className={`flex h-11 w-11 items-center justify-center rounded-full bg-black/50 backdrop-blur-md transition-transform active:scale-110 ${
-              reel.hasSaved ? "text-primary bg-primary/20" : "text-white hover:bg-black/70"
+            className={`flex h-10 w-10 items-center justify-center rounded-full bg-black/60 backdrop-blur-sm transition-transform active:scale-110 ${
+              reel.hasSaved ? "text-primary" : "text-white hover:bg-black/80"
             }`}
           >
             <Bookmark className={`h-5 w-5 ${reel.hasSaved ? "fill-primary" : ""}`} />
@@ -314,20 +309,15 @@ export function ReelPlayer({
       {/* Bottom Creator Information Overlay */}
       <div className="absolute inset-x-0 bottom-0 p-4 pt-16 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-10 pointer-events-auto">
         <div className="pr-14 space-y-1.5">
-          {/* Creator name & badge */}
           <Link
             to="/u/$username"
             params={{ username: reel.creatorUsername }}
             className="inline-flex items-center gap-1.5 group/user"
           >
-            <span className="text-sm font-bold text-white group-hover/user:text-rose-soft transition-colors">
+            <span className="text-sm font-bold text-white group-hover/user:text-primary transition-colors">
               @{reel.creatorUsername}
             </span>
-            {reel.creatorVerified && (
-              <span className="text-primary text-xs" title="Verified Gardener">
-                🌹
-              </span>
-            )}
+            {reel.creatorVerified && <BadgeCheck className="h-4 w-4 text-primary" />}
           </Link>
 
           {/* Caption with expander */}
@@ -340,19 +330,19 @@ export function ReelPlayer({
             {reel.caption}
           </p>
 
-          {/* Sound / Music Tag */}
+          {/* Audio Title */}
           {reel.audioTitle && (
-            <div className="flex items-center gap-1.5 text-[0.7rem] text-rose-soft/90 pt-1">
-              <Music className="h-3 w-3 animate-spin duration-3000 shrink-0 text-primary" />
+            <div className="flex items-center gap-1.5 text-[0.7rem] text-white/80 pt-1">
+              <Music className="h-3 w-3 shrink-0 text-primary" />
               <span className="truncate">{reel.audioTitle}</span>
             </div>
           )}
         </div>
 
-        {/* Bottom Playback Progress Bar */}
+        {/* Playback Progress Bar */}
         <div className="mt-3 h-1 w-full bg-white/20 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-rose transition-all duration-100 ease-linear shadow-glow"
+            className="h-full bg-primary transition-all duration-100 ease-linear"
             style={{ width: `${progress}%` }}
           />
         </div>

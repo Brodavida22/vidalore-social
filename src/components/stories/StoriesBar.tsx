@@ -32,7 +32,6 @@ export function StoriesBar({ me }: { me?: Profile | null }) {
     return () => window.removeEventListener("vidalore:reels-updated", handleUpdate);
   }, [reloadStories]);
 
-  // My story group if I have posted
   const myStoryGroup = me ? storyGroups.find((g) => g.userId === me.id) : null;
   const otherGroups = storyGroups.filter((g) => g.userId !== me?.id);
 
@@ -42,15 +41,15 @@ export function StoriesBar({ me }: { me?: Profile | null }) {
   }
 
   return (
-    <section className="glass rounded-3xl p-3 sm:p-4 border border-border/80 shadow-card">
+    <section className="rounded-xl p-3 sm:p-4 border border-border bg-card shadow-sm">
       <div className="flex items-center justify-between mb-2.5 px-1">
-        <p className="text-[0.7rem] uppercase tracking-wider text-rose-soft font-semibold">
-          24h Garden Stories 🌹
+        <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+          24h Stories
         </p>
         <button
           type="button"
           onClick={() => setComposerOpen(true)}
-          className="text-xs text-rose-soft hover:underline font-medium"
+          className="text-xs text-primary hover:underline font-medium"
         >
           + Add Story
         </button>
@@ -74,8 +73,8 @@ export function StoriesBar({ me }: { me?: Profile | null }) {
               className={`p-0.5 rounded-full transition-transform group-hover:scale-105 ${
                 myStoryGroup && myStoryGroup.stories.length > 0
                   ? myStoryGroup.hasUnseen
-                    ? "bg-gradient-rose shadow-glow"
-                    : "ring-2 ring-muted-foreground/40"
+                    ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                    : "ring-2 ring-border"
                   : ""
               }`}
             >
@@ -87,14 +86,14 @@ export function StoriesBar({ me }: { me?: Profile | null }) {
                     avatar_url: null,
                   }
                 }
-                className="h-14 w-14 ring-2 ring-background"
+                className="h-13 w-13 ring-1 ring-border"
               />
             </div>
 
-            {/* Glowing Plus Icon */}
+            {/* Plus Icon */}
             {(!myStoryGroup || myStoryGroup.stories.length === 0) && (
-              <span className="absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded-full bg-gradient-rose text-white shadow-glow border border-background">
-                <Plus className="h-3.5 w-3.5 stroke-[3]" />
+              <span className="absolute bottom-0 right-0 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-primary text-primary-foreground border-2 border-background shadow-sm">
+                <Plus className="h-3 w-3 stroke-[3]" />
               </span>
             )}
           </div>
@@ -103,7 +102,7 @@ export function StoriesBar({ me }: { me?: Profile | null }) {
           </span>
         </div>
 
-        {/* Featured / Circle Story Groups */}
+        {/* Other Story Groups */}
         {otherGroups.map((group) => {
           const groupIdx = storyGroups.findIndex((g) => g.userId === group.userId);
           return (
@@ -115,8 +114,8 @@ export function StoriesBar({ me }: { me?: Profile | null }) {
               <div
                 className={`p-0.5 rounded-full transition-transform group-hover:scale-105 ${
                   group.hasUnseen
-                    ? "bg-gradient-rose shadow-glow ring-2 ring-primary/40"
-                    : "ring-2 ring-border/80"
+                    ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                    : "ring-1 ring-border"
                 }`}
               >
                 <UserAvatar
@@ -125,7 +124,7 @@ export function StoriesBar({ me }: { me?: Profile | null }) {
                     username: group.username,
                     display_name: group.displayName,
                   }}
-                  className="h-14 w-14 ring-2 ring-background"
+                  className="h-13 w-13 ring-1 ring-border"
                 />
               </div>
               <span className="text-[0.65rem] text-muted-foreground group-hover:text-foreground truncate max-w-[62px]">

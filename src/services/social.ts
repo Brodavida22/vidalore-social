@@ -92,206 +92,7 @@ const STORAGE_KEYS = {
   REPORTS: "vidalore_social_reports_v2",
 };
 
-// High-fidelity seed posts embodying Vidalore's Rose Garden identity
-const SEED_POSTS: SocialPost[] = [
-  {
-    id: "post-seed-1",
-    authorId: "creator-celeste",
-    authorName: "Celeste Moreau",
-    authorUsername: "celeste",
-    authorAvatarUrl:
-      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=240&auto=format&fit=crop&q=80",
-    authorVerified: true,
-    authorPoints: 1420,
-    content:
-      "Velvet midnight in the garden. Tonight the night-blooming roses released their deepest fragrance. There's something sacred about quiet hours when creativity finally breathes without haste. 🌹✨\n\nWho else finds solace under the starlight?",
-    media: [
-      {
-        id: "m-1",
-        type: "image",
-        url: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1200&auto=format&fit=crop&q=85",
-        caption: "Midnight crimson blooms under moonlight",
-      },
-    ],
-    tags: ["RoseGarden", "VelvetHours", "NightBloom", "MidnightVibe"],
-    mood: "🌙 Velvet Night",
-    location: "The Rose Conservatory",
-    createdAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
-    reactionsCount: 148,
-    hasReacted: false,
-    commentsCount: 24,
-    sharesCount: 12,
-    hasShared: false,
-    savesCount: 39,
-    hasSaved: false,
-  },
-  {
-    id: "post-seed-2",
-    authorId: "creator-raphael",
-    authorName: "Raphaël Vance",
-    authorUsername: "raphael",
-    authorAvatarUrl:
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=240&auto=format&fit=crop&q=80",
-    authorVerified: true,
-    authorPoints: 980,
-    content:
-      "Golden hour styling series — capturing the interplay between deep burgundy velvet and subtle gold hardware. VIDALORE aesthetic in full bloom today.",
-    media: [
-      {
-        id: "m-2",
-        type: "image",
-        url: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1200&auto=format&fit=crop&q=85",
-        caption: "Golden hour textures",
-      },
-      {
-        id: "m-3",
-        type: "image",
-        url: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1200&auto=format&fit=crop&q=85",
-        caption: "Elegance in shadows",
-      },
-    ],
-    tags: ["VidaloreStyle", "Editorial", "Aesthetic", "RosePalette"],
-    mood: "🍷 Elegant",
-    location: "Milano, Italy",
-    createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-    reactionsCount: 89,
-    hasReacted: true,
-    commentsCount: 15,
-    sharesCount: 8,
-    hasShared: false,
-    savesCount: 52,
-    hasSaved: true,
-  },
-  {
-    id: "post-seed-3",
-    authorId: "creator-seraphina",
-    authorName: "Seraphina Lin",
-    authorUsername: "seraphina",
-    authorAvatarUrl:
-      "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=240&auto=format&fit=crop&q=80",
-    authorVerified: false,
-    authorPoints: 630,
-    content:
-      "New acoustic recording in the studio: 'Petals in the Dark'. Dedicated to everyone building in silence and creating their own garden. Listen with headphones for the binaural piano reverb. 🎹🌹",
-    media: [
-      {
-        id: "m-4",
-        type: "image",
-        url: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1200&auto=format&fit=crop&q=85",
-        caption: "Studio sessions under rose neon lights",
-      },
-    ],
-    tags: ["OriginalMusic", "AcousticVibes", "CreativesOfVidalore"],
-    mood: "✨ Radiant",
-    location: "Studio Noir",
-    createdAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
-    reactionsCount: 215,
-    hasReacted: false,
-    commentsCount: 42,
-    sharesCount: 27,
-    hasShared: false,
-    savesCount: 78,
-    hasSaved: false,
-  },
-];
-
-const SEED_COMMENTS: PostComment[] = [
-  {
-    id: "c-1",
-    postId: "post-seed-1",
-    authorId: "creator-raphael",
-    authorName: "Raphaël Vance",
-    authorUsername: "raphael",
-    authorAvatarUrl:
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=240&auto=format&fit=crop&q=80",
-    content:
-      "The contrast between the midnight gloom and that crimson glow is magnificent Celeste! 🌹",
-    createdAt: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
-    reactionsCount: 14,
-    hasReacted: true,
-  },
-  {
-    id: "c-2",
-    postId: "post-seed-1",
-    parentId: "c-1",
-    authorId: "creator-celeste",
-    authorName: "Celeste Moreau",
-    authorUsername: "celeste",
-    authorAvatarUrl:
-      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=240&auto=format&fit=crop&q=80",
-    content: "Thank you Raphaël! That gentle dew helped capture the light just right. 🖤",
-    createdAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-    reactionsCount: 6,
-    hasReacted: false,
-  },
-  {
-    id: "c-3",
-    postId: "post-seed-2",
-    authorId: "creator-seraphina",
-    authorName: "Seraphina Lin",
-    authorUsername: "seraphina",
-    authorAvatarUrl:
-      "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=240&auto=format&fit=crop&q=80",
-    content: "That silhouette in the second slide is pure cinematic art. Stunning palette! 👏",
-    createdAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
-    reactionsCount: 8,
-    hasReacted: false,
-  },
-];
-
-const SEED_NOTIFICATIONS: SocialNotification[] = [
-  {
-    id: "notif-1",
-    type: "reaction",
-    actorId: "creator-celeste",
-    actorName: "Celeste Moreau",
-    actorUsername: "celeste",
-    actorAvatarUrl:
-      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=240&auto=format&fit=crop&q=80",
-    targetId: "post-seed-2",
-    summary: "reacted with a Rose 🌹 to your post",
-    createdAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    isRead: false,
-  },
-  {
-    id: "notif-2",
-    type: "comment",
-    actorId: "creator-raphael",
-    actorName: "Raphaël Vance",
-    actorUsername: "raphael",
-    actorAvatarUrl:
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=240&auto=format&fit=crop&q=80",
-    targetId: "post-seed-1",
-    summary: 'commented: "The contrast between the midnight gloom and that crimson glow..."',
-    createdAt: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
-    isRead: false,
-  },
-  {
-    id: "notif-3",
-    type: "points",
-    actorId: "system-vidalore",
-    actorName: "VIDALORE SOCIAL",
-    actorUsername: "vidalore",
-    actorAvatarUrl: "/favicon.png",
-    summary: "awarded you +25 VIDA POINTS for daily bloom activity 🌹",
-    createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
-    isRead: true,
-  },
-  {
-    id: "notif-4",
-    type: "follow",
-    actorId: "creator-seraphina",
-    actorName: "Seraphina Lin",
-    actorUsername: "seraphina",
-    actorAvatarUrl:
-      "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=240&auto=format&fit=crop&q=80",
-    summary: "started following your garden",
-    createdAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
-    isRead: true,
-  },
-];
-
-// Local state helpers with safe fallback
+// Local state helpers with safe empty fallbacks (No mock or seed records)
 function getLocal<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
@@ -313,42 +114,84 @@ function setLocal<T>(key: string, val: T): void {
 }
 
 export function getStoredPosts(): SocialPost[] {
-  return getLocal<SocialPost[]>(STORAGE_KEYS.POSTS, SEED_POSTS);
+  const posts = getLocal<SocialPost[]>(STORAGE_KEYS.POSTS, []);
+  // Strip out any legacy mock seed posts
+  return posts.filter((p) => !p.id.startsWith("post-seed-") && !p.authorId.startsWith("creator-"));
 }
 
 export function saveStoredPosts(posts: SocialPost[]): void {
-  setLocal(STORAGE_KEYS.POSTS, posts);
+  const clean = posts.filter(
+    (p) => !p.id.startsWith("post-seed-") && !p.authorId.startsWith("creator-"),
+  );
+  setLocal(STORAGE_KEYS.POSTS, clean);
 }
 
 export function getStoredComments(): PostComment[] {
-  return getLocal<PostComment[]>(STORAGE_KEYS.COMMENTS, SEED_COMMENTS);
+  const comments = getLocal<PostComment[]>(STORAGE_KEYS.COMMENTS, []);
+  // Strip out any legacy mock comments
+  return comments.filter(
+    (c) => !c.authorId.startsWith("creator-") && !c.postId.startsWith("post-seed-"),
+  );
 }
 
 export function saveStoredComments(comments: PostComment[]): void {
-  setLocal(STORAGE_KEYS.COMMENTS, comments);
+  const clean = comments.filter(
+    (c) => !c.authorId.startsWith("creator-") && !c.postId.startsWith("post-seed-"),
+  );
+  setLocal(STORAGE_KEYS.COMMENTS, clean);
 }
 
 export function getStoredNotifications(): SocialNotification[] {
-  return getLocal<SocialNotification[]>(STORAGE_KEYS.NOTIFICATIONS, SEED_NOTIFICATIONS);
+  const notifs = getLocal<SocialNotification[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  // Strip out any legacy mock notifications
+  return notifs.filter((n) => !n.id.startsWith("notif-") && !n.actorId.startsWith("creator-"));
 }
 
 export function saveStoredNotifications(notifs: SocialNotification[]): void {
-  setLocal(STORAGE_KEYS.NOTIFICATIONS, notifs);
+  const clean = notifs.filter(
+    (n) => !n.id.startsWith("notif-") && !n.actorId.startsWith("creator-"),
+  );
+  setLocal(STORAGE_KEYS.NOTIFICATIONS, clean);
 }
 
 export function getStoredRelationships(): RelationshipState {
-  return getLocal<RelationshipState>(STORAGE_KEYS.RELATIONSHIPS, {
-    following: ["creator-celeste", "creator-raphael"],
-    followers: ["creator-seraphina"],
-    friends: ["creator-raphael"],
-    incomingFriendRequests: ["creator-celeste"],
+  const rel = getLocal<RelationshipState>(STORAGE_KEYS.RELATIONSHIPS, {
+    following: [],
+    followers: [],
+    friends: [],
+    incomingFriendRequests: [],
     outgoingFriendRequests: [],
     blockedUsers: [],
   });
+  // Strip any legacy mock creator IDs
+  return {
+    following: (rel.following || []).filter((id) => !id.startsWith("creator-")),
+    followers: (rel.followers || []).filter((id) => !id.startsWith("creator-")),
+    friends: (rel.friends || []).filter((id) => !id.startsWith("creator-")),
+    incomingFriendRequests: (rel.incomingFriendRequests || []).filter(
+      (id) => !id.startsWith("creator-"),
+    ),
+    outgoingFriendRequests: (rel.outgoingFriendRequests || []).filter(
+      (id) => !id.startsWith("creator-"),
+    ),
+    blockedUsers: (rel.blockedUsers || []).filter((id) => !id.startsWith("creator-")),
+  };
 }
 
 export function saveStoredRelationships(rel: RelationshipState): void {
-  setLocal(STORAGE_KEYS.RELATIONSHIPS, rel);
+  const clean: RelationshipState = {
+    following: (rel.following || []).filter((id) => !id.startsWith("creator-")),
+    followers: (rel.followers || []).filter((id) => !id.startsWith("creator-")),
+    friends: (rel.friends || []).filter((id) => !id.startsWith("creator-")),
+    incomingFriendRequests: (rel.incomingFriendRequests || []).filter(
+      (id) => !id.startsWith("creator-"),
+    ),
+    outgoingFriendRequests: (rel.outgoingFriendRequests || []).filter(
+      (id) => !id.startsWith("creator-"),
+    ),
+    blockedUsers: (rel.blockedUsers || []).filter((id) => !id.startsWith("creator-")),
+  };
+  setLocal(STORAGE_KEYS.RELATIONSHIPS, clean);
 }
 
 // Social Operations

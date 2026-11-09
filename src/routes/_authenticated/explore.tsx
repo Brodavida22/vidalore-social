@@ -1,29 +1,24 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Compass, Search, Sparkles, TrendingUp, UserPlus, UserCheck, Grid } from "lucide-react";
+import { Compass, Search, Sparkles, UserPlus, UserCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { PostCard } from "@/components/feed/PostCard";
-import { myProfileQuery, communityProfilesQuery, type Profile } from "@/services/profiles";
-import {
-  getStoredPosts,
-  getStoredRelationships,
-  toggleFollow,
-  type SocialPost,
-} from "@/services/social";
+import { myProfileQuery, communityProfilesQuery } from "@/services/profiles";
+import { getStoredPosts, getStoredRelationships, toggleFollow } from "@/services/social";
 
 export const Route = createFileRoute("/_authenticated/explore")({
   head: () => ({
     meta: [
-      { title: "Explore the Garden — VIDALORE SOCIAL" },
+      { title: "Explore — VIDALORE SOCIAL" },
       {
         name: "description",
-        content: "Discover blooming creators, photography, and conversations.",
+        content: "Discover inspiring creators, photography, and conversations.",
       },
-      { property: "og:title", content: "Explore the Garden — VIDALORE SOCIAL" },
-      { property: "og:description", content: "Discover blooming creators and moments." },
+      { property: "og:title", content: "Explore — VIDALORE SOCIAL" },
+      { property: "og:description", content: "Discover inspiring creators and conversations." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -33,11 +28,11 @@ export const Route = createFileRoute("/_authenticated/explore")({
 
 const EXPLORE_CATEGORIES = [
   "All",
-  "RoseGarden",
-  "VelvetHours",
-  "VidaloreStyle",
-  "NightBloom",
+  "Design",
+  "Technology",
   "Photography",
+  "Architecture",
+  "Community",
 ];
 
 function ExplorePage() {
@@ -54,7 +49,6 @@ function ExplorePage() {
     setRel(getStoredRelationships());
   }
 
-  // Filter posts based on category and search
   const filteredPosts = allPosts.filter((p) => {
     const matchesSearch =
       !search.trim() ||
@@ -69,19 +63,17 @@ function ExplorePage() {
   });
 
   return (
-    <div className="mx-auto max-w-4xl px-3 sm:px-4 py-6 space-y-6">
+    <div className="mx-auto max-w-4xl px-3 sm:px-4 py-6 space-y-5">
       {/* Header & Search */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="font-display text-3xl font-semibold flex items-center gap-2">
-              <Compass className="h-6 w-6 text-primary" />
-              Explore the Garden 🌹
-            </h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Discover inspiring creators, photography, and conversations.
-            </p>
-          </div>
+        <div>
+          <h1 className="font-display text-2xl font-bold flex items-center gap-2 text-foreground">
+            <Compass className="h-6 w-6 text-primary" />
+            Explore
+          </h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Discover creators, ideas, and active discussions across the network.
+          </p>
         </div>
 
         <div className="relative">
@@ -89,8 +81,8 @@ function ExplorePage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search keywords, hashtags, or creators..."
-            className="h-11 rounded-2xl bg-secondary/60 pl-10 text-xs border-border/70 focus-visible:ring-primary"
+            placeholder="Search keywords, topics, or creators..."
+            className="h-10 rounded-xl bg-secondary pl-10 text-xs border-border focus-visible:ring-primary"
           />
         </div>
 
@@ -101,13 +93,13 @@ function ExplorePage() {
               key={cat}
               type="button"
               onClick={() => setSelectedCategory(cat)}
-              className={`rounded-full px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all ${
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
                 selectedCategory === cat
-                  ? "bg-primary text-primary-foreground shadow-glow"
-                  : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  ? "bg-primary text-primary-foreground font-semibold"
+                  : "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
               }`}
             >
-              {cat === "All" ? "All Moments" : `#${cat}`}
+              {cat === "All" ? "All Posts" : `#${cat}`}
             </button>
           ))}
         </div>
@@ -115,11 +107,11 @@ function ExplorePage() {
 
       {/* Suggested Creators Carousel */}
       {dbProfiles && dbProfiles.length > 0 && (
-        <section className="glass rounded-3xl p-4 border border-border/80 shadow-card">
+        <section className="rounded-xl p-4 border border-border bg-card shadow-sm">
           <div className="flex items-center justify-between mb-3 px-1">
-            <h2 className="text-xs uppercase tracking-wider text-rose-soft font-semibold flex items-center gap-1.5">
+            <h2 className="text-xs uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
               <Sparkles className="h-3.5 w-3.5 text-primary" />
-              Featured Gardeners
+              Featured Creators
             </h2>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -128,26 +120,32 @@ function ExplorePage() {
               return (
                 <div
                   key={c.id}
-                  className="rounded-2xl bg-secondary/40 p-3 text-center flex flex-col items-center justify-between space-y-2 border border-border/40 hover:border-primary/30 transition-all"
+                  className="rounded-xl bg-secondary/50 p-3 text-center flex flex-col items-center justify-between space-y-2 border border-border hover:border-primary/40 transition-colors"
                 >
                   <Link to="/u/$username" params={{ username: c.username }}>
                     <UserAvatar
                       profile={c}
-                      className="h-12 w-12 text-sm ring-1 ring-primary/40 mx-auto"
+                      className="h-11 w-11 text-xs ring-1 ring-border mx-auto"
                     />
                     <p className="mt-2 text-xs font-semibold text-foreground truncate max-w-[120px]">
                       {c.display_name || c.username}
                     </p>
-                    <p className="text-[0.65rem] text-rose-soft">🌹 {c.points_balance} pts</p>
+                    <p className="text-[0.65rem] text-muted-foreground mt-0.5">
+                      {c.points_balance} pts
+                    </p>
                   </Link>
 
                   {me?.id !== c.id && (
                     <Button
                       type="button"
                       size="sm"
-                      variant={isFollowing ? "glass" : "rose"}
+                      variant={isFollowing ? "outline" : "default"}
                       onClick={() => handleFollowToggle(c.id)}
-                      className="h-7 w-full rounded-full text-[0.7rem] font-semibold"
+                      className={`h-7 w-full rounded-lg text-[0.7rem] font-medium ${
+                        isFollowing
+                          ? "border-border text-foreground hover:bg-secondary"
+                          : "bg-[#E91E63] hover:bg-[#C2185B] text-white"
+                      }`}
                     >
                       {isFollowing ? (
                         <>
@@ -170,11 +168,10 @@ function ExplorePage() {
       {/* Explore Grid / Feed */}
       <div className="space-y-4">
         {filteredPosts.length === 0 ? (
-          <div className="glass rounded-3xl p-12 text-center space-y-2 border border-border/70">
-            <span className="text-3xl">🥀</span>
-            <p className="font-semibold text-foreground">No moments found</p>
+          <div className="rounded-xl p-10 text-center space-y-2 border border-border bg-card">
+            <p className="font-semibold text-foreground text-sm">No posts found</p>
             <p className="text-xs text-muted-foreground">
-              Try adjusting your search or category filter.
+              Try adjusting your search query or selecting another topic.
             </p>
           </div>
         ) : (

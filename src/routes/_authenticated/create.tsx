@@ -12,9 +12,9 @@ import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/_authenticated/create")({
   head: () => ({
     meta: [
-      { title: "Create in the Garden — VIDALORE SOCIAL" },
+      { title: "Create — VIDALORE SOCIAL" },
       { name: "description", content: "Publish posts, vertical reels, and 24h stories." },
-      { property: "og:title", content: "Create in the Garden — VIDALORE SOCIAL" },
+      { property: "og:title", content: "Create — VIDALORE SOCIAL" },
       { property: "og:description", content: "Publish posts, vertical reels, and 24h stories." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -33,30 +33,30 @@ function CreatePage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border/60 pb-3">
+      <div className="flex items-center justify-between border-b border-border pb-3">
         <div>
-          <h1 className="font-display text-3xl font-semibold flex items-center gap-2">
+          <h1 className="font-display text-2xl font-bold flex items-center gap-2 text-foreground">
             <PlusSquare className="h-6 w-6 text-primary" />
-            Plant a Moment 🌹
+            Create
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Share photography, prose, reels, or fleeting 24h stories.
+            Publish posts, share short-form reels, or post 24-hour stories.
           </p>
         </div>
-        <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-xs text-rose-soft">
+        <div className="hidden sm:flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1 text-xs text-muted-foreground font-medium">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
-          <span>+10 VIDA POINTS</span>
+          <span>+10 points per post</span>
         </div>
       </div>
 
       {/* Creation Mode Tabs */}
-      <div className="grid grid-cols-3 gap-2 p-1 rounded-2xl bg-secondary/50 border border-border/60">
+      <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-secondary border border-border">
         <button
           type="button"
           onClick={() => setCreateMode("post")}
-          className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold transition-all ${
+          className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-colors ${
             createMode === "post"
-              ? "bg-primary text-primary-foreground shadow-glow"
+              ? "bg-card text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
@@ -69,9 +69,9 @@ function CreatePage() {
             setCreateMode("reel");
             setReelModalOpen(true);
           }}
-          className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold transition-all ${
+          className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-colors ${
             createMode === "reel"
-              ? "bg-primary text-primary-foreground shadow-glow"
+              ? "bg-card text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
@@ -84,9 +84,9 @@ function CreatePage() {
             setCreateMode("story");
             setStoryModalOpen(true);
           }}
-          className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold transition-all ${
+          className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-colors ${
             createMode === "story"
-              ? "bg-primary text-primary-foreground shadow-glow"
+              ? "bg-card text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
@@ -95,7 +95,7 @@ function CreatePage() {
       </div>
 
       {isLoading || !me ? (
-        <Skeleton className="h-72 rounded-3xl" />
+        <Skeleton className="h-64 rounded-xl" />
       ) : createMode === "post" ? (
         <PostComposer
           me={me}
@@ -104,40 +104,39 @@ function CreatePage() {
           }}
         />
       ) : createMode === "reel" ? (
-        <div className="glass rounded-3xl p-8 text-center space-y-4 border border-border/80">
-          <Clapperboard className="h-12 w-12 text-primary mx-auto animate-pulse" />
+        <div className="rounded-xl p-8 text-center space-y-4 border border-border bg-card">
+          <Clapperboard className="h-10 w-10 text-primary mx-auto" />
           <div>
-            <h2 className="font-display text-2xl font-semibold">Publish a Vertical Reel</h2>
+            <h2 className="font-display text-xl font-bold text-foreground">
+              Upload a Vertical Reel
+            </h2>
             <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-              Share high-definition vertical moments with original garden audio in the Reels stream.
+              Share high-definition vertical video in the dedicated Reels feed.
             </p>
           </div>
           <Button
             type="button"
-            variant="rose"
             onClick={() => setReelModalOpen(true)}
-            className="rounded-full shadow-glow px-6 text-xs font-semibold"
+            className="rounded-lg px-5 text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white shadow-sm"
           >
-            Open Reel Uploader 🌹
+            Open Reel Uploader
           </Button>
         </div>
       ) : (
-        <div className="glass rounded-3xl p-8 text-center space-y-4 border border-border/80">
-          <Camera className="h-12 w-12 text-primary mx-auto animate-pulse" />
+        <div className="rounded-xl p-8 text-center space-y-4 border border-border bg-card">
+          <Camera className="h-10 w-10 text-primary mx-auto" />
           <div>
-            <h2 className="font-display text-2xl font-semibold">Plant a 24-Hour Story</h2>
+            <h2 className="font-display text-xl font-bold text-foreground">Post a 24-Hour Story</h2>
             <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-              Share fleeting snapshots and clips that bloom for 24 hours in your circle's stories
-              bar.
+              Share quick photo or video updates visible for 24 hours at the top of the feed.
             </p>
           </div>
           <Button
             type="button"
-            variant="rose"
             onClick={() => setStoryModalOpen(true)}
-            className="rounded-full shadow-glow px-6 text-xs font-semibold"
+            className="rounded-lg px-5 text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white shadow-sm"
           >
-            Open Story Composer 🌹
+            Open Story Composer
           </Button>
         </div>
       )}

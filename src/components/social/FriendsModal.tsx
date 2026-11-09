@@ -254,14 +254,16 @@ export function FriendsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg glass border-border/80 p-5 max-h-[85vh] flex flex-col">
-        <DialogHeader className="border-b border-border/60 pb-3">
-          <DialogTitle className="font-display text-2xl flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            Garden Circle
+      <DialogContent className="sm:max-w-lg border border-border bg-card p-5 max-h-[85vh] flex flex-col rounded-2xl shadow-xl">
+        <DialogHeader className="border-b border-border pb-3">
+          <DialogTitle className="font-display text-xl flex items-center gap-2 text-foreground">
+            <Users className="h-5 w-5 text-[#E91E63]" />
+            Connections
           </DialogTitle>
 
-          <p className="text-xs text-muted-foreground">Your people, your community. 🌹</p>
+          <p className="text-xs text-muted-foreground">
+            Manage your friends, followers, and network.
+          </p>
         </DialogHeader>
 
         <div className="relative pt-2">
@@ -271,7 +273,7 @@ export function FriendsModal({
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search members..."
-            className="h-10 rounded-xl bg-secondary/50 pl-9 text-xs border-border/50"
+            className="h-10 rounded-xl bg-secondary/50 pl-9 text-xs border-border"
           />
         </div>
 
@@ -291,17 +293,17 @@ export function FriendsModal({
                 id: "followers",
                 label: `Followers (${followers.length})`,
               },
-              { id: "suggested", label: "Discover ✨" },
+              { id: "suggested", label: "Discover" },
             ] as const
           ).map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => setTab(item.id)}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all shrink-0 ${
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all shrink-0 ${
                 tab === item.id
-                  ? "bg-primary text-primary-foreground shadow-glow"
-                  : "bg-secondary/60 text-muted-foreground hover:bg-secondary"
+                  ? "bg-[#E91E63] text-white shadow-sm"
+                  : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground"
               }`}
             >
               {item.label}
@@ -309,23 +311,21 @@ export function FriendsModal({
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-2.5 py-2 pr-1">
+        <div className="flex-1 overflow-y-auto space-y-2 py-2 pr-1">
           {isLoading ? (
             <div className="py-12 flex flex-col items-center gap-3 text-muted-foreground">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              <p className="text-xs">Loading your Garden Circle...</p>
+              <Loader2 className="h-6 w-6 animate-spin text-[#E91E63]" />
+              <p className="text-xs">Loading connections...</p>
             </div>
           ) : currentList.length === 0 ? (
             <div className="py-12 text-center space-y-2">
-              <span className="text-3xl">🥀</span>
+              <p className="font-semibold text-foreground text-sm">No members here yet</p>
 
-              <p className="font-semibold text-foreground">No one here yet</p>
-
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground max-w-xs mx-auto">
                 {tab === "requests"
                   ? "You have no incoming friend requests."
                   : tab === "friends"
-                    ? "Connect with members to grow your circle."
+                    ? "Connect with members to grow your network."
                     : tab === "suggested"
                       ? "No new members to discover right now."
                       : "No members found here yet."}
@@ -341,7 +341,7 @@ export function FriendsModal({
               return (
                 <div
                   key={person.id}
-                  className="flex items-center justify-between gap-3 rounded-2xl bg-secondary/40 p-3 hover:bg-secondary/60 transition-colors"
+                  className="flex items-center justify-between gap-3 rounded-xl bg-secondary/40 p-2.5 hover:bg-secondary/60 transition-colors border border-border/50"
                 >
                   <Link
                     to="/u/$username"
@@ -355,18 +355,18 @@ export function FriendsModal({
                         username: person.username,
                         display_name: person.name,
                       }}
-                      className="h-11 w-11 text-xs ring-1 ring-primary/30 shrink-0"
+                      className="h-10 w-10 text-xs ring-1 ring-border shrink-0"
                     />
 
                     <div className="min-w-0">
-                      <p className="text-xs font-semibold text-foreground truncate">
+                      <p className="text-xs font-semibold text-foreground truncate group-hover:text-[#E91E63] transition-colors">
                         {person.name}
                       </p>
 
                       <p className="text-[0.65rem] text-muted-foreground">@{person.username}</p>
 
                       {person.bio && (
-                        <p className="text-[0.65rem] text-foreground/70 truncate mt-0.5">
+                        <p className="text-[0.65rem] text-muted-foreground truncate mt-0.5">
                           {person.bio}
                         </p>
                       )}
@@ -379,10 +379,9 @@ export function FriendsModal({
                         <Button
                           type="button"
                           size="sm"
-                          variant="rose"
                           disabled={isBusy}
                           onClick={() => handleAccept(person)}
-                          className="h-7 px-2.5 rounded-full text-xs"
+                          className="h-7 px-3 rounded-lg text-xs bg-[#E91E63] hover:bg-[#C2185B] text-white shadow-sm"
                         >
                           <Check className="h-3 w-3 mr-1" />
                           Accept
@@ -394,7 +393,7 @@ export function FriendsModal({
                           variant="ghost"
                           disabled={isBusy}
                           onClick={() => handleDecline(person)}
-                          className="h-7 px-2 rounded-full text-xs"
+                          className="h-7 px-2 rounded-lg text-xs hover:bg-secondary"
                         >
                           <X className="h-3.5 w-3.5" />
                         </Button>
@@ -405,10 +404,13 @@ export function FriendsModal({
                           <Button
                             type="button"
                             size="sm"
-                            variant={isFollowing ? "glass" : "rose"}
                             disabled={isBusy}
                             onClick={() => handleFollow(person)}
-                            className="h-7 px-2.5 rounded-full text-[0.7rem]"
+                            className={`h-7 px-2.5 rounded-lg text-[0.7rem] ${
+                              isFollowing
+                                ? "border border-border text-foreground bg-secondary/80 hover:bg-secondary"
+                                : "bg-[#E91E63] hover:bg-[#C2185B] text-white shadow-sm"
+                            }`}
                           >
                             {isFollowing ? (
                               <>
@@ -428,21 +430,23 @@ export function FriendsModal({
                           <Button
                             type="button"
                             size="sm"
-                            variant="glass"
+                            variant="outline"
                             disabled={isBusy}
                             onClick={() => handleFriendRequest(person)}
-                            className="h-7 px-2.5 rounded-full text-[0.7rem]"
+                            className="h-7 px-2.5 rounded-lg text-[0.7rem] border-border"
                           >
                             + Friend
                           </Button>
                         )}
 
                         {hasSentRequest && (
-                          <span className="text-[0.65rem] text-rose-soft px-1">Pending</span>
+                          <span className="text-[0.65rem] text-muted-foreground px-1">Pending</span>
                         )}
 
                         {isFriend && (
-                          <span className="text-[0.65rem] text-rose-soft px-1">Friends ✓</span>
+                          <span className="text-[0.65rem] text-[#E91E63] font-medium px-1">
+                            Friends ✓
+                          </span>
                         )}
                       </>
                     )}

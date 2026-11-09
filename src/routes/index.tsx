@@ -7,26 +7,28 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/brand/Logo";
-import { RosePetals } from "@/components/brand/RosePetals";
 import { checkUsernameAvailable, friendlyAuthError } from "@/services/profiles";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "The Rose Garden — VIDALORE SOCIAL 🌹" },
-      { name: "description", content: "Join VIDALORE SOCIAL. Connect. Express. Play. Belong." },
-      { property: "og:title", content: "The Rose Garden — VIDALORE SOCIAL" },
-      { property: "og:description", content: "Connect. Express. Play. Belong." },
+      { title: "VIDALORE SOCIAL — Connect, Share & Discover" },
+      {
+        name: "description",
+        content: "Join VIDALORE SOCIAL. A modern platform for creators, thinkers, and communities.",
+      },
+      { property: "og:title", content: "VIDALORE SOCIAL" },
+      { property: "og:description", content: "Connect, Share & Discover." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
-  component: RoseGarden,
+  component: LandingPage,
 });
 
 type Mode = "signin" | "signup" | "forgot" | "check-email";
 
-function RoseGarden() {
+function LandingPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>("signin");
   const [sentTo, setSentTo] = useState("");
@@ -42,46 +44,58 @@ function RoseGarden() {
   }, [navigate]);
 
   return (
-    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-garden px-5 py-10">
-      <div
-        aria-hidden="true"
-        className="animate-glow pointer-events-none absolute left-1/2 top-[18%] h-72 w-72 -translate-x-1/2 rounded-full bg-primary/30 blur-3xl"
-      />
-      <RosePetals />
-      <div className="relative z-10 grid w-full max-w-5xl items-center gap-10 lg:grid-cols-2">
-        <section className="animate-rise text-center lg:text-left">
+    <main className="relative flex min-h-dvh items-center justify-center bg-secondary/40 px-5 py-12">
+      <div className="relative z-10 grid w-full max-w-5xl items-center gap-12 lg:grid-cols-2">
+        <section className="text-center lg:text-left space-y-6">
           <Logo size="lg" className="justify-center lg:justify-start" />
-          <p className="mt-6 font-display text-sm uppercase tracking-[0.4em] text-rose-soft">
-            The Rose Garden 🌹
-          </p>
-          <h1 className="mt-3 text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
-            Connect. Express. <span className="text-gradient-rose">Play. Belong.</span>
-          </h1>
-          <p className="mx-auto mt-4 max-w-md text-muted-foreground lg:mx-0">
-            Share moments, watch reels, and grow your circle in a garden made for you.
-          </p>
+          <div className="space-y-3">
+            <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-5xl font-display">
+              Connect. Share. <br />
+              <span className="text-primary">Discover communities.</span>
+            </h1>
+            <p className="mx-auto max-w-md text-sm sm:text-base text-muted-foreground lg:mx-0 leading-relaxed">
+              Join a modern network built for meaningful discussions, authentic content, and
+              real-time collaboration.
+            </p>
+          </div>
+
+          <div className="hidden lg:grid grid-cols-3 gap-4 pt-4 border-t border-border">
+            <div>
+              <p className="text-lg font-bold text-foreground">Real-time</p>
+              <p className="text-xs text-muted-foreground">Instant messaging & feeds</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-foreground">Verified</p>
+              <p className="text-xs text-muted-foreground">Direct community access</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-foreground">Points</p>
+              <p className="text-xs text-muted-foreground">Earn for contribution</p>
+            </div>
+          </div>
         </section>
 
-        <section
-          className="animate-rise glass shadow-card mx-auto w-full max-w-md rounded-3xl p-6 sm:p-8"
-          style={{ animationDelay: "0.15s" }}
-        >
+        <section className="mx-auto w-full max-w-md rounded-xl border border-border bg-card p-6 sm:p-8 shadow-sm">
           {mode !== "check-email" && mode !== "forgot" && (
-            <div role="tablist" className="mb-6 grid grid-cols-2 rounded-full bg-background/60 p-1">
+            <div role="tablist" className="mb-6 grid grid-cols-2 rounded-lg bg-secondary p-1">
               {(["signin", "signup"] as const).map((m) => (
                 <button
                   key={m}
                   role="tab"
                   aria-selected={mode === m}
                   onClick={() => setMode(m)}
-                  className={`rounded-full py-2 text-sm font-semibold transition-all ${mode === m ? "bg-gradient-rose text-primary-foreground shadow-glow" : "text-muted-foreground"}`}
+                  className={`rounded-md py-2 text-xs font-semibold transition-all ${
+                    mode === m
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
                 >
                   {m === "signin" ? "Sign in" : "Create account"}
                 </button>
               ))}
             </div>
           )}
-          <div key={mode} className="animate-rise">
+          <div key={mode}>
             {mode === "signin" && <SignInForm onForgot={() => setMode("forgot")} />}
             {mode === "signup" && (
               <SignUpForm
@@ -93,14 +107,18 @@ function RoseGarden() {
             )}
             {mode === "forgot" && <ForgotForm onBack={() => setMode("signin")} />}
             {mode === "check-email" && (
-              <div className="text-center">
-                <h2 className="text-3xl font-semibold">Check your inbox</h2>
-                <p className="mt-3 text-sm text-muted-foreground">
+              <div className="text-center py-4">
+                <h2 className="text-xl font-bold text-foreground">Check your inbox</h2>
+                <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
                   We sent a confirmation link to{" "}
-                  <strong className="text-foreground">{sentTo}</strong>. Open it to bloom into the
-                  garden — your 100 VIDA POINTS are waiting.
+                  <strong className="text-foreground">{sentTo}</strong>. Open it to activate your
+                  account — your 100 points bonus is waiting.
                 </p>
-                <Button variant="glass" className="mt-6" onClick={() => setMode("signin")}>
+                <Button
+                  variant="outline"
+                  className="mt-6 text-xs rounded-lg"
+                  onClick={() => setMode("signin")}
+                >
                   Back to sign in
                 </Button>
               </div>
@@ -146,17 +164,22 @@ function SignInForm({ onForgot }: { onForgot: () => void }) {
         autoComplete="current-password"
       />
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-xs text-destructive">
           {error}
         </p>
       )}
-      <Button type="submit" variant="rose" size="lg" className="w-full" disabled={busy}>
-        {busy && <Loader2 className="animate-spin" />} Sign in
+      <Button
+        type="submit"
+        size="lg"
+        className="w-full rounded-lg bg-[#E91E63] hover:bg-[#C2185B] text-white font-semibold text-xs h-10 shadow-sm"
+        disabled={busy}
+      >
+        {busy && <Loader2 className="animate-spin mr-1.5 h-3.5 w-3.5" />} Sign in
       </Button>
       <button
         type="button"
         onClick={onForgot}
-        className="w-full text-center text-sm text-rose-soft hover:underline"
+        className="w-full text-center text-xs text-muted-foreground hover:text-primary transition-colors"
       >
         Forgot your password?
       </button>
@@ -197,7 +220,6 @@ function SignUpForm({ onDone }: { onDone: (email: string) => void }) {
     if (status !== "available") return setError("Please choose an available username.");
     if (password.length < 8) return setError("Password must be at least 8 characters.");
     setBusy(true);
-    // Re-check right before sign-up to avoid races.
     if (!(await checkUsernameAvailable(normalized))) {
       setBusy(false);
       setStatus("taken");
@@ -213,7 +235,7 @@ function SignUpForm({ onDone }: { onDone: (email: string) => void }) {
     });
     setBusy(false);
     if (error) return setError(friendlyAuthError(error.message));
-    toast.success("Account created! Confirm your email to continue.");
+    toast.success("Account created! Check your email to continue.");
     onDone(email.trim());
   }
 
@@ -226,33 +248,43 @@ function SignUpForm({ onDone }: { onDone: (email: string) => void }) {
   }[status];
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form onSubmit={submit} className="space-y-3.5">
       <div>
-        <Label htmlFor="su-user">Username</Label>
-        <div className="relative mt-1.5">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">@</span>
+        <Label htmlFor="su-user" className="text-xs">
+          Username
+        </Label>
+        <div className="relative mt-1">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+            @
+          </span>
           <Input
             id="su-user"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="h-11 rounded-xl pl-7 pr-9"
+            className="h-10 rounded-lg pl-7 pr-9 text-xs border-border"
             autoComplete="username"
             required
             maxLength={20}
           />
           <span className="absolute right-3 top-1/2 -translate-y-1/2">
             {status === "checking" && (
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
             )}
-            {status === "available" && <Check className="h-4 w-4 text-success" />}
+            {status === "available" && <Check className="h-3.5 w-3.5 text-[#22C55E]" />}
             {(status === "taken" || status === "invalid") && (
-              <X className="h-4 w-4 text-destructive" />
+              <X className="h-3.5 w-3.5 text-destructive" />
             )}
           </span>
         </div>
         <p
           aria-live="polite"
-          className={`mt-1 text-xs ${status === "available" ? "text-success" : status === "taken" || status === "invalid" ? "text-destructive" : "text-muted-foreground"}`}
+          className={`mt-1 text-[0.7rem] ${
+            status === "available"
+              ? "text-[#22C55E]"
+              : status === "taken" || status === "invalid"
+                ? "text-destructive"
+                : "text-muted-foreground"
+          }`}
         >
           {hint}
         </p>
@@ -282,12 +314,17 @@ function SignUpForm({ onDone }: { onDone: (email: string) => void }) {
         autoComplete="new-password"
       />
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-xs text-destructive">
           {error}
         </p>
       )}
-      <Button type="submit" variant="rose" size="lg" className="w-full" disabled={busy}>
-        {busy && <Loader2 className="animate-spin" />} Create account · +100 🌹
+      <Button
+        type="submit"
+        size="lg"
+        className="w-full rounded-lg bg-[#E91E63] hover:bg-[#C2185B] text-white font-semibold text-xs h-10 shadow-sm"
+        disabled={busy}
+      >
+        {busy && <Loader2 className="animate-spin mr-1.5 h-3.5 w-3.5" />} Create account · +100 pts
       </Button>
     </form>
   );
@@ -313,9 +350,9 @@ function ForgotForm({ onBack }: { onBack: () => void }) {
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <h2 className="text-3xl font-semibold">Reset password</h2>
+      <h2 className="text-xl font-bold text-foreground">Reset password</h2>
       {sent ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           If an account exists for {email}, a reset link is on its way.
         </p>
       ) : (
@@ -329,19 +366,24 @@ function ForgotForm({ onBack }: { onBack: () => void }) {
             autoComplete="email"
           />
           {error && (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="text-xs text-destructive">
               {error}
             </p>
           )}
-          <Button type="submit" variant="rose" size="lg" className="w-full" disabled={busy}>
-            {busy && <Loader2 className="animate-spin" />} Send reset link
+          <Button
+            type="submit"
+            size="lg"
+            className="w-full rounded-lg bg-[#E91E63] hover:bg-[#C2185B] text-white font-semibold text-xs h-10 shadow-sm"
+            disabled={busy}
+          >
+            {busy && <Loader2 className="animate-spin mr-1.5 h-3.5 w-3.5" />} Send reset link
           </Button>
         </>
       )}
       <button
         type="button"
         onClick={onBack}
-        className="w-full text-center text-sm text-rose-soft hover:underline"
+        className="w-full text-center text-xs text-muted-foreground hover:text-primary transition-colors"
       >
         Back to sign in
       </button>
@@ -360,7 +402,9 @@ function Field(props: {
 }) {
   return (
     <div>
-      <Label htmlFor={props.id}>{props.label}</Label>
+      <Label htmlFor={props.id} className="text-xs">
+        {props.label}
+      </Label>
       <Input
         id={props.id}
         type={props.type ?? "text"}
@@ -368,7 +412,7 @@ function Field(props: {
         onChange={(e) => props.onChange(e.target.value)}
         autoComplete={props.autoComplete}
         required={props.required ?? true}
-        className="mt-1.5 h-11 rounded-xl"
+        className="mt-1 h-10 rounded-lg text-xs border-border"
       />
     </div>
   );

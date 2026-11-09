@@ -1,5 +1,5 @@
 import { useState, useRef, type ChangeEvent } from "react";
-import { Camera, Upload, X, Sparkles, Send, Loader2, Smile, Type } from "lucide-react";
+import { Camera, Upload, X, Loader2, Smile, Type } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -13,20 +13,7 @@ import { Input } from "@/components/ui/input";
 import { addStory } from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
 
-const STORY_STICKERS = ["🌹", "✨", "🌙", "🍷", "🖤", "🥀", "💖", "🔥"];
-
-const PRESET_STORIES = [
-  {
-    name: "Rose Greenhouse Sunrise",
-    url: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1080&auto=format&fit=crop&q=85",
-    type: "image" as const,
-  },
-  {
-    name: "Evening Bloom Atmosphere",
-    url: "https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=1080&auto=format&fit=crop&q=85",
-    type: "image" as const,
-  },
-];
+const STORY_STICKERS = ["✨", "🔥", "⚡", "🎯", "💡", "🙌", "🌿", "📷"];
 
 export function StoryComposerModal({
   open,
@@ -73,7 +60,7 @@ export function StoryComposerModal({
       return;
     }
     if (!me) {
-      toast.error("Please sign in to plant a story.");
+      toast.error("Please sign in to post a story.");
       return;
     }
 
@@ -92,8 +79,8 @@ export function StoryComposerModal({
       setMediaFile(null);
       setCaption("");
       setSelectedSticker(null);
-      toast.success("Story planted in the Rose Garden 🌹", {
-        description: "Visible for the next 24 hours to your circle.",
+      toast.success("Story posted successfully", {
+        description: "Visible for the next 24 hours to your followers.",
       });
       onStoryPublished?.();
       onOpenChange(false);
@@ -105,14 +92,14 @@ export function StoryComposerModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md glass border-border/80 p-5 max-h-[90vh] flex flex-col">
-        <DialogHeader className="border-b border-border/60 pb-3">
-          <DialogTitle className="font-display text-2xl flex items-center gap-2">
+      <DialogContent className="sm:max-w-md bg-card border-border p-5 max-h-[90vh] flex flex-col">
+        <DialogHeader className="border-b border-border pb-3">
+          <DialogTitle className="font-display text-lg font-bold flex items-center gap-2 text-foreground">
             <Camera className="h-5 w-5 text-primary" />
-            Plant a 24h Story 🌹
+            Post 24h Story
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Moments bloom for 24 hours, then gently fade.
+            Stories remain visible for 24 hours.
           </DialogDescription>
         </DialogHeader>
 
@@ -122,11 +109,11 @@ export function StoryComposerModal({
             <div className="space-y-3">
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="flex flex-col items-center justify-center p-8 rounded-3xl border-2 border-dashed border-border/80 hover:border-primary/60 bg-secondary/30 transition-colors cursor-pointer group text-center aspect-[9/14] max-h-72 w-full mx-auto"
+                className="flex flex-col items-center justify-center p-8 rounded-xl border-2 border-dashed border-border hover:border-[#E91E63] bg-secondary/50 transition-colors cursor-pointer group text-center aspect-[9/14] max-h-72 w-full mx-auto"
               >
-                <Upload className="h-10 w-10 text-primary mb-2 group-hover:scale-110 transition-transform" />
-                <p className="text-sm font-semibold text-foreground">Pick photo or clip</p>
-                <p className="text-xs text-muted-foreground mt-1">JPG, PNG, WebP or MP4</p>
+                <Upload className="h-8 w-8 text-[#E91E63] mb-2 group-hover:scale-105 transition-transform" />
+                <p className="text-xs font-semibold text-foreground">Select photo or clip</p>
+                <p className="text-[0.7rem] text-muted-foreground mt-0.5">JPG, PNG, WebP or MP4</p>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -135,38 +122,11 @@ export function StoryComposerModal({
                   onChange={handleFile}
                 />
               </div>
-
-              {/* Presets */}
-              <div className="rounded-2xl bg-secondary/40 p-3 border border-border/50">
-                <p className="text-xs font-semibold text-rose-soft mb-2 flex items-center gap-1">
-                  <Sparkles className="h-3 w-3 text-primary" /> Or try botanical photography:
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {PRESET_STORIES.map((preset) => (
-                    <button
-                      key={preset.name}
-                      type="button"
-                      onClick={() => {
-                        setMediaFile(null);
-                        setMediaUrl(preset.url);
-                        setMediaType(preset.type);
-                        setCaption(preset.name);
-                      }}
-                      className="rounded-xl overflow-hidden aspect-video relative group border border-transparent hover:border-primary"
-                    >
-                      <img src={preset.url} alt="" className="h-full w-full object-cover" />
-                      <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 flex items-center justify-center p-1 text-center">
-                        <span className="text-[0.65rem] text-white font-medium">{preset.name}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
           ) : (
             <div className="space-y-3">
               {/* Active Preview */}
-              <div className="relative aspect-[9/16] max-h-80 w-auto mx-auto rounded-3xl overflow-hidden bg-black shadow-xl border border-white/10">
+              <div className="relative aspect-[9/16] max-h-80 w-auto mx-auto rounded-xl overflow-hidden bg-black shadow-lg border border-border">
                 {mediaType === "video" ? (
                   <video
                     src={mediaUrl}
@@ -182,14 +142,14 @@ export function StoryComposerModal({
 
                 {/* Sticker badge */}
                 {selectedSticker && (
-                  <div className="absolute top-4 right-4 text-4xl animate-bounce drop-shadow-md">
+                  <div className="absolute top-4 right-4 text-3xl animate-bounce">
                     {selectedSticker}
                   </div>
                 )}
 
                 {/* Caption overlay */}
                 {caption && (
-                  <div className="absolute bottom-4 inset-x-4 p-2.5 rounded-xl bg-black/60 backdrop-blur-md text-white text-xs text-center">
+                  <div className="absolute bottom-4 inset-x-4 p-2.5 rounded-lg bg-black/70 backdrop-blur-sm text-white text-xs text-center font-medium">
                     {caption}
                   </div>
                 )}
@@ -201,7 +161,7 @@ export function StoryComposerModal({
                     setMediaUrl("");
                     setMediaFile(null);
                   }}
-                  className="absolute top-3 left-3 rounded-full bg-black/70 p-1.5 text-white hover:bg-destructive transition-colors"
+                  className="absolute top-3 left-3 rounded-lg bg-black/70 p-1.5 text-white hover:bg-destructive transition-colors"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -209,8 +169,8 @@ export function StoryComposerModal({
 
               {/* Decorative Stickers */}
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-rose-soft flex items-center gap-1">
-                  <Smile className="h-3.5 w-3.5" /> Decorative Rose Charm:
+                <label className="text-xs font-semibold text-foreground flex items-center gap-1">
+                  <Smile className="h-3.5 w-3.5 text-primary" /> Add Badge / Emoji:
                 </label>
                 <div className="flex items-center gap-2 overflow-x-auto py-1">
                   {STORY_STICKERS.map((sticker) => (
@@ -220,10 +180,10 @@ export function StoryComposerModal({
                       onClick={() =>
                         setSelectedSticker(selectedSticker === sticker ? null : sticker)
                       }
-                      className={`flex h-9 w-9 items-center justify-center rounded-full text-lg transition-transform ${
+                      className={`flex h-8 w-8 items-center justify-center rounded-lg text-base transition-colors ${
                         selectedSticker === sticker
-                          ? "bg-primary text-white scale-110 shadow-glow"
-                          : "bg-secondary/60 hover:scale-105"
+                          ? "bg-primary text-primary-foreground font-semibold"
+                          : "bg-secondary hover:bg-secondary/80 border border-border"
                       }`}
                     >
                       {sticker}
@@ -235,14 +195,14 @@ export function StoryComposerModal({
               {/* Caption text */}
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
-                  <Type className="h-3.5 w-3.5" /> Overlay Caption:
+                  <Type className="h-3.5 w-3.5" /> Caption:
                 </label>
                 <Input
                   value={caption}
                   onChange={(e) => setCaption(e.target.value)}
-                  placeholder="Add a fleeting thought... 🌹"
+                  placeholder="Add a caption..."
                   maxLength={100}
-                  className="h-9 rounded-xl bg-secondary/50 text-xs"
+                  className="h-9 rounded-lg bg-secondary text-xs border-border"
                 />
               </div>
             </div>
@@ -250,30 +210,29 @@ export function StoryComposerModal({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 pt-3 border-t border-border/60">
+        <div className="flex justify-end gap-2 pt-3 border-t border-border">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={() => onOpenChange(false)}
-            className="rounded-xl text-xs"
+            className="rounded-lg text-xs"
           >
             Cancel
           </Button>
           <Button
             type="button"
-            variant="rose"
             size="sm"
             disabled={!mediaUrl || isSubmitting}
             onClick={handlePublish}
-            className="rounded-xl text-xs font-semibold shadow-glow px-5"
+            className="rounded-lg text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white px-4 shadow-sm"
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Planting...
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Publishing...
               </>
             ) : (
-              "Plant Story 🌹"
+              "Publish Story"
             )}
           </Button>
         </div>

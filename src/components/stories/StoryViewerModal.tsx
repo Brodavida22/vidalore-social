@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
-import { X, Send, Heart, Sparkles, Flame, ThumbsUp, Pause, Play } from "lucide-react";
+import { X, Send } from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,7 @@ import { markStorySeen, type UserStoryGroup, type StoryItem } from "@/services/r
 import type { Profile } from "@/services/profiles";
 
 const STORY_DURATION_MS = 5000;
-const QUICK_REACTIONS = ["🌹", "❤️", "🔥", "✨", "👏", "🍷"];
+const QUICK_REACTIONS = ["👍", "❤️", "🔥", "👏", "💡", "🙌"];
 
 export function StoryViewerModal({
   storyGroups,
@@ -32,14 +32,12 @@ export function StoryViewerModal({
   const currentGroup = storyGroups[groupIndex];
   const currentStory: StoryItem | undefined = currentGroup?.stories[storyIndex];
 
-  // Reset when groupIndex changes
   useEffect(() => {
     setGroupIndex(initialGroupIndex);
     setStoryIndex(0);
     setProgress(0);
   }, [initialGroupIndex, open]);
 
-  // Mark current story as seen
   useEffect(() => {
     if (currentStory && me) {
       void markStorySeen(currentStory.id, me.id).catch((error) =>
@@ -75,11 +73,10 @@ export function StoryViewerModal({
     }
   }, [storyIndex, groupIndex, storyGroups]);
 
-  // Timer loop for active story progress
   useEffect(() => {
     if (!open || isPaused || !currentStory) return;
 
-    const interval = 50; // ms
+    const interval = 50;
     const step = (interval / STORY_DURATION_MS) * 100;
 
     const timer = setInterval(() => {
@@ -97,7 +94,7 @@ export function StoryViewerModal({
 
   function handleSendReply() {
     if (!replyText.trim()) return;
-    toast.success(`Reply sent to @${currentGroup?.username} 🌹`);
+    toast.success(`Reply sent to @${currentGroup?.username}`);
     setReplyText("");
   }
 
@@ -113,13 +110,13 @@ export function StoryViewerModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md select-none animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md select-none animate-fade-in"
       onMouseDown={() => setIsPaused(true)}
       onMouseUp={() => setIsPaused(false)}
       onTouchStart={() => setIsPaused(true)}
       onTouchEnd={() => setIsPaused(false)}
     >
-      <div className="relative h-full w-full max-w-sm sm:max-h-[92vh] sm:rounded-3xl overflow-hidden bg-black flex flex-col justify-between shadow-2xl border border-border/40">
+      <div className="relative h-full w-full max-w-sm sm:max-h-[92vh] sm:rounded-2xl overflow-hidden bg-black flex flex-col justify-between shadow-2xl border border-white/10">
         {/* Media Background */}
         <div className="absolute inset-0 z-0">
           {currentStory.mediaType === "video" ? (
@@ -137,7 +134,7 @@ export function StoryViewerModal({
           <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-transparent to-black/80 pointer-events-none" />
         </div>
 
-        {/* Tap navigation zones: left 40% prev, right 60% next */}
+        {/* Tap navigation zones */}
         <div
           onClick={(e) => {
             e.stopPropagation();
@@ -153,17 +150,17 @@ export function StoryViewerModal({
           className="absolute inset-y-16 right-0 w-3/5 z-10 cursor-pointer"
         />
 
-        {/* Top Header & Segmented Progress Bar */}
+        {/* Top Header & Progress Bar */}
         <div className="relative z-20 p-4 space-y-3 pointer-events-auto">
           {/* Progress Bars */}
-          <div className="flex gap-1.5 items-center">
+          <div className="flex gap-1 items-center">
             {currentGroup.stories.map((s, idx) => {
               const isPast = idx < storyIndex;
               const isCurrent = idx === storyIndex;
               return (
-                <div key={s.id} className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden">
+                <div key={s.id} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-rose transition-all duration-75"
+                    className="h-full bg-primary transition-all duration-75"
                     style={{
                       width: isPast ? "100%" : isCurrent ? `${progress}%` : "0%",
                     }}
@@ -187,13 +184,13 @@ export function StoryViewerModal({
                   username: currentGroup.username,
                   display_name: currentGroup.displayName,
                 }}
-                className="h-9 w-9 text-xs ring-2 ring-primary"
+                className="h-8 w-8 text-xs ring-1 ring-white/50"
               />
               <div>
-                <p className="text-xs font-bold text-white group-hover:text-rose-soft transition-colors truncate max-w-[140px]">
+                <p className="text-xs font-semibold text-white group-hover:text-primary transition-colors truncate max-w-[140px]">
                   {currentGroup.displayName}
                 </p>
-                <p className="text-[0.65rem] text-white/80">
+                <p className="text-[0.65rem] text-white/70">
                   @{currentGroup.username} · {timeAgo}
                 </p>
               </div>
@@ -202,31 +199,31 @@ export function StoryViewerModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full bg-black/40 p-2 text-white hover:bg-black/60 transition-colors"
+              className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
               aria-label="Close stories"
             >
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        {/* Story Caption / Sticker Center */}
+        {/* Story Caption */}
         {currentStory.caption && (
-          <div className="relative z-20 mx-4 my-auto p-3.5 rounded-2xl bg-black/50 backdrop-blur-md text-white text-sm text-center drop-shadow-md border border-white/10 pointer-events-none">
+          <div className="relative z-20 mx-4 my-auto p-3 rounded-xl bg-black/60 backdrop-blur-md text-white text-xs text-center font-medium border border-white/10 pointer-events-none">
             {currentStory.caption}
           </div>
         )}
 
         {/* Bottom Reaction & Reply Bar */}
-        <div className="relative z-20 p-4 space-y-3 pointer-events-auto">
+        <div className="relative z-20 p-4 space-y-2.5 pointer-events-auto">
           {/* Fast Emoji Reactions */}
-          <div className="flex items-center justify-center gap-3">
+          <div className="flex items-center justify-center gap-2">
             {QUICK_REACTIONS.map((emoji) => (
               <button
                 key={emoji}
                 type="button"
                 onClick={() => handleQuickReaction(emoji)}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-black/50 text-lg hover:scale-125 transition-transform"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-sm hover:scale-115 transition-transform"
               >
                 {emoji}
               </button>
@@ -242,13 +239,13 @@ export function StoryViewerModal({
                 if (e.key === "Enter") handleSendReply();
               }}
               placeholder={`Reply to ${currentGroup.displayName}...`}
-              className="h-10 rounded-full bg-black/60 border-white/20 text-white placeholder:text-white/60 text-xs focus-visible:ring-primary"
+              className="h-9 rounded-lg bg-black/60 border-white/20 text-white placeholder:text-white/50 text-xs focus-visible:ring-primary"
             />
             <button
               type="button"
               onClick={handleSendReply}
               disabled={!replyText.trim()}
-              className="rounded-full bg-gradient-rose p-2.5 text-white disabled:opacity-40 shadow-glow"
+              className="rounded-lg bg-[#E91E63] hover:bg-[#C2185B] p-2 text-white disabled:opacity-40 transition-colors"
               aria-label="Send reply"
             >
               <Send className="h-4 w-4" />

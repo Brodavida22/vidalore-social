@@ -10,14 +10,13 @@ import {
   Flag,
   Trash2,
   MapPin,
-  Sparkles,
   Volume2,
   VolumeX,
   Play,
   Pause,
   UserX,
   Copy,
-  Check,
+  BadgeCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -65,7 +64,7 @@ export function PostCard({
 
   function handleReaction() {
     setHeartBurst(true);
-    setTimeout(() => setHeartBurst(false), 600);
+    setTimeout(() => setHeartBurst(false), 400);
     const updated = togglePostReaction(post.id);
     if (updated) {
       setPost({ ...updated });
@@ -80,14 +79,12 @@ export function PostCard({
       hasSaved: isSaved,
       savesCount: Math.max(0, prev.savesCount + (isSaved ? 1 : -1)),
     }));
-    toast(isSaved ? "Saved to your private collection 🌹" : "Removed from saved posts", {
-      description: isSaved ? "Find it anytime on your profile or Saved tab." : undefined,
-    });
+    toast(isSaved ? "Saved to your bookmarks" : "Removed from bookmarks");
   }
 
   function handleDelete() {
     deletePost(post.id);
-    toast.info("Post removed from the Rose Garden");
+    toast.info("Post deleted");
     onDeleted?.(post.id);
   }
 
@@ -105,17 +102,16 @@ export function PostCard({
     toast.success("Post link copied");
   }
 
-  // Format timestamp
   const timeFormatted = formatTimeAgo(new Date(post.createdAt));
 
   return (
-    <article className="glass relative rounded-3xl p-4 sm:p-5 shadow-card border border-border/80 transition-all hover:border-primary/25">
+    <article className="relative rounded-xl p-4 sm:p-5 border border-border bg-card shadow-sm transition-colors">
       {/* Repost Header Attribution */}
       {post.isRepost && (
-        <div className="mb-3 flex items-center gap-2 rounded-xl bg-secondary/40 px-3 py-1.5 text-xs text-rose-soft">
-          <Repeat className="h-3.5 w-3.5 text-primary" />
+        <div className="mb-3 flex items-center gap-2 rounded-lg bg-secondary px-3 py-1.5 text-xs text-muted-foreground font-medium">
+          <Repeat className="h-3.5 w-3.5 text-[#E91E63]" />
           <span>
-            <strong>{post.authorName}</strong> echoed
+            <strong className="text-foreground">{post.authorName}</strong> reposted
             {post.originalAuthor ? ` from @${post.originalAuthor.username}` : ""}
           </span>
         </div>
@@ -134,18 +130,14 @@ export function PostCard({
               username: post.authorUsername,
               display_name: post.authorName,
             }}
-            className="h-10 w-10 sm:h-11 sm:w-11 ring-2 ring-primary/40 group-hover:ring-primary transition-all shrink-0"
+            className="h-10 w-10 ring-1 ring-border group-hover:ring-[#E91E63] transition-all shrink-0"
           />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-sm font-semibold text-foreground group-hover:text-rose-soft transition-colors truncate">
+              <span className="text-sm font-semibold text-foreground group-hover:text-[#E91E63] transition-colors truncate">
                 {post.authorName}
               </span>
-              {post.authorVerified && (
-                <span title="Verified Gardener" className="text-primary text-xs">
-                  🌹
-                </span>
-              )}
+              {post.authorVerified && <BadgeCheck className="h-4 w-4 text-[#E91E63] shrink-0" />}
               <span className="text-xs text-muted-foreground">@{post.authorUsername}</span>
             </div>
             <div className="flex items-center gap-2 text-[0.7rem] text-muted-foreground">
@@ -167,12 +159,12 @@ export function PostCard({
               variant="ghost"
               size="icon"
               aria-label="Post options"
-              className="h-8 w-8 rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
+              className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
             >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 glass border-border/80">
+          <DropdownMenuContent align="end" className="w-48 bg-popover border-border">
             <DropdownMenuItem onClick={handleCopy} className="text-xs cursor-pointer">
               <Copy className="h-3.5 w-3.5 mr-2" /> Copy link
             </DropdownMenuItem>
@@ -213,7 +205,7 @@ export function PostCard({
 
       {/* Content Body */}
       {post.content && (
-        <p className="mt-3 text-sm text-foreground/95 leading-relaxed whitespace-pre-line">
+        <p className="mt-3 text-sm text-foreground leading-relaxed whitespace-pre-line">
           {renderStyledText(post.content)}
         </p>
       )}
@@ -224,7 +216,7 @@ export function PostCard({
           {post.tags.map((tag) => (
             <span
               key={tag}
-              className="text-xs font-medium text-rose-soft/90 hover:text-primary transition-colors cursor-pointer"
+              className="text-xs font-medium text-[#E91E63] hover:underline transition-colors cursor-pointer"
             >
               #{tag}
             </span>
@@ -234,7 +226,7 @@ export function PostCard({
 
       {/* Media Presentation */}
       {post.media && post.media.length > 0 && (
-        <div className="mt-3.5 overflow-hidden rounded-2xl border border-border/60 bg-black/30">
+        <div className="mt-3.5 overflow-hidden rounded-xl border border-border bg-black/5 dark:bg-black/40">
           {post.media.length === 1 ? (
             post.media[0]!.type === "video" ? (
               <div className="relative aspect-video w-full bg-black">
@@ -250,7 +242,7 @@ export function PostCard({
                   <button
                     type="button"
                     onClick={() => setIsPlayingVideo(!isPlayingVideo)}
-                    className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md hover:scale-110 transition-transform"
+                    className="flex h-11 w-11 items-center justify-center rounded-full bg-black/70 text-white backdrop-blur-sm hover:scale-105 transition-transform"
                     aria-label={isPlayingVideo ? "Pause video" : "Play video"}
                   >
                     {isPlayingVideo ? (
@@ -263,7 +255,7 @@ export function PostCard({
                 <button
                   type="button"
                   onClick={() => setIsMuted(!isMuted)}
-                  className="absolute bottom-3 right-3 rounded-full bg-black/60 p-2 text-white hover:bg-black/80"
+                  className="absolute bottom-3 right-3 rounded-lg bg-black/60 p-2 text-white hover:bg-black/80"
                   aria-label={isMuted ? "Unmute" : "Mute"}
                 >
                   {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
@@ -279,7 +271,7 @@ export function PostCard({
                   src={post.media[0]!.url}
                   alt={post.media[0]!.caption || "Post photo"}
                   loading="lazy"
-                  className="w-full max-h-[460px] object-cover hover:scale-[1.01] transition-transform duration-300"
+                  className="w-full max-h-[460px] object-cover hover:opacity-95 transition-opacity"
                 />
               </button>
             )
@@ -296,7 +288,7 @@ export function PostCard({
                     src={m.url}
                     alt=""
                     loading="lazy"
-                    className="h-full w-full object-cover hover:scale-105 transition-transform"
+                    className="h-full w-full object-cover hover:opacity-95 transition-opacity"
                   />
                 </button>
               ))}
@@ -312,7 +304,7 @@ export function PostCard({
                   src={post.media[0]!.url}
                   alt=""
                   loading="lazy"
-                  className="h-full w-full object-cover hover:scale-105 transition-transform"
+                  className="h-full w-full object-cover hover:opacity-95 transition-opacity"
                 />
               </button>
               <div className="grid grid-rows-2 gap-1 h-full">
@@ -327,7 +319,7 @@ export function PostCard({
                       src={m.url}
                       alt=""
                       loading="lazy"
-                      className="h-full w-full object-cover hover:scale-105 transition-transform"
+                      className="h-full w-full object-cover hover:opacity-95 transition-opacity"
                     />
                   </button>
                 ))}
@@ -346,11 +338,11 @@ export function PostCard({
                       src={m.url}
                       alt=""
                       loading="lazy"
-                      className="h-full w-full object-cover hover:scale-105 transition-transform"
+                      className="h-full w-full object-cover hover:opacity-95 transition-opacity"
                     />
                   </button>
                   {idx === 3 && post.media!.length > 4 && (
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/60 font-display text-2xl font-bold text-white">
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/60 font-semibold text-xl text-white">
                       +{post.media!.length - 4}
                     </div>
                   )}
@@ -361,34 +353,32 @@ export function PostCard({
         </div>
       )}
 
-      {/* Action Bar */}
-      <div className="mt-4 flex items-center justify-between border-t border-border/60 pt-3">
-        {/* Rose Reaction */}
+      {/* Action Bar (Real SVG Icons with Pink Like State) */}
+      <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+        {/* Like Reaction */}
         <button
           type="button"
           onClick={handleReaction}
-          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
+          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
             post.hasReacted
-              ? "bg-primary/20 text-primary shadow-glow"
+              ? "text-[#E91E63] bg-[#E91E63]/10"
               : "text-muted-foreground hover:bg-secondary hover:text-foreground"
           }`}
-          aria-label={post.hasReacted ? "Unlike post" : "Rose react to post"}
+          aria-label={post.hasReacted ? "Unlike post" : "Like post"}
         >
-          <span
-            className={`text-base leading-none transition-transform ${
-              heartBurst ? "scale-150 animate-bounce" : ""
-            } ${post.hasReacted ? "filter drop-shadow-[0_0_8px_var(--color-primary)]" : "opacity-75"}`}
-          >
-            🌹
-          </span>
-          <span>{post.reactionsCount > 0 ? post.reactionsCount : "Rose"}</span>
+          <Heart
+            className={`h-4 w-4 transition-transform ${
+              heartBurst ? "scale-125" : ""
+            } ${post.hasReacted ? "fill-[#E91E63] text-[#E91E63]" : ""}`}
+          />
+          <span>{post.reactionsCount > 0 ? post.reactionsCount : "Like"}</span>
         </button>
 
         {/* Comments Button */}
         <button
           type="button"
           onClick={() => setShowComments(!showComments)}
-          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
             showComments
               ? "bg-secondary text-foreground"
               : "text-muted-foreground hover:bg-secondary hover:text-foreground"
@@ -402,24 +392,24 @@ export function PostCard({
         <button
           type="button"
           onClick={() => setShareOpen(true)}
-          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-all"
+          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
         >
           <Repeat className="h-4 w-4" />
-          <span>{post.sharesCount > 0 ? post.sharesCount : "Echo"}</span>
+          <span>{post.sharesCount > 0 ? post.sharesCount : "Share"}</span>
         </button>
 
         {/* Bookmark / Save */}
         <button
           type="button"
           onClick={handleSave}
-          className={`rounded-full p-2 text-xs transition-all ${
+          className={`rounded-lg p-2 text-xs transition-colors ${
             post.hasSaved
-              ? "text-primary hover:text-primary-deep"
+              ? "text-[#E91E63] hover:text-[#C2185B]"
               : "text-muted-foreground hover:bg-secondary hover:text-foreground"
           }`}
           aria-label={post.hasSaved ? "Unsave post" : "Save post"}
         >
-          <Bookmark className={`h-4 w-4 ${post.hasSaved ? "fill-primary" : ""}`} />
+          <Bookmark className={`h-4 w-4 ${post.hasSaved ? "fill-[#E91E63] text-[#E91E63]" : ""}`} />
         </button>
       </div>
 
@@ -465,7 +455,7 @@ export function PostCard({
           <button
             type="button"
             onClick={() => setActivePhotoModal(null)}
-            className="absolute top-4 right-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20 transition-colors"
+            className="absolute top-4 right-4 rounded-lg bg-white/10 p-2 text-white hover:bg-white/20 transition-colors"
             aria-label="Close photo"
           >
             ✕
@@ -473,7 +463,7 @@ export function PostCard({
           <img
             src={activePhotoModal}
             alt=""
-            className="max-h-[85vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl"
+            className="max-h-[85vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
@@ -487,7 +477,7 @@ function renderStyledText(text: string) {
   return parts.map((part, index) => {
     if (part.startsWith("#")) {
       return (
-        <span key={index} className="text-rose-soft font-medium cursor-pointer hover:underline">
+        <span key={index} className="text-[#E91E63] font-medium cursor-pointer hover:underline">
           {part}
         </span>
       );
@@ -498,7 +488,7 @@ function renderStyledText(text: string) {
           key={index}
           to="/u/$username"
           params={{ username: part.slice(1) }}
-          className="text-primary font-semibold hover:underline"
+          className="text-[#E91E63] font-semibold hover:underline"
         >
           {part}
         </Link>

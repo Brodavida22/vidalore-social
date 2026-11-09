@@ -5,7 +5,6 @@ import {
   Compass,
   Home,
   LogOut,
-  PlusSquare,
   Clapperboard,
   User,
   Sparkles,
@@ -28,14 +27,6 @@ import { NotificationsModal } from "@/components/social/NotificationsModal";
 import { FriendsModal } from "@/components/social/FriendsModal";
 import { SavedPostsModal } from "@/components/social/SavedPostsModal";
 import { Button } from "@/components/ui/button";
-
-const navItems = [
-  { to: "/home", label: "Home", icon: Home },
-  { to: "/explore", label: "Explore", icon: Compass },
-  { to: "/messages", label: "Messages", icon: MessageSquare },
-  { to: "/create", label: "Create", icon: PlusSquare },
-  { to: "/reels", label: "Reels", icon: Clapperboard },
-] as const;
 
 export function AppShell() {
   const { data: me } = useQuery(myProfileQuery());
@@ -76,30 +67,28 @@ export function AppShell() {
   }
 
   const linkCls =
-    "flex items-center gap-3 rounded-2xl px-4 py-2.5 text-sm font-medium text-muted-foreground transition-all hover:bg-secondary hover:text-foreground";
+    "flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground";
 
   const activeCls = {
-    className: "bg-secondary text-foreground [&_svg]:text-primary font-semibold shadow-sm",
+    className: "bg-secondary text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold",
   };
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
       {/* DESKTOP SIDEBAR */}
-
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border/80 bg-sidebar p-5 md:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-sidebar p-5 md:flex">
         <Link to="/home" className="transition-opacity hover:opacity-95">
-          <Logo />
+          <Logo size="md" />
         </Link>
 
         <div className="mt-6">
           <Button
             asChild
-            variant="rose"
-            className="flex w-full items-center justify-center gap-2 rounded-2xl py-5 text-sm font-semibold shadow-glow"
+            className="flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white shadow-sm"
           >
             <Link to="/create">
-              <Plus className="h-4 w-4" />
-              Plant a Moment 🌹
+              <Plus className="h-4 w-4 stroke-[2.5]" />
+              New Post
             </Link>
           </Button>
         </div>
@@ -115,19 +104,23 @@ export function AppShell() {
             Explore
           </Link>
 
-          {/* MESSAGES */}
-
+          {/* MESSAGES / INBOX */}
           <Link to="/messages" className={linkCls} activeProps={activeCls}>
             <MessageSquare className="h-5 w-5" />
-            Messages
+            Inbox
+          </Link>
+
+          {/* REELS */}
+          <Link to="/reels" className={linkCls} activeProps={activeCls}>
+            <Clapperboard className="h-5 w-5" />
+            Reels
           </Link>
 
           {/* NOTIFICATIONS */}
-
           <button
             type="button"
             onClick={() => setNotificationsOpen(true)}
-            className="flex items-center justify-between rounded-2xl px-4 py-2.5 text-left text-sm font-medium text-muted-foreground transition-all hover:bg-secondary hover:text-foreground"
+            className="flex items-center justify-between rounded-lg px-3.5 py-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
             <span className="flex items-center gap-3">
               <Bell className="h-5 w-5" />
@@ -135,50 +128,43 @@ export function AppShell() {
             </span>
 
             {unreadNotifs > 0 && (
-              <span className="rounded-full bg-primary px-2 py-0.5 text-[0.7rem] font-bold text-primary-foreground shadow-glow">
+              <span className="rounded-full bg-[#E91E63] px-2 py-0.5 text-[0.7rem] font-bold text-white">
                 {unreadNotifs}
               </span>
             )}
           </button>
 
-          {/* FRIENDS */}
-
+          {/* FRIENDS / NETWORK */}
           <button
             type="button"
             onClick={() => setFriendsOpen(true)}
-            className="flex items-center justify-between rounded-2xl px-4 py-2.5 text-left text-sm font-medium text-muted-foreground transition-all hover:bg-secondary hover:text-foreground"
+            className="flex items-center justify-between rounded-lg px-3.5 py-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
             <span className="flex items-center gap-3">
               <Users className="h-5 w-5" />
-              Garden Circle
+              Network
             </span>
 
             {pendingRequests > 0 && (
-              <span className="rounded-full bg-rose-soft/20 px-2 py-0.5 text-[0.7rem] font-bold text-rose-soft">
+              <span className="rounded-full bg-[#E91E63]/15 px-2 py-0.5 text-[0.7rem] font-bold text-[#E91E63]">
                 {pendingRequests} new
               </span>
             )}
           </button>
 
           {/* SAVED POSTS */}
-
           <button
             type="button"
             onClick={() => setSavedOpen(true)}
-            className="flex items-center gap-3 rounded-2xl px-4 py-2.5 text-left text-sm font-medium text-muted-foreground transition-all hover:bg-secondary hover:text-foreground"
+            className="flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
             <Bookmark className="h-5 w-5" />
-            Saved Moments
+            Saved Posts
           </button>
 
-          <Link to="/reels" className={linkCls} activeProps={activeCls}>
-            <Clapperboard className="h-5 w-5" />
-            Reels
-          </Link>
-
           <Link to="/points" className={linkCls} activeProps={activeCls}>
-            <Sparkles className="h-5 w-5 text-rose-soft" />
-            VIDA POINTS
+            <Sparkles className="h-5 w-5 text-[#E91E63]" />
+            Points
           </Link>
 
           {me && (
@@ -200,22 +186,22 @@ export function AppShell() {
         </nav>
 
         {/* PROFILE FOOTER */}
-
         {me && (
-          <div className="glass mt-auto flex items-center gap-3 rounded-2xl border border-border/70 p-3">
+          <div className="mt-auto flex items-center gap-3 rounded-lg border border-border bg-card p-3 shadow-sm">
             <Link to="/u/$username" params={{ username: me.username }}>
-              <UserAvatar profile={me} className="h-10 w-10 shrink-0 ring-2 ring-primary/40" />
+              <UserAvatar profile={me} className="h-9 w-9 shrink-0 ring-1 ring-border" />
             </Link>
 
             <div className="min-w-0 flex-1">
               <Link to="/u/$username" params={{ username: me.username }}>
-                <p className="truncate text-xs font-semibold text-foreground hover:text-rose-soft">
+                <p className="truncate text-xs font-semibold text-foreground hover:text-[#E91E63] transition-colors">
                   {me.display_name || me.username}
                 </p>
               </Link>
 
-              <p className="text-[0.65rem] font-medium text-rose-soft">
-                🌹 {me.points_balance} pts
+              <p className="flex items-center gap-1 text-[0.7rem] font-medium text-muted-foreground">
+                <Sparkles className="h-3 w-3 text-[#E91E63]" />
+                <span>{me.points_balance} pts</span>
               </p>
             </div>
 
@@ -223,7 +209,7 @@ export function AppShell() {
               onClick={signOut}
               aria-label="Sign out"
               title="Sign out"
-              className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               <LogOut className="h-4 w-4" />
             </button>
@@ -232,50 +218,56 @@ export function AppShell() {
       </aside>
 
       {/* MOBILE TOP HEADER */}
-
-      <header className="glass sticky top-0 z-30 flex items-center justify-between border-x-0 border-t-0 px-4 py-2.5 md:hidden">
-        <Link to="/home">
-          <Logo />
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur-md md:hidden">
+        <Link to="/home" className="flex items-center">
+          <Logo size="sm" />
         </Link>
 
         <div className="flex items-center gap-1.5">
+          <Link
+            to="/create"
+            className="rounded-lg p-2 text-muted-foreground hover:text-[#E91E63] hover:bg-secondary transition-colors"
+            aria-label="Create Post"
+          >
+            <Plus className="h-5 w-5" />
+          </Link>
+
           <button
             type="button"
             onClick={() => setNotificationsOpen(true)}
-            className="relative rounded-full p-2 text-muted-foreground hover:text-foreground"
+            className="relative rounded-lg p-2 text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Notifications"
           >
             <Bell className="h-5 w-5" />
-
             {unreadNotifs > 0 && (
-              <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-primary shadow-glow ring-2 ring-background" />
+              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#E91E63] ring-2 ring-background" />
             )}
           </button>
 
           <button
             type="button"
             onClick={() => setFriendsOpen(true)}
-            className="relative rounded-full p-2 text-muted-foreground hover:text-foreground"
-            aria-label="Friends and Circle"
+            className="relative rounded-lg p-2 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Network"
           >
             <Users className="h-5 w-5" />
-
             {pendingRequests > 0 && (
-              <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-rose-soft ring-2 ring-background" />
+              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#E91E63] ring-2 ring-background" />
             )}
           </button>
 
           <Link
             to="/points"
-            className="glass flex items-center gap-1 rounded-full border border-primary/30 px-2.5 py-1 text-xs font-semibold text-rose-soft"
+            className="flex items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:border-[#E91E63]/40 transition-colors"
           >
-            🌹 {me?.points_balance ?? "—"}
+            <Sparkles className="h-3 w-3 text-[#E91E63]" />
+            <span>{me?.points_balance ?? "—"}</span>
           </Link>
 
           <button
             type="button"
             onClick={() => setMobileMenuOpen(true)}
-            className="rounded-full p-2 text-muted-foreground hover:text-foreground"
+            className="rounded-lg p-2 text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Open navigation menu"
           >
             <Menu className="h-5 w-5" />
@@ -284,25 +276,23 @@ export function AppShell() {
       </header>
 
       {/* MOBILE SLIDE-OUT MENU */}
-
       {mobileMenuOpen && (
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex animate-fade-in bg-black/80 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-50 flex animate-fade-in bg-black/70 backdrop-blur-sm md:hidden"
           onClick={() => setMobileMenuOpen(false)}
         >
           <div
-            className="flex h-full w-4/5 max-w-xs flex-col space-y-4 border-r border-border bg-sidebar p-5"
+            className="flex h-full w-4/5 max-w-xs flex-col space-y-4 border-r border-border bg-background p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-border/60 pb-3">
-              <Logo />
-
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <Logo size="sm" />
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(false)}
-                className="rounded-full p-1.5 text-muted-foreground hover:text-foreground"
+                className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground"
                 aria-label="Close menu"
               >
                 <X className="h-5 w-5" />
@@ -310,14 +300,13 @@ export function AppShell() {
             </div>
 
             {me && (
-              <div className="glass flex items-center gap-3 rounded-2xl p-3">
-                <UserAvatar profile={me} className="h-10 w-10 shrink-0 ring-2 ring-primary/40" />
-
+              <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
+                <UserAvatar profile={me} className="h-9 w-9 shrink-0 ring-1 ring-border" />
                 <div className="min-w-0">
                   <p className="truncate text-xs font-semibold">{me.display_name || me.username}</p>
-
-                  <p className="text-[0.65rem] text-rose-soft">
-                    🌹 {me.points_balance} VIDA POINTS
+                  <p className="flex items-center gap-1 text-[0.7rem] text-muted-foreground">
+                    <Sparkles className="h-3 w-3 text-[#E91E63]" />
+                    <span>{me.points_balance} pts</span>
                   </p>
                 </div>
               </div>
@@ -327,30 +316,37 @@ export function AppShell() {
               <Link
                 to="/home"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground hover:bg-secondary"
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
               >
-                <Home className="h-4 w-4 text-primary" />
+                <Home className="h-4 w-4 text-[#E91E63]" />
                 Home
               </Link>
 
               <Link
                 to="/explore"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground hover:bg-secondary"
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
               >
                 <Compass className="h-4 w-4" />
                 Explore
               </Link>
 
-              {/* MESSAGES */}
-
               <Link
                 to="/messages"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-xl bg-primary/10 px-3 py-2.5 text-sm font-medium text-foreground hover:bg-secondary"
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
               >
-                <MessageSquare className="h-4 w-4 text-primary" />
-                Messages
+                <MessageSquare className="h-4 w-4 text-[#E91E63]" />
+                Inbox
+              </Link>
+
+              <Link
+                to="/reels"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
+              >
+                <Clapperboard className="h-4 w-4" />
+                Reels
               </Link>
 
               <button
@@ -359,15 +355,14 @@ export function AppShell() {
                   setMobileMenuOpen(false);
                   setNotificationsOpen(true);
                 }}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-foreground hover:bg-secondary"
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-secondary"
               >
                 <span className="flex items-center gap-3">
                   <Bell className="h-4 w-4" />
                   Notifications
                 </span>
-
                 {unreadNotifs > 0 && (
-                  <span className="rounded-full bg-primary px-2 py-0.5 text-xs text-white">
+                  <span className="rounded-full bg-[#E91E63] px-2 py-0.5 text-xs text-white">
                     {unreadNotifs}
                   </span>
                 )}
@@ -379,15 +374,14 @@ export function AppShell() {
                   setMobileMenuOpen(false);
                   setFriendsOpen(true);
                 }}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-foreground hover:bg-secondary"
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-secondary"
               >
                 <span className="flex items-center gap-3">
                   <Users className="h-4 w-4" />
-                  Garden Circle
+                  Network
                 </span>
-
                 {pendingRequests > 0 && (
-                  <span className="rounded-full bg-rose-soft/20 px-2 py-0.5 text-xs text-rose-soft">
+                  <span className="rounded-full bg-[#E91E63]/15 px-2 py-0.5 text-xs text-[#E91E63]">
                     {pendingRequests}
                   </span>
                 )}
@@ -399,28 +393,19 @@ export function AppShell() {
                   setMobileMenuOpen(false);
                   setSavedOpen(true);
                 }}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-foreground hover:bg-secondary"
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-secondary"
               >
                 <Bookmark className="h-4 w-4" />
-                Saved Moments
+                Saved Posts
               </button>
-
-              <Link
-                to="/reels"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground hover:bg-secondary"
-              >
-                <Clapperboard className="h-4 w-4" />
-                Reels
-              </Link>
 
               <Link
                 to="/points"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground hover:bg-secondary"
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
               >
-                <Sparkles className="h-4 w-4 text-rose-soft" />
-                VIDA POINTS
+                <Sparkles className="h-4 w-4 text-[#E91E63]" />
+                Points
               </Link>
 
               {me && (
@@ -428,17 +413,17 @@ export function AppShell() {
                   to="/u/$username"
                   params={{ username: me.username }}
                   onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground hover:bg-secondary"
+                  className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
                 >
                   <User className="h-4 w-4" />
-                  My Profile
+                  Profile
                 </Link>
               )}
 
               <Link
                 to="/settings/profile"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground hover:bg-secondary"
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
               >
                 <Settings className="h-4 w-4" />
                 Settings
@@ -448,7 +433,7 @@ export function AppShell() {
             <button
               type="button"
               onClick={signOut}
-              className="flex items-center gap-3 rounded-xl p-3 text-sm text-destructive hover:bg-destructive/10"
+              className="flex items-center gap-3 rounded-lg p-2.5 text-sm text-destructive hover:bg-destructive/10"
             >
               <LogOut className="h-4 w-4" />
               Sign out
@@ -457,80 +442,76 @@ export function AppShell() {
         </div>
       )}
 
-      {/* MAIN CONTENT */}
-
-      <main className="pb-24 md:ml-64 md:pb-8">
+      {/* MAIN CONTENT AREA */}
+      <main className="pb-20 md:ml-64 md:pb-8">
         <Outlet />
       </main>
 
-      {/* MOBILE BOTTOM NAVIGATION */}
-
+      {/* MOBILE BOTTOM NAVIGATION (5 Destinations: Home, Explore, Reels, Inbox, Profile) */}
       <nav
-        aria-label="Main"
-        className="glass fixed inset-x-2 bottom-3 z-30 grid grid-cols-6 rounded-3xl border border-border/80 px-1 py-1.5 shadow-2xl backdrop-blur-xl md:hidden"
+        aria-label="Mobile Navigation"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 items-center border-t border-border bg-background/95 px-2 py-1.5 backdrop-blur-lg md:hidden"
       >
+        {/* 1. Home */}
         <Link
           to="/home"
-          className="flex flex-col items-center justify-center gap-0.5 rounded-2xl py-1.5 text-[0.6rem] text-muted-foreground transition-colors"
-          activeProps={{ className: "text-primary font-semibold" }}
+          className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
+          activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
         >
           <Home className="h-5 w-5" />
-          Home
+          <span>Home</span>
         </Link>
 
+        {/* 2. Explore */}
         <Link
           to="/explore"
-          className="flex flex-col items-center justify-center gap-0.5 rounded-2xl py-1.5 text-[0.6rem] text-muted-foreground transition-colors"
-          activeProps={{ className: "text-primary font-semibold" }}
+          className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
+          activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
         >
           <Compass className="h-5 w-5" />
-          Explore
+          <span>Explore</span>
         </Link>
 
-        <Link
-          to="/messages"
-          className="flex flex-col items-center justify-center gap-0.5 rounded-2xl py-1.5 text-[0.6rem] text-muted-foreground transition-colors"
-          activeProps={{ className: "text-primary font-semibold" }}
-        >
-          <MessageSquare className="h-5 w-5" />
-          Messages
-        </Link>
-
-        <Link to="/create" className="flex items-center justify-center" aria-label="Create Post">
-          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-rose text-primary-foreground shadow-glow transition-transform active:scale-95">
-            <Plus className="h-6 w-6 stroke-[2.5]" />
-          </span>
-        </Link>
-
+        {/* 3. Reels */}
         <Link
           to="/reels"
-          className="flex flex-col items-center justify-center gap-0.5 rounded-2xl py-1.5 text-[0.6rem] text-muted-foreground transition-colors"
-          activeProps={{ className: "text-primary font-semibold" }}
+          className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
+          activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
         >
           <Clapperboard className="h-5 w-5" />
-          Reels
+          <span>Reels</span>
         </Link>
 
+        {/* 4. Inbox */}
+        <Link
+          to="/messages"
+          className="relative flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
+          activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
+        >
+          <MessageSquare className="h-5 w-5" />
+          <span>Inbox</span>
+        </Link>
+
+        {/* 5. Profile */}
         {me ? (
           <Link
             to="/u/$username"
             params={{ username: me.username }}
-            className="flex flex-col items-center justify-center gap-0.5 rounded-2xl py-1.5 text-[0.6rem] text-muted-foreground transition-colors"
-            activeProps={{ className: "text-primary font-semibold" }}
+            className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
+            activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
           >
-            <UserAvatar profile={me} className="h-5 w-5 ring-1 ring-primary/40" />
-            Profile
+            <UserAvatar profile={me} className="h-5 w-5 ring-1 ring-border" />
+            <span>Profile</span>
           </Link>
         ) : (
-          <span className="flex flex-col items-center justify-center gap-0.5 py-1.5 text-[0.6rem] text-muted-foreground">
+          <span className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground">
             <User className="h-5 w-5" />
-            Profile
+            <span>Profile</span>
           </span>
         )}
       </nav>
 
       {/* SOCIAL MODALS */}
-
       <NotificationsModal
         open={notificationsOpen}
         onOpenChange={(v) => {

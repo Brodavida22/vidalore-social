@@ -29,11 +29,11 @@ export function SavedPostsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl glass border-border/80 p-5 max-h-[85vh] flex flex-col">
-        <DialogHeader className="border-b border-border/60 pb-3">
-          <DialogTitle className="font-display text-2xl flex items-center gap-2">
-            <BookmarkCheck className="h-5 w-5 text-primary" />
-            Saved Moments 🌹
+      <DialogContent className="sm:max-w-xl border border-border bg-card p-5 max-h-[85vh] flex flex-col rounded-2xl shadow-xl">
+        <DialogHeader className="border-b border-border pb-3">
+          <DialogTitle className="font-display text-xl flex items-center gap-2 text-foreground">
+            <BookmarkCheck className="h-5 w-5 text-[#E91E63]" />
+            Saved Posts
             <span className="text-xs text-muted-foreground font-sans font-normal">
               ({savedPosts.length})
             </span>
@@ -44,17 +44,16 @@ export function SavedPostsModal({
           {savedPosts.length === 0 ? (
             <div className="py-14 text-center space-y-2">
               <Bookmark className="h-10 w-10 text-muted-foreground/60 mx-auto" />
-              <p className="font-semibold text-foreground">No saved posts yet</p>
+              <p className="font-semibold text-foreground text-sm">No saved posts yet</p>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                Bookmark posts from your garden feed by clicking the bookmark icon to save
-                inspirations for later.
+                Bookmark posts from your feed by clicking the bookmark icon to save them for later.
               </p>
             </div>
           ) : (
             savedPosts.map((post) => (
               <div
                 key={post.id}
-                className="group relative rounded-2xl bg-secondary/40 p-4 border border-border/50 hover:border-primary/30 transition-all space-y-2"
+                className="group relative rounded-xl bg-secondary/40 p-3.5 border border-border/60 hover:border-[#E91E63]/40 transition-all space-y-2"
               >
                 <div className="flex items-center justify-between">
                   <Link
@@ -72,7 +71,7 @@ export function SavedPostsModal({
                       className="h-7 w-7 text-xs"
                     />
                     <div>
-                      <span className="text-xs font-semibold text-foreground hover:text-rose-soft">
+                      <span className="text-xs font-semibold text-foreground hover:text-[#E91E63] transition-colors">
                         {post.authorName}
                       </span>
                       <span className="text-[0.65rem] text-muted-foreground ml-1.5">
@@ -101,8 +100,8 @@ export function SavedPostsModal({
                   </div>
                 )}
 
-                <div className="flex items-center justify-between text-[0.7rem] text-rose-soft pt-1">
-                  <span>🌹 {post.reactionsCount} reactions</span>
+                <div className="flex items-center justify-between text-[0.7rem] text-muted-foreground pt-1">
+                  <span>{post.reactionsCount} reactions</span>
                   <span>{post.commentsCount} comments</span>
                 </div>
               </div>

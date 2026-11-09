@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Sparkles, TrendingUp, UserCheck, UserPlus, Compass } from "lucide-react";
+import { Search, Sparkles, TrendingUp, UserCheck, UserPlus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/profile/UserAvatar";
@@ -9,41 +9,11 @@ import { communityProfilesQuery, type Profile } from "@/services/profiles";
 import { getStoredRelationships, toggleFollow } from "@/services/social";
 
 const TRENDING_TOPICS = [
-  { tag: "RoseGarden", posts: "2.4k moments", category: "Community" },
-  { tag: "VelvetHours", posts: "1.8k moments", category: "Aesthetic" },
-  { tag: "MidnightBloom", posts: "940 moments", category: "Nightlife" },
-  { tag: "VidaloreStyle", posts: "720 moments", category: "Fashion" },
-  { tag: "PoetryInDark", posts: "530 moments", category: "Writing" },
-];
-
-const FALLBACK_CREATORS: Partial<Profile>[] = [
-  {
-    id: "creator-celeste",
-    username: "celeste",
-    display_name: "Celeste Moreau",
-    avatar_url:
-      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=240&auto=format&fit=crop&q=80",
-    points_balance: 1420,
-    bio: "Curator of night-blooming gardens and velvet shadows 🌹",
-  },
-  {
-    id: "creator-raphael",
-    username: "raphael",
-    display_name: "Raphaël Vance",
-    avatar_url:
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=240&auto=format&fit=crop&q=80",
-    points_balance: 980,
-    bio: "Visual director & architectural photography.",
-  },
-  {
-    id: "creator-seraphina",
-    username: "seraphina",
-    display_name: "Seraphina Lin",
-    avatar_url:
-      "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=240&auto=format&fit=crop&q=80",
-    points_balance: 630,
-    bio: "Acoustic strings & dark ambient audio.",
-  },
+  { tag: "DesignSystems", category: "Technology" },
+  { tag: "Architecture", category: "Creative" },
+  { tag: "Photography", category: "Art" },
+  { tag: "Culture", category: "Community" },
+  { tag: "VidaloreStyle", category: "Fashion" },
 ];
 
 export function RightSidebar({ me }: { me?: Profile | null }) {
@@ -59,10 +29,7 @@ export function RightSidebar({ me }: { me?: Profile | null }) {
 
   const { data: dbProfiles } = useQuery(communityProfilesQuery(6));
 
-  // Merge real database profiles (excluding self) with rich fallback creators
-  const creators = (dbProfiles && dbProfiles.length > 0 ? dbProfiles : FALLBACK_CREATORS)
-    .filter((p) => p.id !== me?.id)
-    .slice(0, 4);
+  const creators = (dbProfiles ?? []).filter((p) => p.id !== me?.id).slice(0, 4);
 
   function handleFollowToggle(targetId?: string) {
     if (!targetId) return;
@@ -71,125 +38,141 @@ export function RightSidebar({ me }: { me?: Profile | null }) {
   }
 
   return (
-    <aside className="hidden xl:block w-80 space-y-5 p-5 shrink-0">
+    <aside className="hidden xl:block w-80 space-y-4 p-5 shrink-0">
       {/* Search Input */}
       <div className="relative">
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search garden & creators..."
-          className="h-11 rounded-2xl bg-secondary/60 pl-10 text-xs border-border/60 focus-visible:ring-primary"
+          placeholder="Search creators & topics..."
+          className="h-10 rounded-lg bg-secondary pl-10 text-xs border-border focus-visible:ring-primary"
         />
       </div>
 
-      {/* Suggested Creators Widget */}
-      <section className="glass rounded-3xl p-4 border border-border/80 shadow-card">
+      {/* Suggested People Widget */}
+      <section className="rounded-xl p-4 border border-border bg-card shadow-sm">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
-            <Sparkles className="h-4 w-4 text-primary" />
-            Suggested Gardeners
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            Suggested People
           </h2>
-          <Link to="/explore" className="text-xs text-rose-soft hover:underline">
+          <Link to="/explore" className="text-xs text-[#E91E63] font-medium hover:underline">
             View all
           </Link>
         </div>
 
-        <div className="space-y-3">
-          {creators.map((c) => {
-            if (!c.username) return null;
-            const isFollowing = c.id ? !!followingMap[c.id] : false;
-            return (
-              <div key={c.id || c.username} className="flex items-center justify-between gap-2.5">
-                <Link
-                  to="/u/$username"
-                  params={{ username: c.username }}
-                  className="flex items-center gap-2.5 min-w-0 group"
-                >
-                  <UserAvatar
-                    profile={{
-                      avatar_url: c.avatar_url ?? null,
-                      username: c.username,
-                      display_name: c.display_name ?? null,
-                    }}
-                    className="h-9 w-9 text-xs ring-1 ring-primary/30 group-hover:ring-primary transition-all shrink-0"
-                  />
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-foreground group-hover:text-rose-soft transition-colors truncate">
-                      {c.display_name || `@${c.username}`}
-                    </p>
-                    <p className="text-[0.65rem] text-rose-soft">
-                      🌹 {c.points_balance ?? 100} pts
-                    </p>
-                  </div>
-                </Link>
+        {creators.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2 text-center">
+            Suggested people will appear here as users join.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {creators.map((c) => {
+              if (!c.username) return null;
+              const isFollowing = c.id ? !!followingMap[c.id] : false;
+              return (
+                <div key={c.id || c.username} className="flex items-center justify-between gap-2.5">
+                  <Link
+                    to="/u/$username"
+                    params={{ username: c.username }}
+                    className="flex items-center gap-2.5 min-w-0 group"
+                  >
+                    <UserAvatar
+                      profile={{
+                        avatar_url: c.avatar_url ?? null,
+                        username: c.username,
+                        display_name: c.display_name ?? null,
+                      }}
+                      className="h-8 w-8 text-xs ring-1 ring-border group-hover:ring-[#E91E63] transition-all shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-foreground group-hover:text-[#E91E63] transition-colors truncate">
+                        {c.display_name || `@${c.username}`}
+                      </p>
+                      <p className="flex items-center gap-1 text-[0.65rem] text-muted-foreground">
+                        <Sparkles className="h-2.5 w-2.5 text-[#E91E63]" />
+                        <span>{c.points_balance ?? 100} pts</span>
+                      </p>
+                    </div>
+                  </Link>
 
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={isFollowing ? "glass" : "rose"}
-                  onClick={() => handleFollowToggle(c.id)}
-                  className="h-7 px-2.5 rounded-full text-[0.7rem] font-semibold transition-all shrink-0"
-                >
-                  {isFollowing ? (
-                    <>
-                      <UserCheck className="h-3 w-3 mr-1" />
-                      Following
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="h-3 w-3 mr-1" />
-                      Follow
-                    </>
-                  )}
-                </Button>
-              </div>
-            );
-          })}
-        </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={isFollowing ? "outline" : "default"}
+                    onClick={() => handleFollowToggle(c.id)}
+                    className={`h-7 px-2.5 rounded-lg text-[0.7rem] font-medium transition-all shrink-0 ${
+                      isFollowing
+                        ? "border-border text-foreground hover:bg-secondary"
+                        : "bg-[#E91E63] text-white hover:bg-[#C2185B]"
+                    }`}
+                  >
+                    {isFollowing ? (
+                      <>
+                        <UserCheck className="h-3 w-3 mr-1" />
+                        Following
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="h-3 w-3 mr-1" />
+                        Follow
+                      </>
+                    )}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* Trending Topics Widget */}
-      <section className="glass rounded-3xl p-4 border border-border/80 shadow-card">
-        <h2 className="text-sm font-semibold flex items-center gap-1.5 text-foreground mb-3">
-          <TrendingUp className="h-4 w-4 text-primary" />
-          Blooming in the Garden
+      <section className="rounded-xl p-4 border border-border bg-card shadow-sm">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-3">
+          <TrendingUp className="h-3.5 w-3.5 text-[#E91E63]" />
+          Trending Topics
         </h2>
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {TRENDING_TOPICS.map((t) => (
             <div
               key={t.tag}
-              className="group flex items-center justify-between rounded-2xl p-2 hover:bg-secondary/50 transition-colors cursor-pointer"
+              className="group flex items-center justify-between rounded-lg p-2 hover:bg-secondary transition-colors cursor-pointer"
             >
               <div>
                 <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">
                   {t.category}
                 </p>
-                <p className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
+                <p className="text-xs font-medium text-foreground group-hover:text-[#E91E63] transition-colors">
                   #{t.tag}
                 </p>
               </div>
-              <span className="text-[0.7rem] text-muted-foreground">{t.posts}</span>
+              <span className="text-[0.65rem] font-semibold text-[#E91E63] px-2 py-0.5 rounded bg-[#E91E63]/10">
+                Trending
+              </span>
             </div>
           ))}
         </div>
       </section>
 
-      {/* VIDA Points Perks card */}
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-rose p-4 text-primary-foreground shadow-glow">
-        <div className="relative z-10">
-          <p className="text-[0.65rem] uppercase tracking-widest opacity-85">Daily Rewards</p>
-          <h3 className="mt-1 font-display text-xl font-bold">Earn VIDA POINTS 🌹</h3>
-          <p className="mt-1 text-xs opacity-90 leading-relaxed">
-            Share moments, inspire other gardeners, and unlock exclusive garden badges.
+      {/* Rewards Card */}
+      <section className="rounded-xl border border-border bg-card p-4">
+        <div>
+          <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
+            <Sparkles className="h-3 w-3 text-[#E91E63]" />
+            VIDALORE Rewards
+          </p>
+          <h3 className="mt-1 font-display text-sm font-semibold text-foreground">
+            Earn Activity Points
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+            Create quality posts, engage with discussions, and earn activity achievements.
           </p>
           <Button
             asChild
-            variant="glass"
             size="sm"
-            className="mt-3 h-8 text-xs font-semibold rounded-full bg-white/20 hover:bg-white/30 border-white/20 text-white"
+            className="mt-3 h-8 text-xs font-medium rounded-lg bg-[#E91E63] hover:bg-[#C2185B] text-white"
           >
-            <Link to="/points">View Rewards</Link>
+            <Link to="/points">View Activity</Link>
           </Button>
         </div>
       </section>
@@ -209,7 +192,7 @@ export function RightSidebar({ me }: { me?: Profile | null }) {
             Settings
           </Link>
         </div>
-        <p>© 2026 VIDALORE SOCIAL. Connect. Express. Play. Belong. 🌹</p>
+        <p>© 2026 VIDALORE SOCIAL. All rights reserved.</p>
       </div>
     </aside>
   );

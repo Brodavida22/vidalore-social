@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Heart, Reply, Trash2, Send, CornerDownRight, X } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import type { Profile } from "@/services/profiles";
@@ -14,7 +13,7 @@ import {
   type PostComment,
 } from "@/services/social";
 
-const EMOJI_SHORTCUTS = ["🌹", "💖", "✨", "🍷", "🖤", "🔥", "👏", "🥀"];
+const EMOJI_SHORTCUTS = ["👍", "❤️", "🔥", "👏", "💡", "🙌", "✨", "🎯"];
 
 export function CommentsSection({
   postId,
@@ -44,7 +43,7 @@ export function CommentsSection({
     setComments((prev) => [...prev, newComment]);
     setInputText("");
     setReplyingTo(null);
-    toast.success("Comment added 🌹");
+    toast.success("Comment added");
     onCommentChange?.();
   }
 
@@ -67,12 +66,12 @@ export function CommentsSection({
   }
 
   return (
-    <div className="space-y-4 pt-3">
+    <div className="space-y-4 pt-3 border-t border-border mt-3">
       {/* Existing Comments List */}
       <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
         {parentComments.length === 0 ? (
           <p className="py-4 text-center text-xs text-muted-foreground">
-            No thoughts shared yet. Be the first to leave a petal 🌹
+            No comments yet. Be the first to start the conversation.
           </p>
         ) : (
           parentComments.map((parent) => {
@@ -92,16 +91,16 @@ export function CommentsSection({
                         username: parent.authorUsername,
                         display_name: parent.authorName,
                       }}
-                      className="h-8 w-8 text-xs ring-1 ring-primary/30"
+                      className="h-8 w-8 text-xs ring-1 ring-border"
                     />
                   </Link>
 
-                  <div className="flex-1 min-w-0 rounded-2xl bg-secondary/50 px-3.5 py-2">
+                  <div className="flex-1 min-w-0 rounded-xl bg-secondary/70 px-3.5 py-2 border border-border/50">
                     <div className="flex items-center justify-between">
                       <Link
                         to="/u/$username"
                         params={{ username: parent.authorUsername }}
-                        className="text-xs font-semibold hover:text-rose-soft"
+                        className="text-xs font-semibold hover:text-primary transition-colors"
                       >
                         {parent.authorName}
                       </Link>
@@ -112,7 +111,7 @@ export function CommentsSection({
                         })}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
+                    <p className="mt-1 text-xs text-foreground leading-relaxed whitespace-pre-wrap">
                       {parent.content}
                     </p>
                     <div className="mt-2 flex items-center gap-3 text-[0.7rem] text-muted-foreground">
@@ -133,7 +132,7 @@ export function CommentsSection({
                           setReplyingTo(parent);
                           setInputText(`@${parent.authorUsername} `);
                         }}
-                        className="hover:text-rose-soft transition-colors flex items-center gap-1"
+                        className="hover:text-primary transition-colors flex items-center gap-1"
                       >
                         <Reply className="h-3 w-3" /> Reply
                       </button>
@@ -154,7 +153,7 @@ export function CommentsSection({
 
                 {/* Nested 1-level replies */}
                 {childReplies.length > 0 && (
-                  <div className="ml-8 space-y-2 pl-3 border-l-2 border-border/70">
+                  <div className="ml-8 space-y-2 pl-3 border-l-2 border-border">
                     {childReplies.map((reply) => {
                       const isMyReply = Boolean(me && reply.authorId === me.id);
                       return (
@@ -173,9 +172,9 @@ export function CommentsSection({
                               className="h-6 w-6 text-[0.65rem]"
                             />
                           </Link>
-                          <div className="flex-1 min-w-0 rounded-2xl bg-secondary/30 px-3 py-1.5">
+                          <div className="flex-1 min-w-0 rounded-xl bg-secondary/40 px-3 py-1.5 border border-border/40">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-semibold text-rose-soft">
+                              <span className="text-xs font-semibold text-foreground">
                                 {reply.authorName}
                               </span>
                               <span className="text-[0.65rem] text-muted-foreground">
@@ -185,7 +184,7 @@ export function CommentsSection({
                                 })}
                               </span>
                             </div>
-                            <p className="mt-0.5 text-xs text-foreground/90 leading-relaxed">
+                            <p className="mt-0.5 text-xs text-foreground leading-relaxed">
                               {reply.content}
                             </p>
                             <div className="mt-1 flex items-center gap-3 text-[0.65rem] text-muted-foreground">
@@ -225,7 +224,7 @@ export function CommentsSection({
 
       {/* Replying indicator */}
       {replyingTo && (
-        <div className="flex items-center justify-between rounded-xl bg-secondary/60 px-3 py-1.5 text-xs text-rose-soft">
+        <div className="flex items-center justify-between rounded-lg bg-secondary px-3 py-1.5 text-xs text-primary font-medium">
           <span className="flex items-center gap-1.5">
             <CornerDownRight className="h-3.5 w-3.5" />
             Replying to @{replyingTo.authorUsername}
@@ -236,7 +235,7 @@ export function CommentsSection({
               setReplyingTo(null);
               setInputText("");
             }}
-            className="hover:text-foreground"
+            className="hover:text-foreground text-muted-foreground"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -250,7 +249,7 @@ export function CommentsSection({
             key={emoji}
             type="button"
             onClick={() => insertEmoji(emoji)}
-            className="rounded-full bg-secondary/40 px-2 py-0.5 text-xs hover:bg-secondary hover:scale-110 transition-all shrink-0"
+            className="rounded-lg bg-secondary px-2 py-0.5 text-xs hover:bg-secondary/80 hover:scale-105 transition-all shrink-0"
           >
             {emoji}
           </button>
@@ -267,7 +266,7 @@ export function CommentsSection({
               avatar_url: null,
             }
           }
-          className="h-8 w-8 text-xs shrink-0 ring-1 ring-primary/40"
+          className="h-8 w-8 text-xs shrink-0 ring-1 ring-border"
         />
         <div className="relative flex-1">
           <Input
@@ -280,17 +279,15 @@ export function CommentsSection({
               }
             }}
             placeholder={
-              replyingTo
-                ? `Reply to @${replyingTo.authorUsername}...`
-                : "Leave a thought in the garden... 🌹"
+              replyingTo ? `Reply to @${replyingTo.authorUsername}...` : "Write a comment..."
             }
-            className="h-10 rounded-full bg-secondary/60 pr-10 text-xs focus-visible:ring-primary"
+            className="h-9 rounded-lg bg-secondary pr-10 text-xs border-border focus-visible:ring-primary"
           />
           <button
             type="button"
             onClick={handleSend}
             disabled={!inputText.trim()}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-primary disabled:opacity-40 hover:scale-110 transition-all"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[#E91E63] disabled:opacity-40 hover:text-[#C2185B] transition-colors"
             aria-label="Send comment"
           >
             <Send className="h-4 w-4" />

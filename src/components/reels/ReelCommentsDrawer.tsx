@@ -78,10 +78,10 @@ export function ReelCommentsDrawer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md glass border-border/80 p-4 max-h-[80vh] flex flex-col">
-        <DialogHeader className="border-b border-border/60 pb-3 flex flex-row items-center justify-between">
-          <DialogTitle className="font-display text-xl flex items-center gap-2">
-            <MessageSquare className="h-4 w-4 text-primary" />
+      <DialogContent className="sm:max-w-md border border-border bg-card p-4 max-h-[80vh] flex flex-col rounded-2xl shadow-xl">
+        <DialogHeader className="border-b border-border pb-3 flex flex-row items-center justify-between">
+          <DialogTitle className="font-display text-lg flex items-center gap-2 text-foreground">
+            <MessageSquare className="h-4 w-4 text-[#E91E63]" />
             Comments
             <span className="text-xs text-muted-foreground font-sans font-normal">
               ({comments.length})
@@ -93,10 +93,10 @@ export function ReelCommentsDrawer({
         <div className="flex-1 overflow-y-auto space-y-3 py-2 pr-1">
           {comments.length === 0 ? (
             <div className="py-12 text-center space-y-1">
-              <span className="text-3xl">🌹</span>
+              <MessageSquare className="h-8 w-8 text-muted-foreground/60 mx-auto" />
               <p className="font-semibold text-xs text-foreground">No comments yet</p>
               <p className="text-[0.7rem] text-muted-foreground">
-                Be the first to leave a thought on this reel.
+                Be the first to share your thoughts on this reel.
               </p>
             </div>
           ) : (
@@ -109,16 +109,16 @@ export function ReelCommentsDrawer({
                       username: c.authorUsername,
                       display_name: c.authorName,
                     }}
-                    className="h-8 w-8 text-xs shrink-0 ring-1 ring-primary/30"
+                    className="h-8 w-8 text-xs shrink-0 ring-1 ring-border"
                   />
                 </Link>
 
-                <div className="flex-1 min-w-0 rounded-2xl bg-secondary/40 p-2.5">
+                <div className="flex-1 min-w-0 rounded-xl bg-secondary/50 p-2.5 border border-border/50">
                   <div className="flex items-center justify-between">
                     <Link
                       to="/u/$username"
                       params={{ username: c.authorUsername }}
-                      className="text-xs font-semibold hover:text-rose-soft"
+                      className="text-xs font-semibold text-foreground hover:text-[#E91E63] transition-colors"
                     >
                       {c.authorName}
                     </Link>
@@ -134,11 +134,13 @@ export function ReelCommentsDrawer({
                     <button
                       type="button"
                       onClick={() => handleLike(c.id)}
-                      className={`flex items-center gap-1 hover:text-primary ${
-                        c.hasReacted ? "text-primary font-semibold" : ""
+                      className={`flex items-center gap-1 hover:text-[#E91E63] transition-colors ${
+                        c.hasReacted ? "text-[#E91E63] font-semibold" : ""
                       }`}
                     >
-                      <Heart className={`h-2.5 w-2.5 ${c.hasReacted ? "fill-primary" : ""}`} />
+                      <Heart
+                        className={`h-2.5 w-2.5 ${c.hasReacted ? "fill-[#E91E63] text-[#E91E63]" : ""}`}
+                      />
                       {c.reactionsCount > 0 && c.reactionsCount}
                     </button>
                   </div>
@@ -148,25 +150,11 @@ export function ReelCommentsDrawer({
           )}
         </div>
 
-        {/* Emojis bar */}
-        <div className="flex items-center gap-1.5 overflow-x-auto py-1">
-          {EMOJIS.map((emoji) => (
-            <button
-              key={emoji}
-              type="button"
-              onClick={() => setText((t) => t + emoji)}
-              className="rounded-full bg-secondary/50 px-2 py-0.5 text-xs hover:scale-110 transition-transform shrink-0"
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
-
         {/* Input */}
-        <div className="flex items-center gap-2 pt-1 border-t border-border/60">
+        <div className="flex items-center gap-2 pt-2 border-t border-border">
           <UserAvatar
             profile={me || { username: "member", display_name: "You", avatar_url: null }}
-            className="h-8 w-8 text-xs shrink-0 ring-1 ring-primary/40"
+            className="h-8 w-8 text-xs shrink-0 ring-1 ring-border"
           />
           <div className="relative flex-1">
             <Input
@@ -178,14 +166,14 @@ export function ReelCommentsDrawer({
                   handleSend();
                 }
               }}
-              placeholder="Add a comment... 🌹"
-              className="h-9 rounded-full bg-secondary/60 pr-9 text-xs"
+              placeholder="Add a comment..."
+              className="h-9 rounded-xl bg-secondary/60 pr-9 text-xs border-border focus-visible:ring-[#E91E63]"
             />
             <button
               type="button"
               onClick={handleSend}
               disabled={!text.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-primary disabled:opacity-40 hover:scale-110 transition-transform"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[#E91E63] disabled:opacity-40 hover:text-[#C2185B] transition-colors"
               aria-label="Send"
             >
               <Send className="h-3.5 w-3.5" />

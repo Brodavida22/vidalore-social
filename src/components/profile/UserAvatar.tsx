@@ -14,13 +14,13 @@ export function UserAvatar({
       src={profile.avatar_url}
       alt={`${profile.username}'s photo`}
       loading="lazy"
-      className={cn("rounded-full object-cover ring-2 ring-primary/40", className)}
+      className={cn("rounded-full object-cover ring-1 ring-border", className)}
     />
   ) : (
     <span
       aria-hidden="true"
       className={cn(
-        "inline-flex items-center justify-center rounded-full bg-gradient-rose font-semibold text-primary-foreground",
+        "inline-flex items-center justify-center rounded-full bg-primary font-semibold text-primary-foreground",
         className,
       )}
     >

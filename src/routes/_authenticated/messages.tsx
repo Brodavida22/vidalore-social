@@ -511,30 +511,29 @@ function MessagesPage() {
   return (
     <div className="mx-auto flex h-[calc(100dvh-90px)] max-w-7xl flex-col p-3 md:h-[calc(100dvh-40px)] md:p-6">
       {/* HEADER */}
-      <div className="mb-5">
+      <div className="mb-4">
         <div className="flex items-center gap-3">
-          <div className="rounded-2xl bg-pink-500/15 p-3 text-pink-400">
-            <MessageCircle size={25} />
+          <div className="rounded-xl bg-[#E91E63]/10 p-2.5 text-[#E91E63]">
+            <MessageCircle size={22} />
           </div>
 
           <div>
-            <h1 className="text-2xl font-bold text-white">Messages</h1>
-
-            <p className="text-sm text-gray-400">Connect privately with your people.</p>
+            <h1 className="text-xl font-bold text-foreground">Messages</h1>
+            <p className="text-xs text-muted-foreground">Private and direct conversations.</p>
           </div>
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 overflow-hidden rounded-3xl border border-white/10 bg-[#110d12] md:grid-cols-[340px_1fr]">
+      <div className="grid min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card md:grid-cols-[340px_1fr]">
         {/* LEFT SIDEBAR */}
         <aside
           className={`${
             selectedConversation ? "hidden md:flex" : "flex"
-          } min-h-0 flex-col border-r border-white/10`}
+          } min-h-0 flex-col border-r border-border`}
         >
-          <div className="border-b border-white/10 p-4">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-semibold text-white">Your conversations</h2>
+          <div className="border-b border-border p-3.5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-foreground">Conversations</h2>
 
               <button
                 type="button"
@@ -543,18 +542,18 @@ function MessagesPage() {
                     queryKey: ["messages", "conversations"],
                   })
                 }
-                className="rounded-xl p-2 text-gray-400 hover:bg-white/10 hover:text-white"
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
                 aria-label="Refresh conversations"
               >
-                <RefreshCw size={17} />
+                <RefreshCw size={15} />
               </button>
             </div>
 
             {/* SEARCH INPUT */}
             <div className="relative">
               <Search
-                size={18}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
               />
 
               <input
@@ -563,8 +562,8 @@ function MessagesPage() {
                   setSearchText(event.target.value);
                   startChatMutation.reset();
                 }}
-                placeholder="Search people by name or username..."
-                className="w-full rounded-xl border border-white/10 bg-[#211923] py-3 pl-10 pr-10 text-sm text-white outline-none placeholder:text-gray-500 focus:border-pink-500/60"
+                placeholder="Search people..."
+                className="w-full rounded-xl border border-border bg-secondary/60 py-2 pl-9 pr-9 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-[#E91E63]"
                 maxLength={50}
               />
 
@@ -575,10 +574,10 @@ function MessagesPage() {
                     setSearchText("");
                     startChatMutation.reset();
                   }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   aria-label="Clear search"
                 >
-                  <X size={17} />
+                  <X size={15} />
                 </button>
               )}
             </div>
@@ -586,28 +585,28 @@ function MessagesPage() {
 
           {/* SEARCH RESULTS */}
           {searchText.trim().length >= 2 && (
-            <div className="border-b border-white/10">
-              <div className="px-4 pb-2 pt-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-pink-400">
+            <div className="border-b border-border bg-secondary/30">
+              <div className="px-4 pb-1 pt-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-[#E91E63]">
                   People
                 </p>
               </div>
 
               {searchQuery.isFetching && (
-                <div className="flex items-center justify-center gap-2 p-5 text-sm text-gray-400">
-                  <Loader2 size={16} className="animate-spin" />
+                <div className="flex items-center justify-center gap-2 p-4 text-xs text-muted-foreground">
+                  <Loader2 size={15} className="animate-spin text-[#E91E63]" />
                   Searching...
                 </div>
               )}
 
               {searchQuery.isError && (
-                <p className="break-words px-4 pb-4 text-sm text-red-400">
+                <p className="break-words px-4 pb-3 text-xs text-destructive">
                   Search error: {getErrorMessage(searchQuery.error)}
                 </p>
               )}
 
               {searchQuery.isSuccess && searchQuery.data.length === 0 && (
-                <p className="px-4 pb-4 text-sm text-gray-400">No users found.</p>
+                <p className="px-4 pb-3 text-xs text-muted-foreground">No users found.</p>
               )}
 
               {searchQuery.data?.map((profile) => {
@@ -621,170 +620,123 @@ function MessagesPage() {
                     disabled={
                       !currentUserId || startChatMutation.isPending || profile.id === currentUserId
                     }
-                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-pink-500/10 disabled:opacity-50"
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-secondary disabled:opacity-50"
                   >
                     {profile.avatar_url ? (
                       <img
                         src={profile.avatar_url}
                         alt=""
-                        className="h-11 w-11 shrink-0 rounded-full object-cover"
+                        className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-border"
                       />
                     ) : (
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-rose-900 text-white">
-                        <UserPlus size={19} />
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#18181B] text-foreground border border-border">
+                        <UserPlus size={16} />
                       </div>
                     )}
 
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-white">
+                      <p className="truncate text-xs font-semibold text-foreground">
                         {profile.display_name || profile.username}
                       </p>
 
-                      <p className="truncate text-xs text-gray-400">@{profile.username}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        @{profile.username}
+                      </p>
                     </div>
 
                     {isStarting ? (
-                      <Loader2 size={18} className="animate-spin text-pink-400" />
+                      <Loader2 size={16} className="animate-spin text-[#E91E63]" />
                     ) : (
-                      <MessageCircle size={18} className="text-pink-400" />
+                      <MessageCircle size={16} className="text-[#E91E63]" />
                     )}
                   </button>
                 );
               })}
 
               {!currentUserId && (
-                <p className="px-4 pb-3 text-xs text-gray-500">Loading your account...</p>
+                <p className="px-4 pb-3 text-xs text-muted-foreground">Loading your account...</p>
               )}
 
               {/* FULL CHAT ERROR & AUTH DIAGNOSTIC */}
               {startChatMutation.isError && (
-                <div className="mx-4 mb-3 rounded-2xl border border-red-500/40 bg-[#1e0f14] p-4 shadow-lg">
-                  <div className="flex items-center justify-between border-b border-red-500/20 pb-2">
-                    <p className="text-xs font-bold uppercase tracking-wider text-red-400">
-                      Chat Error & Authentication Diagnostic
+                <div className="mx-3 mb-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-destructive/20 pb-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-destructive">
+                      Chat Diagnostic
                     </p>
                     {authDiagnostic?.checkedAt && (
-                      <span className="text-[10px] text-gray-400">{authDiagnostic.checkedAt}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {authDiagnostic.checkedAt}
+                      </span>
                     )}
                   </div>
 
-                  {/* Raw Error Details */}
-                  <div className="mt-2.5 rounded-xl bg-black/60 p-2.5 border border-red-500/20">
-                    <p className="text-[11px] font-semibold text-red-300">Error Details:</p>
-                    <p className="mt-1 break-words font-mono text-xs leading-5 text-red-200">
+                  <div className="mt-2 rounded-lg bg-card p-2 border border-border">
+                    <p className="text-[11px] font-semibold text-destructive">Error Details:</p>
+                    <p className="mt-1 break-words font-mono text-[11px] leading-4 text-foreground">
                       {getErrorMessage(startChatMutation.error)}
                     </p>
                   </div>
 
-                  {/* Diagnostic Information */}
-                  <div className="mt-3 space-y-2 border-t border-red-500/20 pt-2.5 text-xs">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-pink-300">
-                      Authentication Status:
-                    </p>
-
-                    {/* 1. Supabase Session Exists */}
-                    <div className="flex items-center justify-between rounded-lg bg-black/30 px-2.5 py-1.5 border border-white/5">
-                      <span className="text-gray-300 font-medium">Supabase session exists:</span>
+                  <div className="mt-2 space-y-1.5 border-t border-destructive/20 pt-2 text-xs">
+                    <div className="flex items-center justify-between rounded-md bg-secondary/60 px-2 py-1">
+                      <span className="text-muted-foreground">Session exists:</span>
                       <span
                         className={`font-semibold ${
-                          authDiagnostic?.sessionExists ? "text-emerald-400" : "text-red-400"
+                          authDiagnostic?.sessionExists ? "text-[#22C55E]" : "text-destructive"
                         }`}
                       >
-                        {authDiagnostic
-                          ? authDiagnostic.sessionExists
-                            ? "Yes (Active)"
-                            : "No (None)"
-                          : "Checking..."}
+                        {authDiagnostic?.sessionExists ? "Yes" : "No"}
                       </span>
                     </div>
 
-                    {/* 2. Session User Matches Current Application User */}
-                    <div className="flex items-center justify-between rounded-lg bg-black/30 px-2.5 py-1.5 border border-white/5">
-                      <span className="text-gray-300 font-medium">
-                        Session user matches app user:
-                      </span>
+                    <div className="flex items-center justify-between rounded-md bg-secondary/60 px-2 py-1">
+                      <span className="text-muted-foreground">User matches app user:</span>
                       <span
                         className={`font-semibold ${
-                          authDiagnostic?.userMatches ? "text-emerald-400" : "text-amber-400"
+                          authDiagnostic?.userMatches ? "text-[#22C55E]" : "text-[#F59E0B]"
                         }`}
                       >
-                        {authDiagnostic
-                          ? authDiagnostic.userMatches
-                            ? "Yes (Matching)"
-                            : "No (Mismatch)"
-                          : "Checking..."}
+                        {authDiagnostic?.userMatches ? "Yes" : "No"}
                       </span>
                     </div>
 
-                    {/* 3. Database Request Role */}
-                    <div className="flex items-center justify-between rounded-lg bg-black/30 px-2.5 py-1.5 border border-white/5">
-                      <span className="text-gray-300 font-medium">Database request role:</span>
+                    <div className="flex items-center justify-between rounded-md bg-secondary/60 px-2 py-1">
+                      <span className="text-muted-foreground">Request role:</span>
                       <span
                         className={`font-mono font-semibold ${
                           authDiagnostic?.requestRole === "authenticated"
-                            ? "text-emerald-400"
-                            : "text-amber-400"
+                            ? "text-[#22C55E]"
+                            : "text-[#F59E0B]"
                         }`}
                       >
                         {authDiagnostic ? authDiagnostic.requestRole : "Checking..."}
                       </span>
                     </div>
 
-                    {/* 4. Database Recognizes Authenticated User */}
-                    <div className="flex items-center justify-between rounded-lg bg-black/30 px-2.5 py-1.5 border border-white/5">
-                      <span className="text-gray-300 font-medium">Database recognizes user:</span>
+                    <div className="flex items-center justify-between rounded-md bg-secondary/60 px-2 py-1">
+                      <span className="text-muted-foreground">Database recognizes user:</span>
                       <span
                         className={`font-semibold ${
                           authDiagnostic?.databaseRecognizesUser
-                            ? "text-emerald-400"
-                            : "text-red-400"
+                            ? "text-[#22C55E]"
+                            : "text-destructive"
                         }`}
                       >
-                        {authDiagnostic
-                          ? authDiagnostic.databaseRecognizesUser
-                            ? "Yes (Recognized)"
-                            : "No (Unrecognized / RLS Denied)"
-                          : "Checking..."}
+                        {authDiagnostic?.databaseRecognizesUser ? "Yes" : "No"}
                       </span>
                     </div>
-
-                    {/* 5. Runtime created_by Matches Authenticated User ID */}
-                    <div className="flex items-center justify-between rounded-lg bg-black/30 px-2.5 py-1.5 border border-white/5">
-                      <span className="text-gray-300 font-medium">
-                        Runtime created_by matches Auth UID:
-                      </span>
-                      <span
-                        className={`font-mono font-semibold ${
-                          authDiagnostic?.runtimeCreatedByMatchesAuthUserId
-                            ? "text-emerald-400"
-                            : "text-red-400"
-                        }`}
-                      >
-                        {authDiagnostic
-                          ? authDiagnostic.runtimeCreatedByMatchesAuthUserId
-                            ? "true (Matches)"
-                            : "false (Mismatch)"
-                          : "Checking..."}
-                      </span>
-                    </div>
-
-                    {authDiagnostic?.diagnosticDetails && (
-                      <p className="mt-1 px-1 text-[11px] leading-4 text-gray-400 italic">
-                        Detail: {authDiagnostic.diagnosticDetails}
-                      </p>
-                    )}
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="mt-3.5 flex items-center gap-2 pt-1 border-t border-red-500/20">
+                  <div className="mt-3 flex items-center gap-2 pt-1 border-t border-destructive/20">
                     <button
                       type="button"
                       onClick={() => {
                         void runAuthDiagnostic(currentUserId).then(setAuthDiagnostic);
                       }}
-                      className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20"
+                      className="rounded-lg bg-secondary px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-secondary/80"
                     >
-                      Re-run Diagnostic
+                      Re-run
                     </button>
 
                     <button
@@ -793,7 +745,7 @@ function MessagesPage() {
                         startChatMutation.reset();
                         setAuthDiagnostic(null);
                       }}
-                      className="rounded-lg bg-pink-500/20 px-3 py-1.5 text-xs font-semibold text-pink-300 transition hover:bg-pink-500/30"
+                      className="rounded-lg bg-[#E91E63]/20 px-2.5 py-1 text-xs font-semibold text-[#E91E63] hover:bg-[#E91E63]/30"
                     >
                       Dismiss
                     </button>
@@ -806,17 +758,21 @@ function MessagesPage() {
           {/* CONVERSATION LIST */}
           <div className="min-h-0 flex-1 overflow-y-auto">
             {conversationsQuery.isLoading && (
-              <div className="p-6 text-center text-sm text-gray-400">Loading conversations...</div>
+              <div className="p-6 text-center text-xs text-muted-foreground">
+                Loading conversations...
+              </div>
             )}
 
             {conversationsQuery.isError && (
               <div className="p-5 text-center">
-                <p className="text-sm text-red-400">{getErrorMessage(conversationsQuery.error)}</p>
+                <p className="text-xs text-destructive">
+                  {getErrorMessage(conversationsQuery.error)}
+                </p>
 
                 <button
                   type="button"
                   onClick={() => conversationsQuery.refetch()}
-                  className="mt-3 text-sm text-pink-400"
+                  className="mt-2 text-xs font-medium text-[#E91E63] hover:underline"
                 >
                   Try again
                 </button>
@@ -827,14 +783,14 @@ function MessagesPage() {
               !conversationsQuery.isError &&
               conversations.length === 0 && (
                 <div className="px-6 py-12 text-center">
-                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-pink-500/10 text-pink-400">
-                    <MessageCircle size={28} />
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#E91E63]/10 text-[#E91E63]">
+                    <MessageCircle size={24} />
                   </div>
 
-                  <h3 className="font-semibold text-white">No conversations yet</h3>
+                  <h3 className="text-sm font-semibold text-foreground">No conversations yet</h3>
 
-                  <p className="mt-2 text-sm text-gray-400">
-                    Search for someone above to start your first conversation.
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Search for someone above to start a conversation.
                   </p>
                 </div>
               )}
@@ -842,7 +798,6 @@ function MessagesPage() {
             {conversations.map((conversation) => {
               const avatar = getConversationAvatar(conversation);
               const name = getConversationName(conversation);
-
               const active = selectedConversation?.id === conversation.id;
 
               return (
@@ -850,22 +805,26 @@ function MessagesPage() {
                   key={conversation.id}
                   type="button"
                   onClick={() => setSelectedConversation(conversation)}
-                  className={`flex w-full items-center gap-3 border-b border-white/5 p-4 text-left transition ${
-                    active ? "bg-pink-500/10" : "hover:bg-white/5"
+                  className={`flex w-full items-center gap-3 border-b border-border/50 p-3.5 text-left transition ${
+                    active ? "bg-[#E91E63]/10" : "hover:bg-secondary/50"
                   }`}
                 >
                   {avatar ? (
-                    <img src={avatar} alt="" className="h-12 w-12 rounded-full object-cover" />
+                    <img
+                      src={avatar}
+                      alt=""
+                      className="h-11 w-11 shrink-0 rounded-full object-cover ring-1 ring-border"
+                    />
                   ) : (
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-rose-900 text-white">
-                      <MessageCircle size={20} />
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground border border-border">
+                      <MessageCircle size={18} />
                     </div>
                   )}
 
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold text-white">{name}</p>
+                    <p className="truncate text-xs font-semibold text-foreground">{name}</p>
 
-                    <p className="mt-1 truncate text-sm text-gray-400">
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                       {getMessagePreview(conversation)}
                     </p>
                   </div>
@@ -876,73 +835,77 @@ function MessagesPage() {
         </aside>
 
         {/* CHAT WINDOW */}
-        <section className={`${selectedConversation ? "flex" : "hidden md:flex"} min-h-0 flex-col`}>
+        <section
+          className={`${selectedConversation ? "flex" : "hidden md:flex"} min-h-0 flex-col bg-background/50`}
+        >
           {!selectedConversation ? (
             <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-              <div className="mb-5 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-pink-500/20 to-rose-900/20 text-pink-400">
-                <MessageCircle size={42} />
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#E91E63]/10 text-[#E91E63]">
+                <MessageCircle size={32} />
               </div>
 
-              <h2 className="text-xl font-bold text-white">Welcome to VIDALORE Messages</h2>
+              <h2 className="text-base font-bold text-foreground">Your Messages</h2>
 
-              <p className="mt-2 max-w-sm text-sm text-gray-400">
-                Select a conversation or search for someone to start chatting.
+              <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+                Select a conversation from the sidebar or search for someone to start chatting.
               </p>
             </div>
           ) : (
             <>
               {/* CHAT HEADER */}
-              <div className="flex items-center gap-3 border-b border-white/10 p-4">
+              <div className="flex items-center gap-3 border-b border-border p-3.5 bg-card">
                 <button
                   type="button"
                   onClick={() => setSelectedConversation(null)}
-                  className="rounded-xl p-2 text-gray-400 hover:bg-white/10 md:hidden"
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground md:hidden"
                   aria-label="Back to conversations"
                 >
-                  <ArrowLeft size={20} />
+                  <ArrowLeft size={18} />
                 </button>
 
                 {getConversationAvatar(selectedConversation) ? (
                   <img
                     src={getConversationAvatar(selectedConversation)!}
                     alt=""
-                    className="h-10 w-10 rounded-full object-cover"
+                    className="h-9 w-9 rounded-full object-cover ring-1 ring-border"
                   />
                 ) : (
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-pink-500/20 text-pink-400">
-                    <MessageCircle size={19} />
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-foreground">
+                    <MessageCircle size={16} />
                   </div>
                 )}
 
                 <div>
-                  <h2 className="font-semibold text-white">
+                  <h2 className="text-xs font-semibold text-foreground">
                     {getConversationName(selectedConversation)}
                   </h2>
 
-                  <p className="text-xs text-gray-400">
+                  <p className="text-[11px] text-muted-foreground">
                     {selectedConversation.kind === "group"
                       ? `${selectedConversation.members.length} members`
-                      : "Private conversation"}
+                      : "Direct message"}
                   </p>
                 </div>
               </div>
 
               {/* MESSAGE HISTORY */}
-              <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              <div className="flex-1 space-y-3 overflow-y-auto p-4">
                 {messagesQuery.isLoading && (
-                  <p className="py-8 text-center text-sm text-gray-400">Loading messages...</p>
+                  <p className="py-8 text-center text-xs text-muted-foreground">
+                    Loading messages...
+                  </p>
                 )}
 
                 {messagesQuery.isError && (
                   <div className="py-8 text-center">
-                    <p className="break-words text-sm text-red-400">
+                    <p className="break-words text-xs text-destructive">
                       {getErrorMessage(messagesQuery.error)}
                     </p>
 
                     <button
                       type="button"
                       onClick={() => messagesQuery.refetch()}
-                      className="mt-3 text-sm text-pink-400"
+                      className="mt-2 text-xs font-medium text-[#E91E63] hover:underline"
                     >
                       Try again
                     </button>
@@ -951,11 +914,13 @@ function MessagesPage() {
 
                 {!messagesQuery.isLoading && !messagesQuery.isError && messages.length === 0 && (
                   <div className="flex h-full flex-col items-center justify-center text-center">
-                    <MessageCircle size={35} className="mb-3 text-pink-400" />
+                    <MessageCircle size={28} className="mb-2 text-[#E91E63]" />
 
-                    <p className="font-medium text-white">No messages yet</p>
+                    <p className="text-xs font-medium text-foreground">No messages yet</p>
 
-                    <p className="mt-1 text-sm text-gray-400">Send the first message.</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      Send the first message.
+                    </p>
                   </div>
                 )}
 
@@ -968,26 +933,30 @@ function MessagesPage() {
                       className={`flex ${isMine ? "justify-end" : "justify-start"}`}
                     >
                       <div
-                        className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                        className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 shadow-sm ${
                           isMine
-                            ? "rounded-br-md bg-gradient-to-br from-pink-600 to-rose-800 text-white"
-                            : "rounded-bl-md border border-white/10 bg-[#211923] text-gray-100"
+                            ? "rounded-br-sm bg-[#E91E63] text-white"
+                            : "rounded-bl-sm border border-border bg-card text-foreground"
                         }`}
                       >
                         {message.deleted_at ? (
-                          <p className="text-sm italic opacity-70">Message deleted</p>
+                          <p className="text-xs italic opacity-70">Message deleted</p>
                         ) : message.message_type === "text" ? (
-                          <p className="whitespace-pre-wrap break-words text-sm">
+                          <p className="whitespace-pre-wrap break-words text-xs leading-relaxed">
                             {message.content}
                           </p>
                         ) : (
-                          <p className="text-sm">
+                          <p className="text-xs">
                             Attachment: {message.media_name || message.message_type}
                           </p>
                         )}
 
-                        <div className="mt-1 flex items-center justify-end gap-1.5 text-[10px]">
-                          <span className="opacity-70">
+                        <div
+                          className={`mt-1 flex items-center justify-end gap-1.5 text-[10px] ${
+                            isMine ? "text-white/80" : "text-muted-foreground"
+                          }`}
+                        >
+                          <span>
                             {new Date(message.created_at).toLocaleTimeString([], {
                               hour: "2-digit",
                               minute: "2-digit",
@@ -995,7 +964,7 @@ function MessagesPage() {
                             {message.edited_at ? " · Edited" : ""}
                           </span>
 
-                          {/* WhatsApp-style read receipt status for current user messages only */}
+                          {/* WhatsApp-style read receipt status */}
                           {isMine && (
                             <span
                               className="inline-flex items-center select-none"
@@ -1004,20 +973,15 @@ function MessagesPage() {
                                   ? "Read by recipient"
                                   : "Saved to server"
                               }
-                              aria-label={
-                                isMessageReadByRecipient(message, currentUserId)
-                                  ? "Read"
-                                  : "Delivered"
-                              }
                             >
                               {isMessageReadByRecipient(message, currentUserId) ? (
                                 <CheckCheck
-                                  size={14}
-                                  className="text-pink-300 drop-shadow-[0_0_4px_rgba(244,114,182,0.45)] transition-colors duration-200"
+                                  size={13}
+                                  className="text-white drop-shadow-sm transition-colors duration-200"
                                 />
                               ) : (
                                 <Check
-                                  size={14}
+                                  size={13}
                                   className="text-white/60 transition-colors duration-200"
                                 />
                               )}
@@ -1031,19 +995,19 @@ function MessagesPage() {
               </div>
 
               {/* MESSAGE COMPOSER */}
-              <form onSubmit={handleSendMessage} className="border-t border-white/10 p-3">
+              <form onSubmit={handleSendMessage} className="border-t border-border p-3 bg-card">
                 {sendMutation.isError && (
-                  <p className="mb-2 break-words px-2 text-xs text-red-400">
+                  <p className="mb-2 break-words px-2 text-xs text-destructive">
                     {getErrorMessage(sendMutation.error)}
                   </p>
                 )}
 
-                <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#211923] p-2">
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-secondary/50 p-1.5">
                   <input
                     value={messageText}
                     onChange={(event) => setMessageText(event.target.value)}
                     placeholder="Write a message..."
-                    className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-white outline-none placeholder:text-gray-500"
+                    className="min-w-0 flex-1 bg-transparent px-3 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground"
                     maxLength={5000}
                     disabled={sendMutation.isPending}
                   />
@@ -1051,13 +1015,13 @@ function MessagesPage() {
                   <button
                     type="submit"
                     disabled={!messageText.trim() || sendMutation.isPending}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-pink-500 to-rose-700 text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#E91E63] text-white transition hover:bg-[#C2185B] disabled:cursor-not-allowed disabled:opacity-40"
                     aria-label="Send message"
                   >
                     {sendMutation.isPending ? (
-                      <Loader2 size={18} className="animate-spin" />
+                      <Loader2 size={15} className="animate-spin" />
                     ) : (
-                      <Send size={18} />
+                      <Send size={15} />
                     )}
                   </button>
                 </div>

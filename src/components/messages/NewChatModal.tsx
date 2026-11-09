@@ -88,14 +88,14 @@ export function NewChatModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="glass border-border/80 p-5 max-h-[85vh] sm:max-w-md flex flex-col rounded-3xl">
-        <DialogHeader className="border-b border-border/60 pb-3">
-          <DialogTitle className="font-display text-2xl flex items-center gap-2">
-            <MessageSquarePlus className="h-5 w-5 text-primary" />
-            New Message 🌹
+      <DialogContent className="border border-border bg-card p-5 max-h-[85vh] sm:max-w-md flex flex-col rounded-2xl shadow-xl">
+        <DialogHeader className="border-b border-border pb-3">
+          <DialogTitle className="font-display text-xl flex items-center gap-2 text-foreground">
+            <MessageSquarePlus className="h-5 w-5 text-[#E91E63]" />
+            New Message
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Connect privately with members in the Rose Garden.
+            Start a direct conversation with members.
           </DialogDescription>
         </DialogHeader>
 
@@ -106,7 +106,7 @@ export function NewChatModal({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name or @username..."
-            className="h-10 rounded-2xl bg-secondary/50 pl-10 pr-9 text-xs border-border/50 focus-visible:ring-primary/60"
+            className="h-10 rounded-xl bg-secondary/60 pl-10 pr-9 text-xs border-border focus-visible:ring-[#E91E63]"
             autoFocus
           />
           {search && (
@@ -124,24 +124,23 @@ export function NewChatModal({
         <div className="flex-1 overflow-y-auto space-y-1.5 py-2 pr-1 min-h-[220px]">
           {loading ? (
             <div className="py-12 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              <p className="text-xs">Finding members in the garden...</p>
+              <Loader2 className="h-6 w-6 animate-spin text-[#E91E63]" />
+              <p className="text-xs">Finding members...</p>
             </div>
           ) : results.length === 0 ? (
             <div className="py-12 text-center space-y-2">
-              <span className="text-3xl">🥀</span>
               <p className="font-semibold text-sm text-foreground">No members found</p>
               <p className="text-xs text-muted-foreground max-w-xs mx-auto">
                 {search.trim()
-                  ? `No gardener matched "${search}". Try searching by handle or name.`
+                  ? `No user matched "${search}". Try searching by username.`
                   : "No community members found to start a chat."}
               </p>
             </div>
           ) : (
             <>
               {!search.trim() && (
-                <div className="flex items-center gap-1.5 px-2 py-1 text-[0.7rem] uppercase tracking-wider text-rose-soft font-semibold">
-                  <Sparkles className="h-3 w-3 text-primary" />
+                <div className="flex items-center gap-1.5 px-2 py-1 text-[0.7rem] uppercase tracking-wider text-muted-foreground font-semibold">
+                  <Sparkles className="h-3 w-3 text-[#E91E63]" />
                   Suggested Members
                 </div>
               )}
@@ -154,16 +153,16 @@ export function NewChatModal({
                     type="button"
                     disabled={Boolean(creatingWithUserId)}
                     onClick={() => handleSelectUser(profile)}
-                    className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl hover:bg-secondary/60 active:bg-secondary transition-all text-left group border border-transparent hover:border-border/50 disabled:opacity-50"
+                    className="w-full flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-secondary transition-all text-left group border border-transparent hover:border-border disabled:opacity-50"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <UserAvatar
                         profile={profile}
-                        className="h-11 w-11 shrink-0 ring-1 ring-primary/40 group-hover:ring-primary transition-all"
+                        className="h-10 w-10 shrink-0 ring-1 ring-border group-hover:ring-[#E91E63] transition-all"
                       />
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <p className="text-xs font-semibold text-foreground group-hover:text-rose-soft truncate">
+                          <p className="text-xs font-semibold text-foreground group-hover:text-[#E91E63] transition-colors truncate">
                             {profile.display_name || profile.username}
                           </p>
                         </div>
@@ -171,7 +170,7 @@ export function NewChatModal({
                           @{profile.username}
                         </p>
                         {profile.bio && (
-                          <p className="text-[0.68rem] text-foreground/75 truncate mt-0.5">
+                          <p className="text-[0.68rem] text-muted-foreground truncate mt-0.5">
                             {profile.bio}
                           </p>
                         )}
@@ -180,13 +179,13 @@ export function NewChatModal({
 
                     <div className="shrink-0 flex items-center gap-2">
                       {isCreating ? (
-                        <span className="flex items-center gap-1.5 text-xs text-primary font-medium">
+                        <span className="flex items-center gap-1.5 text-xs text-[#E91E63] font-medium">
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           Opening...
                         </span>
                       ) : (
-                        <span className="rounded-full bg-primary/10 text-primary border border-primary/20 px-3 py-1 text-xs font-medium group-hover:bg-gradient-rose group-hover:text-white group-hover:border-transparent transition-all shadow-sm">
-                          Chat 🌹
+                        <span className="rounded-lg bg-[#E91E63] text-white px-3 py-1 text-xs font-medium hover:bg-[#C2185B] transition-all shadow-sm">
+                          Chat
                         </span>
                       )}
                     </div>

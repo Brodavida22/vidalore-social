@@ -1,5 +1,5 @@
 import { useState, useRef, type ChangeEvent } from "react";
-import { Video, UploadCloud, X, Play, Pause, Loader2, Sparkles, Music } from "lucide-react";
+import { Video, UploadCloud, X, Play, Pause, Loader2, Music } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -14,17 +14,6 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { addReel } from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
-
-const REEL_PRESET_CLIPS = [
-  {
-    name: "Night Bloom Conservatory",
-    url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-  },
-  {
-    name: "Milan Velvet Editorial",
-    url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-  },
-];
 
 export function VideoUploadModal({
   open,
@@ -65,13 +54,6 @@ export function VideoUploadModal({
     setVideoFile(file);
     const objectUrl = URL.createObjectURL(file);
     setVideoUrl(objectUrl);
-  }
-
-  function handleSelectPreset(clip: (typeof REEL_PRESET_CLIPS)[0]) {
-    setVideoFile(null);
-    setVideoUrl(clip.url);
-    if (!caption) setCaption(`Moments from the ${clip.name} 🌹 #RoseGarden #Vidalore`);
-    if (!audioTitle) setAudioTitle(`${clip.name} (Original Sound)`);
   }
 
   function removeSelectedVideo() {
@@ -127,13 +109,13 @@ export function VideoUploadModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg glass border-border/80 p-5 max-h-[90vh] flex flex-col">
-        <DialogHeader className="border-b border-border/60 pb-3">
-          <DialogTitle className="font-display text-2xl flex items-center gap-2">
-            <Video className="h-5 w-5 text-primary" />
-            Upload Reel 🌹
+        <DialogHeader className="border-b border-border pb-3">
+          <DialogTitle className="font-display text-xl flex items-center gap-2 text-foreground">
+            <Video className="h-5 w-5 text-[#E91E63]" />
+            Upload Reel
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Share vertical video moments with the VIDALORE community.
+            Share vertical video moments with the community.
           </DialogDescription>
         </DialogHeader>
 
@@ -143,9 +125,9 @@ export function VideoUploadModal({
             <div className="space-y-3">
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="flex flex-col items-center justify-center p-8 rounded-3xl border-2 border-dashed border-border/80 hover:border-primary/60 bg-secondary/30 transition-colors cursor-pointer group text-center"
+                className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-border hover:border-[#E91E63]/60 bg-secondary/30 transition-colors cursor-pointer group text-center"
               >
-                <UploadCloud className="h-10 w-10 text-primary mb-2 group-hover:scale-110 transition-transform" />
+                <UploadCloud className="h-10 w-10 text-[#E91E63] mb-2 group-hover:scale-110 transition-transform" />
                 <p className="text-sm font-semibold text-foreground">Select vertical video</p>
                 <p className="text-xs text-muted-foreground mt-1">MP4, WebM or MOV up to 100 MB</p>
                 <input
@@ -155,26 +137,6 @@ export function VideoUploadModal({
                   className="hidden"
                   onChange={handleFileSelect}
                 />
-              </div>
-
-              {/* Presets */}
-              <div className="rounded-2xl bg-secondary/40 p-3 border border-border/50">
-                <p className="text-xs font-semibold text-rose-soft mb-2 flex items-center gap-1">
-                  <Sparkles className="h-3 w-3 text-primary" /> Or try Rose Garden studio clips:
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {REEL_PRESET_CLIPS.map((clip) => (
-                    <button
-                      key={clip.name}
-                      type="button"
-                      onClick={() => handleSelectPreset(clip)}
-                      className="rounded-xl bg-background/60 p-2 text-left hover:ring-1 hover:ring-primary transition-all"
-                    >
-                      <p className="text-xs font-medium truncate text-foreground">{clip.name}</p>
-                      <p className="text-[0.65rem] text-rose-soft">High-res sample</p>
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
           ) : (
@@ -223,14 +185,14 @@ export function VideoUploadModal({
 
               {/* Caption */}
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-rose-soft">Caption & Hashtags</label>
+                <label className="text-xs font-semibold text-foreground">Caption & Hashtags</label>
                 <Textarea
                   value={caption}
                   onChange={(e) => setCaption(e.target.value)}
-                  placeholder="Describe your reel... #RoseGarden #Aesthetic"
+                  placeholder="Describe your reel... #Vidalore #Style"
                   rows={2}
                   maxLength={300}
-                  className="resize-none rounded-xl bg-secondary/50 text-xs"
+                  className="resize-none rounded-xl bg-secondary/50 text-xs border-border"
                 />
                 <p className="text-[0.65rem] text-right text-muted-foreground">
                   {caption.length}/300
@@ -240,22 +202,22 @@ export function VideoUploadModal({
               {/* Sound/Audio Title */}
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
-                  <Music className="h-3 w-3 text-primary" /> Audio Title (optional)
+                  <Music className="h-3 w-3 text-[#E91E63]" /> Audio Title (optional)
                 </label>
                 <Input
                   value={audioTitle}
                   onChange={(e) => setAudioTitle(e.target.value)}
-                  placeholder="e.g. Original Sound — Vidalore Night"
-                  className="h-9 rounded-xl bg-secondary/50 text-xs"
+                  placeholder="e.g. Original Sound — Vidalore"
+                  className="h-9 rounded-xl bg-secondary/50 text-xs border-border"
                 />
               </div>
 
               {/* Upload Progress */}
               {isUploading && (
                 <div className="space-y-1.5 py-1">
-                  <div className="flex justify-between text-xs text-rose-soft">
+                  <div className="flex justify-between text-xs text-muted-foreground">
                     <span>Uploading & verifying media...</span>
-                    <span>{uploadProgress}%</span>
+                    <span className="text-[#E91E63] font-semibold">{uploadProgress}%</span>
                   </div>
                   <Progress value={uploadProgress} className="h-2" />
                 </div>
@@ -277,18 +239,17 @@ export function VideoUploadModal({
           </Button>
           <Button
             type="button"
-            variant="rose"
             size="sm"
             disabled={!videoUrl || isUploading}
             onClick={handlePublish}
-            className="rounded-xl text-xs font-semibold shadow-glow px-5"
+            className="rounded-lg text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white px-5 shadow-sm"
           >
             {isUploading ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Publishing...
               </>
             ) : (
-              "Publish Reel 🌹"
+              "Publish Reel"
             )}
           </Button>
         </div>
