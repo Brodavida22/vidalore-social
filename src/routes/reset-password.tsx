@@ -45,21 +45,53 @@ function ResetPassword() {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-garden px-5">
-      <form onSubmit={submit} className="glass shadow-card w-full max-w-md space-y-4 rounded-3xl p-8">
+    <main className="flex min-h-dvh items-center justify-center bg-secondary/40 px-5">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-md space-y-4 rounded-xl border border-border bg-card p-6 sm:p-8 shadow-sm"
+      >
         <Logo />
-        <h1 className="text-3xl font-semibold">Choose a new password</h1>
+        <h1 className="text-xl font-bold text-foreground">Choose a new password</h1>
         <div>
-          <Label htmlFor="np">New password</Label>
-          <Input id="np" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1.5 h-11 rounded-xl" required />
+          <Label htmlFor="np" className="text-xs">
+            New password
+          </Label>
+          <Input
+            id="np"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mt-1 h-10 rounded-lg text-xs border-border"
+            required
+          />
         </div>
         <div>
-          <Label htmlFor="cp">Confirm password</Label>
-          <Input id="cp" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="mt-1.5 h-11 rounded-xl" required />
+          <Label htmlFor="cp" className="text-xs">
+            Confirm password
+          </Label>
+          <Input
+            id="cp"
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            className="mt-1 h-10 rounded-lg text-xs border-border"
+            required
+          />
         </div>
-        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-        <Button type="submit" variant="rose" size="lg" className="w-full" disabled={busy}>
-          {busy && <Loader2 className="animate-spin" />} Update password
+        {error && (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        )}
+        <Button
+          type="submit"
+          size="lg"
+          className="w-full rounded-lg bg-[#E91E63] hover:bg-[#C2185B] text-white font-semibold text-xs h-10 shadow-sm"
+          disabled={busy}
+        >
+          {busy && <Loader2 className="animate-spin mr-1.5 h-3.5 w-3.5" />} Update password
         </Button>
       </form>
     </main>

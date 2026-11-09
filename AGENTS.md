@@ -28,3 +28,7 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+
+- Keep Lovable's `.env` and `src/integrations/supabase/*` when syncing code from other tools: external copies have used placeholder backend values, and these files are generated for the live backend.
