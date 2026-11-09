@@ -47,7 +47,7 @@ export function PostCard({
   onPostUpdated,
 }: {
   post: SocialPost;
-  me?: Profile | null;
+  me?: Profile | null | undefined;
   onDeleted?: (id: string) => void;
   onPostUpdated?: (updated: SocialPost) => void;
 }) {

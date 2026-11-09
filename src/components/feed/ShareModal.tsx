@@ -22,7 +22,7 @@ export function ShareModal({
   onShared,
 }: {
   post: SocialPost;
-  me?: Profile | null;
+  me?: Profile | null | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onShared?: () => void;

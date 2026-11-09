@@ -5,23 +5,23 @@ export interface PostMedia {
   id: string;
   type: "image" | "video";
   url: string;
-  thumbnailUrl?: string;
-  aspectRatio?: string;
-  caption?: string;
+  thumbnailUrl?: string | undefined;
+  aspectRatio?: string | undefined;
+  caption?: string | undefined;
 }
 
 export interface PostComment {
   id: string;
   postId: string;
-  parentId?: string | null;
+  parentId?: string | null | undefined;
   authorId: string;
   authorName: string;
   authorUsername: string;
-  authorAvatarUrl?: string | null;
+  authorAvatarUrl?: string | null | undefined;
   content: string;
   createdAt: string;
   reactionsCount: number;
-  hasReacted?: boolean;
+  hasReacted?: boolean | undefined;
 }
 
 export interface SocialPost {
@@ -29,28 +29,28 @@ export interface SocialPost {
   authorId: string;
   authorName: string;
   authorUsername: string;
-  authorAvatarUrl?: string | null;
-  authorVerified?: boolean;
-  authorPoints?: number;
+  authorAvatarUrl?: string | null | undefined;
+  authorVerified?: boolean | undefined;
+  authorPoints?: number | undefined;
   content: string;
-  media?: PostMedia[];
-  tags?: string[];
-  mood?: string;
-  location?: string;
+  media?: PostMedia[] | undefined;
+  tags?: string[] | undefined;
+  mood?: string | undefined;
+  location?: string | undefined;
   createdAt: string;
   reactionsCount: number;
-  hasReacted?: boolean;
+  hasReacted?: boolean | undefined;
   commentsCount: number;
   sharesCount: number;
-  hasShared?: boolean;
+  hasShared?: boolean | undefined;
   savesCount: number;
-  hasSaved?: boolean;
-  isRepost?: boolean;
-  repostNote?: string;
+  hasSaved?: boolean | undefined;
+  isRepost?: boolean | undefined;
+  repostNote?: string | undefined;
   originalAuthor?: {
     name: string;
     username: string;
-    avatarUrl?: string | null;
+    avatarUrl?: string | null | undefined;
   };
 }
 
@@ -68,8 +68,8 @@ export interface SocialNotification {
   actorId: string;
   actorName: string;
   actorUsername: string;
-  actorAvatarUrl?: string | null;
-  targetId?: string;
+  actorAvatarUrl?: string | null | undefined;
+  targetId?: string | undefined;
   summary: string;
   createdAt: string;
   isRead: boolean;
@@ -199,10 +199,10 @@ export async function createPost(
   me: Profile,
   data: {
     content: string;
-    media?: PostMedia[];
-    tags?: string[];
-    mood?: string;
-    location?: string;
+    media?: PostMedia[] | undefined;
+    tags?: string[] | undefined;
+    mood?: string | undefined;
+    location?: string | undefined;
   },
 ): Promise<SocialPost> {
   const posts = getStoredPosts();
@@ -261,7 +261,7 @@ export function addComment(
   me: Profile,
   postId: string,
   content: string,
-  parentId?: string | null,
+  parentId?: string | null | undefined,
 ): PostComment {
   const comments = getStoredComments();
   const newComment: PostComment = {
@@ -323,7 +323,7 @@ export function deleteComment(commentId: string): void {
 export function sharePost(
   me: Profile,
   postId: string,
-  repostNote?: string,
+  repostNote?: string | undefined,
 ): SocialPost | undefined {
   const posts = getStoredPosts();
   const original = posts.find((p) => p.id === postId);
@@ -372,7 +372,7 @@ export function reportContent(report: {
   targetId: string;
   targetType: "post" | "comment" | "profile";
   reason: string;
-  details?: string;
+  details?: string | undefined;
 }): void {
   const reports = getLocal<unknown[]>(STORAGE_KEYS.REPORTS, []);
   reports.push({

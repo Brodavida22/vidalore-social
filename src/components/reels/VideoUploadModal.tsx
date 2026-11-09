@@ -23,7 +23,7 @@ export function VideoUploadModal({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  me?: Profile | null;
+  me?: Profile | null | undefined;
   onUploaded?: () => void;
 }) {
   const [videoFile, setVideoFile] = useState<File | null>(null);

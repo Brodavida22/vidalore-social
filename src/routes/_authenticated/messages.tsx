@@ -89,10 +89,10 @@ function getErrorMessage(error: unknown): string {
     const details = error as Record<string, unknown>;
 
     const parts = [
-      details.message,
-      details.code ? `Code: ${details.code}` : null,
-      details.details,
-      details.hint,
+      details["message"],
+      details["code"] ? `Code: ${details["code"]}` : null,
+      details["details"],
+      details["hint"],
     ].filter((item) => typeof item === "string" && item.trim().length > 0);
 
     if (parts.length > 0) {
@@ -117,8 +117,8 @@ interface AuthDiagnostic {
   requestRole: string;
   databaseRecognizesUser: boolean;
   runtimeCreatedByMatchesAuthUserId: boolean;
-  diagnosticDetails?: string;
-  checkedAt?: string;
+  diagnosticDetails?: string | undefined;
+  checkedAt?: string | undefined;
 }
 
 async function runAuthDiagnostic(currentUserId: string): Promise<AuthDiagnostic> {

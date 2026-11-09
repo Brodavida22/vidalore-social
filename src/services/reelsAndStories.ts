@@ -7,40 +7,40 @@ export interface ReelComment {
   authorId: string;
   authorName: string;
   authorUsername: string;
-  authorAvatarUrl?: string | null;
+  authorAvatarUrl?: string | null | undefined;
   content: string;
   createdAt: string;
   reactionsCount: number;
-  hasReacted?: boolean;
+  hasReacted?: boolean | undefined;
 }
 export interface ReelItem {
   id: string;
   creatorId: string;
   creatorName: string;
   creatorUsername: string;
-  creatorAvatarUrl?: string | null;
-  creatorVerified?: boolean;
+  creatorAvatarUrl?: string | null | undefined;
+  creatorVerified?: boolean | undefined;
   videoUrl: string;
   caption: string;
-  audioTitle?: string;
+  audioTitle?: string | undefined;
   likesCount: number;
   commentsCount: number;
   sharesCount: number;
   savesCount: number;
   viewsCount: number;
-  hasLiked?: boolean;
-  hasSaved?: boolean;
-  isFollowing?: boolean;
+  hasLiked?: boolean | undefined;
+  hasSaved?: boolean | undefined;
+  isFollowing?: boolean | undefined;
   createdAt: string;
-  tags?: string[];
+  tags?: string[] | undefined;
 }
 export interface StoryItem {
   id: string;
   userId: string;
   mediaUrl: string;
   mediaType: "image" | "video";
-  caption?: string;
-  sticker?: string;
+  caption?: string | undefined;
+  sticker?: string | undefined;
   createdAt: string;
   expiresAt: string;
   seenBy: string[];
@@ -49,7 +49,7 @@ export interface UserStoryGroup {
   userId: string;
   username: string;
   displayName: string;
-  avatarUrl?: string | null;
+  avatarUrl?: string | null | undefined;
   stories: StoryItem[];
   hasUnseen: boolean;
 }
@@ -238,10 +238,10 @@ export async function addReel(
   me: Profile,
   data: {
     videoUrl: string;
-    videoFile?: File;
+    videoFile?: File | undefined;
     caption: string;
-    audioTitle?: string;
-    tags?: string[];
+    audioTitle?: string | undefined;
+    tags?: string[] | undefined;
   },
 ): Promise<ReelItem> {
   const userId = await currentUserId();
@@ -407,10 +407,10 @@ export async function addStory(
   me: Profile,
   data: {
     mediaUrl: string;
-    mediaFile?: File;
+    mediaFile?: File | undefined;
     mediaType: "image" | "video";
-    caption?: string;
-    sticker?: string;
+    caption?: string | undefined;
+    sticker?: string | undefined;
   },
 ): Promise<StoryItem> {
   const userId = await currentUserId();

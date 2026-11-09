@@ -33,7 +33,7 @@ export function ReelPlayer({
   isActive: boolean;
   isMuted: boolean;
   onToggleMute: () => void;
-  me?: Profile | null;
+  me?: Profile | null | undefined;
 }) {
   const [reel, setReel] = useState<ReelItem>(initialReel);
   const [isPlaying, setIsPlaying] = useState(false);

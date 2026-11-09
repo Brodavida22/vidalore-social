@@ -18,10 +18,10 @@ export function StoryViewerModal({
   me,
 }: {
   storyGroups: UserStoryGroup[];
-  initialGroupIndex?: number;
+  initialGroupIndex?: number | undefined;
   open: boolean;
   onClose: () => void;
-  me?: Profile | null;
+  me?: Profile | null | undefined;
 }) {
   const [groupIndex, setGroupIndex] = useState(initialGroupIndex);
   const [storyIndex, setStoryIndex] = useState(0);

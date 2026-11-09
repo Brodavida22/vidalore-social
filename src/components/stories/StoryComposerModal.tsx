@@ -23,7 +23,7 @@ export function StoryComposerModal({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  me?: Profile | null;
+  me?: Profile | null | undefined;
   onStoryPublished?: () => void;
 }) {
   const [mediaUrl, setMediaUrl] = useState<string>("");

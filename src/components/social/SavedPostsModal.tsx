@@ -15,7 +15,7 @@ export function SavedPostsModal({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  me?: Profile | null;
+  me?: Profile | null | undefined;
 }) {
   const [savedPosts, setSavedPosts] = useState<SocialPost[]>(() =>
     getStoredPosts().filter((p) => p.hasSaved),

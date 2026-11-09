@@ -30,7 +30,7 @@ export function ReportModal({
 }: {
   targetId: string;
   targetType: "post" | "comment" | "profile";
-  targetLabel?: string;
+  targetLabel?: string | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {

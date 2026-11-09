@@ -30,10 +30,10 @@ interface PersonInfo {
   id: string;
   name: string;
   username: string;
-  avatarUrl?: string | null;
+  avatarUrl?: string | null | undefined;
   points: number;
-  bio?: string | null;
-  requestId?: string;
+  bio?: string | null | undefined;
+  requestId?: string | undefined;
 }
 
 export function FriendsModal({
@@ -43,7 +43,7 @@ export function FriendsModal({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  me?: Profile | null;
+  me?: Profile | null | undefined;
 }) {
   const [tab, setTab] = useState<Tab>("friends");
   const [search, setSearch] = useState("");

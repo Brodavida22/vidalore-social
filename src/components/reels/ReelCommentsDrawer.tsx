@@ -25,7 +25,7 @@ export function ReelCommentsDrawer({
   reelId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  me?: Profile | null;
+  me?: Profile | null | undefined;
   onCommentAdded?: () => void;
 }) {
   const [comments, setComments] = useState<ReelComment[]>([]);

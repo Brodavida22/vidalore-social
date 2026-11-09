@@ -21,7 +21,7 @@ export function CommentsSection({
   onCommentChange,
 }: {
   postId: string;
-  me?: Profile | null;
+  me?: Profile | null | undefined;
   onCommentChange?: () => void;
 }) {
   const [comments, setComments] = useState<PostComment[]>(() =>
