@@ -13,11 +13,7 @@ export const myProfileQuery = () =>
     queryFn: async () => {
       const { data: auth } = await supabase.auth.getUser();
       if (!auth.user) return null;
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", auth.user.id)
-        .maybeSingle();
+      const { data, error } = await supabase.from("profiles").select("*").eq("id", auth.user.id).maybeSingle();
       if (error) throw error;
       return data;
     },
@@ -34,20 +30,6 @@ export const profileByUsernameQuery = (username: string) =>
         .maybeSingle();
       if (error) throw error;
       return data;
-    },
-  });
-
-export const communityProfilesQuery = (limit = 10) =>
-  queryOptions({
-    queryKey: ["profiles", "community", limit],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .order("points_balance", { ascending: false })
-        .limit(limit);
-      if (error) return [];
-      return data ?? [];
     },
   });
 
@@ -73,14 +55,11 @@ export async function checkUsernameAvailable(username: string) {
 
 /** Uploads an image to the private profile-media bucket under the user's own folder. */
 export async function uploadProfileImage(userId: string, file: File, kind: "avatar" | "cover") {
-  if (!IMAGE_TYPES.includes(file.type))
-    throw new Error("Please choose a JPG, PNG, WEBP or GIF image.");
+  if (!IMAGE_TYPES.includes(file.type)) throw new Error("Please choose a JPG, PNG, WEBP or GIF image.");
   if (file.size > MAX_IMAGE_BYTES) throw new Error("Images must be 5 MB or smaller.");
   const ext = (file.type.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
   const path = `${userId}/${kind}-${Date.now()}.${ext}`;
-  const { error } = await supabase.storage
-    .from("profile-media")
-    .upload(path, file, { contentType: file.type });
+  const { error } = await supabase.storage.from("profile-media").upload(path, file, { contentType: file.type });
   if (error) throw error;
   const { data, error: urlError } = await supabase.storage
     .from("profile-media")
@@ -92,15 +71,10 @@ export async function uploadProfileImage(userId: string, file: File, kind: "avat
 export function friendlyAuthError(message: string) {
   const m = message.toLowerCase();
   if (m.includes("invalid login")) return "That email and password don't match. Please try again.";
-  if (m.includes("email not confirmed"))
-    return "Please confirm your email first — check your inbox.";
-  if (m.includes("already registered") || m.includes("already been registered"))
-    return "An account with this email already exists. Try signing in.";
-  if (m.includes("password") && m.includes("characters"))
-    return "Password must be at least 8 characters.";
-  if (m.includes("pwned") || m.includes("weak"))
-    return "That password is too easy to guess. Please choose a stronger one.";
-  if (m.includes("rate") || m.includes("too many"))
-    return "Too many attempts. Please wait a minute and try again.";
+  if (m.includes("email not confirmed")) return "Please confirm your email first — check your inbox.";
+  if (m.includes("already registered") || m.includes("already been registered")) return "An account with this email already exists. Try signing in.";
+  if (m.includes("password") && m.includes("characters")) return "Password must be at least 8 characters.";
+  if (m.includes("pwned") || m.includes("weak")) return "That password is too easy to guess. Please choose a stronger one.";
+  if (m.includes("rate") || m.includes("too many")) return "Too many attempts. Please wait a minute and try again.";
   return message;
 }
