@@ -5,7 +5,7 @@ export function UserAvatar({
   profile,
   className,
 }: {
-  profile: Pick<Profile, "avatar_url" | "username" | "display_name">;
+  profile: Pick<Profile, "username" | "display_name"> & { avatar_url?: string | null | undefined };
   className?: string;
 }) {
   const initial = (profile.display_name || profile.username).charAt(0).toUpperCase();
