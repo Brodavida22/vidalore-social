@@ -411,3 +411,35 @@ export function subscribeToMessageReads(onNewRead: (read: MessageRead) => void) 
     void supabase.removeChannel(channel);
   };
 }
+
+/**
+ * Search other members by username or display name (used by the new chat window).
+ */
+export async function searchProfiles(term: string, currentUserId: string): Promise<Profile[]> {
+  const cleaned = term.trim();
+  let query = supabase.from("profiles").select("*").neq("id", currentUserId).limit(20);
+  if (cleaned) {
+    const pattern = `%${cleaned.replace(/[%_,()]/g, "")}%`;
+    query = query.or(`username.ilike.${pattern},display_name.ilike.${pattern}`);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Open an existing direct conversation with a member, or create one, and return it with members.
+ */
+export async function getOrCreateDirectConversation(
+  otherUserId: string,
+): Promise<ConversationListItem> {
+  const conversation = await createDirectConversation(otherUserId);
+  const conversations = await getMyConversations();
+  return (
+    conversations.find((item) => item.id === conversation.id) ?? {
+      ...conversation,
+      members: [],
+      lastMessage: null,
+    }
+  );
+}
