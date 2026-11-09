@@ -16,7 +16,7 @@ const TRENDING_TOPICS = [
   { tag: "VidaloreStyle", category: "Fashion" },
 ];
 
-export function RightSidebar({ me }: { me?: Profile | null }) {
+export function RightSidebar({ me }: { me?: Profile | null | undefined }) {
   const [search, setSearch] = useState("");
   const [followingMap, setFollowingMap] = useState<Record<string, boolean>>(() => {
     const rel = getStoredRelationships();

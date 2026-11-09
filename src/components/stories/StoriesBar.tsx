@@ -6,7 +6,7 @@ import { StoryComposerModal } from "@/components/stories/StoryComposerModal";
 import { getStoryGroups, type UserStoryGroup } from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
 
-export function StoriesBar({ me }: { me?: Profile | null }) {
+export function StoriesBar({ me }: { me?: Profile | null | undefined }) {
   const [storyGroups, setStoryGroups] = useState<UserStoryGroup[]>([]);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(0);
