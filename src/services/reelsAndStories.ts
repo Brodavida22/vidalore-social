@@ -1,6 +1,15 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import * as tus from "tus-js-client";
+import {
+  ALL_FORMATS,
+  BlobSource,
+  BufferTarget,
+  Conversion,
+  Input,
+  Mp4OutputFormat,
+  Output,
+  Quality,
+} from "mediabunny";
 import type { Profile } from "@/services/profiles";
 
 export interface ReelComment {
@@ -65,6 +74,128 @@ const SIGNED_URL_SECONDS = 60 * 60 * 24 * 365;
 const MAX_REEL_BYTES = 100 * 1024 * 1024;
 const MAX_STORY_BYTES = 50 * 1024 * 1024;
 
+export interface StoryCompressionResult {
+  file: File;
+  compressed: boolean;
+}
+
+/**
+ * Compresses a story video into MP4/H.264.
+ *
+ * Target:
+ * - Maximum video height: 720px
+ * - Frame rate: 30 FPS
+ * - Video codec: H.264/AVC
+ * - MP4 output
+ *
+ * If the browser cannot encode the video, the original file is returned.
+ * The caller must still enforce the Supabase 50 MB limit.
+ */
+export async function compressStoryVideo(
+  file: File,
+  onProgress?: (progress: number) => void,
+): Promise<StoryCompressionResult> {
+  if (!file.type.startsWith("video/")) {
+    return { file, compressed: false };
+  }
+
+  if (typeof VideoEncoder === "undefined" || typeof VideoDecoder === "undefined") {
+    return { file, compressed: false };
+  }
+
+  let conversion: Awaited<ReturnType<typeof Conversion.init>> | null = null;
+
+  try {
+    onProgress?.(0);
+
+    const input = new Input({
+      formats: ALL_FORMATS,
+      source: new BlobSource(file),
+    });
+
+    const output = new Output({
+      format: new Mp4OutputFormat(),
+      target: new BufferTarget(),
+    });
+
+    conversion = await Conversion.init({
+      input,
+      output,
+      tracks: "primary",
+      video: {
+        codec: "avc",
+        height: 720,
+        frameRate: 30,
+        quality: new Quality("medium"),
+        hardwareAcceleration: "no-preference",
+      },
+    });
+
+    if (!conversion.isValid) {
+      throw new Error(
+        "This device cannot convert the selected video to MP4.",
+      );
+    }
+
+    conversion.onProgress = (progress) => {
+      const safeProgress = Math.max(
+        0,
+        Math.min(100, Math.round(progress * 100)),
+      );
+
+      onProgress?.(safeProgress);
+    };
+
+    await conversion.execute();
+
+    const buffer = output.target.buffer;
+
+    if (!buffer || buffer.byteLength === 0) {
+      throw new Error("Video compression produced an empty file.");
+    }
+
+    const compressedBlob = new Blob([buffer], {
+      type: "video/mp4",
+    });
+
+    const compressedFile = new File(
+      [compressedBlob],
+      `${file.name.replace(/\.[^.]+$/, "")}-compressed.mp4`,
+      {
+        type: "video/mp4",
+        lastModified: Date.now(),
+      },
+    );
+
+    onProgress?.(100);
+
+    // Do not replace the original with a larger compressed file.
+    if (compressedFile.size >= file.size) {
+      return {
+        file,
+        compressed: false,
+      };
+    }
+
+    return {
+      file: compressedFile,
+      compressed: true,
+    };
+  } catch (error) {
+    console.warn(
+      "Story video compression was unavailable; using original file:",
+      error,
+    );
+
+    onProgress?.(100);
+
+    return {
+      file,
+      compressed: false,
+    };
+  }
+}
+
 function notifyUpdated() {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("vidalore:reels-updated"));
@@ -115,6 +246,7 @@ async function uploadMedia(
   userId: string,
   file: File,
   maxBytes: number,
+  onProgress?: (progress: number) => void,
 ): Promise<string> {
   if (file.size > maxBytes) {
     throw new Error(
@@ -172,6 +304,17 @@ async function uploadMedia(
 
         removeFingerprintOnSuccess: true,
 
+        onProgress(bytesUploaded, bytesTotal) {
+          if (bytesTotal > 0) {
+            onProgress?.(
+              Math.min(
+                100,
+                Math.round((bytesUploaded / bytesTotal) * 100),
+              ),
+            );
+          }
+        },
+
         onError(error) {
           console.error("Resumable video upload failed:", error);
 
@@ -186,6 +329,7 @@ async function uploadMedia(
         },
 
         onSuccess() {
+          onProgress?.(100);
           resolve(path);
         },
       });
@@ -207,6 +351,7 @@ async function uploadMedia(
       message(error, "Media upload failed.");
     }
 
+    onProgress?.(100);
     return path;
   } catch (error) {
     message(
@@ -230,6 +375,7 @@ export async function uploadReelVideo(
 export async function uploadStoryMedia(
   userId: string,
   file: File,
+  onProgress?: (progress: number) => void,
 ): Promise<string> {
   if (
     !file.type.startsWith("image/") &&
@@ -238,7 +384,13 @@ export async function uploadStoryMedia(
     throw new Error("Choose an image or video.");
   }
 
-  return uploadMedia(STORY_BUCKET, userId, file, MAX_STORY_BYTES);
+  return uploadMedia(
+    STORY_BUCKET,
+    userId,
+    file,
+    MAX_STORY_BYTES,
+    onProgress,
+  );
 }
 
 export async function getStoredReels(): Promise<ReelItem[]> {
@@ -701,6 +853,7 @@ export async function addStory(
     mediaType: "image" | "video";
     caption?: string | undefined;
     sticker?: string | undefined;
+    onUploadProgress?: ((progress: number) => void) | undefined;
   },
 ): Promise<StoryItem> {
   const userId = await currentUserId();
@@ -712,7 +865,11 @@ export async function addStory(
   }
 
   const mediaPath = data.mediaFile
-    ? await uploadStoryMedia(userId, data.mediaFile)
+    ? await uploadStoryMedia(
+        userId,
+        data.mediaFile,
+        data.onUploadProgress,
+      )
     : data.mediaUrl;
 
   const createdAt = new Date();
@@ -845,4 +1002,4 @@ export async function getStoryGroups(
         : true,
     };
   });
-}
+      }
