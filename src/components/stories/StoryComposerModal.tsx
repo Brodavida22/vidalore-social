@@ -39,8 +39,13 @@ export function StoryComposerModal({
     const file = e.target.files?.[0];
     if (!file) return;
 
+        const fileSizeMB = file.size / (1024 * 1024);
+
     if (file.size > 25 * 1024 * 1024) {
-      toast.error("Story media must be 25 MB or smaller.");
+      toast.error("Story video is too large", {
+        description: `Your selected file is ${fileSizeMB.toFixed(2)} MB. Maximum allowed is 25 MB.`,
+      });
+      e.target.value = "";
       return;
     }
     const isVideo = file.type.startsWith("video/");
