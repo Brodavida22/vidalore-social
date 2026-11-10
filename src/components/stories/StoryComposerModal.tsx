@@ -1,3 +1,4 @@
+
 import { useState, useRef, type ChangeEvent } from "react";
 import { Camera, Upload, X, Loader2, Smile, Type } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +15,7 @@ import { addStory } from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
 
 const STORY_STICKERS = ["✨", "🔥", "⚡", "🎯", "💡", "🙌", "🌿", "📷"];
+const MAX_STORY_BYTES = 50 * 1024 * 1024;
 
 export function StoryComposerModal({
   open,
@@ -26,7 +28,7 @@ export function StoryComposerModal({
   me?: Profile | null | undefined;
   onStoryPublished?: () => void;
 }) {
-  const [mediaUrl, setMediaUrl] = useState<string>("");
+  const [mediaUrl, setMediaUrl] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaType, setMediaType] = useState<"image" | "video">("image");
   const [caption, setCaption] = useState("");
@@ -35,63 +37,99 @@ export function StoryComposerModal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  function clearMedia() {
+    if (mediaUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(mediaUrl);
+    }
+
+    setMediaUrl("");
+    setMediaFile(null);
+    setMediaType("image");
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
   function handleFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-        const fileSizeMB = file.size / (1024 * 1024);
+    const fileSizeMB = file.size / (1024 * 1024);
+    const isVideo = file.type.startsWith("video/");
+    const isImage = file.type.startsWith("image/");
 
-    if (file.size > 25 * 1024 * 1024) {
-      toast.error("Story video is too large", {
-        description: `Your selected file is ${fileSizeMB.toFixed(2)} MB. Maximum allowed is 25 MB.`,
+    if (!isVideo && !isImage) {
+      toast.error("Choose an image or video file.");
+      e.target.value = "";
+      return;
+    }
+
+    if (file.size > MAX_STORY_BYTES) {
+      toast.error("Story media is too large", {
+        description: `Selected file: ${fileSizeMB.toFixed(2)} MB. Maximum allowed: 50 MB.`,
       });
       e.target.value = "";
       return;
     }
-    const isVideo = file.type.startsWith("video/");
-    if (!isVideo && !file.type.startsWith("image/")) {
-      toast.error("Choose an image or video file.");
-      return;
+
+    if (mediaUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(mediaUrl);
     }
+
     setMediaFile(file);
     setMediaType(isVideo ? "video" : "image");
-
     setMediaUrl(URL.createObjectURL(file));
   }
 
   async function handlePublish() {
-    if (!mediaUrl) {
+    if (!mediaFile || !mediaUrl) {
       toast.error("Please select a photo or video first.");
       return;
     }
+
     if (!me) {
       toast.error("Please sign in to post a story.");
       return;
     }
 
     setIsSubmitting(true);
+
     try {
       await addStory(me, {
         mediaUrl,
-        mediaFile: mediaFile ?? undefined,
+        mediaFile,
         mediaType,
         caption: caption.trim() || undefined,
         sticker: selectedSticker ?? undefined,
       });
-      if (mediaFile && mediaUrl.startsWith("blob:")) URL.revokeObjectURL(mediaUrl);
-      setIsSubmitting(false);
+
+      if (mediaUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(mediaUrl);
+      }
+
       setMediaUrl("");
       setMediaFile(null);
+      setMediaType("image");
       setCaption("");
       setSelectedSticker(null);
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
       toast.success("Story posted successfully", {
         description: "Visible for the next 24 hours to your followers.",
       });
+
       onStoryPublished?.();
       onOpenChange(false);
     } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not publish story."
+      );
+    } finally {
       setIsSubmitting(false);
-      toast.error(error instanceof Error ? error.message : "Could not publish story.");
     }
   }
 
@@ -109,7 +147,6 @@ export function StoryComposerModal({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 py-2 pr-1">
-          {/* Media Preview or Dropzone */}
           {!mediaUrl ? (
             <div className="space-y-3">
               <div
@@ -117,8 +154,13 @@ export function StoryComposerModal({
                 className="flex flex-col items-center justify-center p-8 rounded-xl border-2 border-dashed border-border hover:border-[#E91E63] bg-secondary/50 transition-colors cursor-pointer group text-center aspect-[9/14] max-h-72 w-full mx-auto"
               >
                 <Upload className="h-8 w-8 text-[#E91E63] mb-2 group-hover:scale-105 transition-transform" />
-                <p className="text-xs font-semibold text-foreground">Select photo or clip</p>
-                <p className="text-[0.7rem] text-muted-foreground mt-0.5">JPG, PNG, WebP or MP4</p>
+                <p className="text-xs font-semibold text-foreground">
+                  Select photo or clip
+                </p>
+                <p className="text-[0.7rem] text-muted-foreground mt-0.5">
+                  JPG, PNG, WebP or MP4 · Maximum 50 MB
+                </p>
+
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -130,7 +172,6 @@ export function StoryComposerModal({
             </div>
           ) : (
             <div className="space-y-3">
-              {/* Active Preview */}
               <div className="relative aspect-[9/16] max-h-80 w-auto mx-auto rounded-xl overflow-hidden bg-black shadow-lg border border-border">
                 {mediaType === "video" ? (
                   <video
@@ -142,17 +183,19 @@ export function StoryComposerModal({
                     playsInline
                   />
                 ) : (
-                  <img src={mediaUrl} alt="" className="h-full w-full object-cover" />
+                  <img
+                    src={mediaUrl}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
                 )}
 
-                {/* Sticker badge */}
                 {selectedSticker && (
                   <div className="absolute top-4 right-4 text-3xl animate-bounce">
                     {selectedSticker}
                   </div>
                 )}
 
-                {/* Caption overlay */}
                 {caption && (
                   <div className="absolute bottom-4 inset-x-4 p-2.5 rounded-lg bg-black/70 backdrop-blur-sm text-white text-xs text-center font-medium">
                     {caption}
@@ -161,29 +204,28 @@ export function StoryComposerModal({
 
                 <button
                   type="button"
-                  onClick={() => {
-                    if (mediaUrl.startsWith("blob:")) URL.revokeObjectURL(mediaUrl);
-                    setMediaUrl("");
-                    setMediaFile(null);
-                  }}
+                  onClick={clearMedia}
                   className="absolute top-3 left-3 rounded-lg bg-black/70 p-1.5 text-white hover:bg-destructive transition-colors"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
 
-              {/* Decorative Stickers */}
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-foreground flex items-center gap-1">
-                  <Smile className="h-3.5 w-3.5 text-primary" /> Add Badge / Emoji:
+                  <Smile className="h-3.5 w-3.5 text-primary" />
+                  Add Badge / Emoji:
                 </label>
+
                 <div className="flex items-center gap-2 overflow-x-auto py-1">
                   {STORY_STICKERS.map((sticker) => (
                     <button
                       key={sticker}
                       type="button"
                       onClick={() =>
-                        setSelectedSticker(selectedSticker === sticker ? null : sticker)
+                        setSelectedSticker(
+                          selectedSticker === sticker ? null : sticker
+                        )
                       }
                       className={`flex h-8 w-8 items-center justify-center rounded-lg text-base transition-colors ${
                         selectedSticker === sticker
@@ -197,11 +239,12 @@ export function StoryComposerModal({
                 </div>
               </div>
 
-              {/* Caption text */}
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
-                  <Type className="h-3.5 w-3.5" /> Caption:
+                  <Type className="h-3.5 w-3.5" />
+                  Caption:
                 </label>
+
                 <Input
                   value={caption}
                   onChange={(e) => setCaption(e.target.value)}
@@ -214,7 +257,6 @@ export function StoryComposerModal({
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end gap-2 pt-3 border-t border-border">
           <Button
             type="button"
@@ -222,9 +264,11 @@ export function StoryComposerModal({
             size="sm"
             onClick={() => onOpenChange(false)}
             className="rounded-lg text-xs"
+            disabled={isSubmitting}
           >
             Cancel
           </Button>
+
           <Button
             type="button"
             size="sm"
@@ -234,7 +278,8 @@ export function StoryComposerModal({
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Publishing...
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                Publishing...
               </>
             ) : (
               "Publish Story"
