@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Flag, ShieldCheck } from "lucide-react";
+import { Flag, ShieldCheck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { reportContent } from "@/services/social";
+import { submitContentReport, type ReportTargetType } from "@/services/moderation";
 
 const REPORT_REASONS = [
   "Spam or unsolicited promotion",
@@ -18,7 +18,7 @@ const REPORT_REASONS = [
   "Inappropriate or sensitive content",
   "Fake account or impersonation",
   "Misleading or malicious links",
-  "Other concern",
+  "Other community concern",
 ];
 
 export function ReportModal({
@@ -29,30 +29,42 @@ export function ReportModal({
   onOpenChange,
 }: {
   targetId: string;
-  targetType: "post" | "comment" | "profile";
+  targetType: ReportTargetType;
   targetLabel?: string | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const [selectedReason, setSelectedReason] = useState(REPORT_REASONS[0]);
   const [details, setDetails] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  function handleSubmit() {
-    reportContent({
-      targetId,
-      targetType,
-      reason: selectedReason || "General report",
-      details: details.trim() || undefined,
-    });
-    setSubmitted(true);
-    toast.success("Report submitted to moderation", {
-      description: "Thank you for keeping VIDALORE safe.",
-    });
-    setTimeout(() => {
-      setSubmitted(false);
-      onOpenChange(false);
-    }, 1500);
+  async function handleSubmit() {
+    setIsSubmitting(true);
+    try {
+      await submitContentReport({
+        targetType,
+        targetId,
+        reason: selectedReason || "Community concern",
+        description: details.trim() || undefined,
+      });
+
+      setSubmitted(true);
+      toast.success("Report submitted to moderation", {
+        description: "Thank you for keeping VIDALORE safe.",
+      });
+
+      setTimeout(() => {
+        setSubmitted(false);
+        setDetails("");
+        onOpenChange(false);
+      }, 1500);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to submit report.";
+      toast.error(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -60,11 +72,12 @@ export function ReportModal({
       <DialogContent className="sm:max-w-md bg-card border-border">
         <DialogHeader>
           <DialogTitle className="font-display text-lg font-semibold flex items-center gap-2 text-foreground">
-            <Flag className="h-4 w-4 text-destructive" />
+            <Flag className="h-4 w-4 text-[#E91E63]" />
             Report {targetLabel || targetType}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground text-xs">
-            Help maintain community standards. All reports are confidential and reviewed promptly.
+            Help maintain community standards. All reports are confidential and reviewed promptly by
+            VIDALORE moderators.
           </DialogDescription>
         </DialogHeader>
 
@@ -73,7 +86,7 @@ export function ReportModal({
             <ShieldCheck className="h-10 w-10 text-[#22C55E] mx-auto" />
             <p className="font-semibold text-foreground text-sm">Report Received</p>
             <p className="text-xs text-muted-foreground">
-              Our moderation team will review this item.
+              Our moderation team has logged this report and will review it promptly.
             </p>
           </div>
         ) : (
@@ -86,7 +99,7 @@ export function ReportModal({
                     key={reason}
                     className={`flex items-center gap-2.5 rounded-lg p-2.5 text-xs cursor-pointer transition-colors ${
                       selectedReason === reason
-                        ? "bg-secondary text-foreground font-medium ring-1 ring-primary"
+                        ? "bg-[#E91E63]/10 text-foreground font-medium ring-1 ring-[#E91E63]"
                         : "bg-secondary/40 text-muted-foreground hover:bg-secondary/60"
                     }`}
                   >
@@ -95,7 +108,7 @@ export function ReportModal({
                       name="report-reason"
                       checked={selectedReason === reason}
                       onChange={() => setSelectedReason(reason)}
-                      className="accent-primary"
+                      className="accent-[#E91E63]"
                     />
                     {reason}
                   </label>
@@ -113,7 +126,8 @@ export function ReportModal({
                 value={details}
                 onChange={(e) => setDetails(e.target.value)}
                 rows={2}
-                className="resize-none rounded-lg bg-secondary text-xs border-border"
+                maxLength={1000}
+                className="resize-none rounded-lg bg-secondary text-xs border-border text-foreground"
               />
             </div>
 
@@ -122,6 +136,7 @@ export function ReportModal({
                 type="button"
                 variant="ghost"
                 size="sm"
+                disabled={isSubmitting}
                 onClick={() => onOpenChange(false)}
                 className="rounded-lg text-xs"
               >
@@ -129,12 +144,19 @@ export function ReportModal({
               </Button>
               <Button
                 type="button"
-                variant="destructive"
                 size="sm"
+                disabled={isSubmitting}
                 onClick={handleSubmit}
-                className="rounded-lg text-xs"
+                className="rounded-lg text-xs bg-[#E91E63] hover:bg-[#C2185B] text-white font-semibold"
               >
-                Submit Report
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                    Submitting...
+                  </>
+                ) : (
+                  "Submit Report"
+                )}
               </Button>
             </div>
           </div>

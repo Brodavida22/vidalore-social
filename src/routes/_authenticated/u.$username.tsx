@@ -39,12 +39,8 @@ import {
   myProfileQuery,
   profileByUsernameQuery,
 } from "@/services/profiles";
-import {
-  getStoredRelationships,
-  toggleFollow,
-  sendFriendRequest,
-  blockUser,
-} from "@/services/social";
+import { getStoredRelationships, toggleFollow, sendFriendRequest } from "@/services/social";
+import { blockUser, unblockUser, blocksKeys, blockedIdsQuery } from "@/services/blocks";
 import { userPostsQuery, mentionPostsQuery } from "@/services/posts";
 import { getStoredReels } from "@/services/reelsAndStories";
 
@@ -121,6 +117,8 @@ function ProfilePage() {
     (profile ? relState.outgoingFriendRequests.includes(profile.id) : false);
 
   const queryClient = useQueryClient();
+  const { data: blockedIds = [] } = useQuery(blockedIdsQuery());
+  const isUserBlocked = Boolean(profile && blockedIds.includes(profile.id));
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -246,11 +244,23 @@ function ProfilePage() {
     }
   }
 
-  function handleBlock() {
+  async function handleBlockToggle() {
     if (!profile) return;
-    blockUser(profile.id);
-    setRelState(getStoredRelationships());
-    toast.success(`Blocked @${profile.username}`);
+    try {
+      if (isUserBlocked) {
+        await unblockUser(profile.id);
+        toast.success(`Unblocked @${profile.username}`);
+      } else {
+        await blockUser(profile.id);
+        toast.success(`Blocked @${profile.username}`, {
+          description: "Their posts and interactions are now hidden from your feeds.",
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: blocksKeys.all });
+      await queryClient.invalidateQueries({ queryKey: postsKeys.all });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't update block status.");
+    }
   }
 
   return (
@@ -368,10 +378,13 @@ function ProfilePage() {
                       <Flag className="h-3.5 w-3.5 mr-2" /> Report profile
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={handleBlock}
+                      onClick={handleBlockToggle}
                       className="text-xs text-destructive cursor-pointer"
                     >
-                      <UserX className="h-3.5 w-3.5 mr-2" /> Block @{profile.username}
+                      <UserX className="h-3.5 w-3.5 mr-2" />
+                      {isUserBlocked
+                        ? `Unblock @${profile.username}`
+                        : `Block @${profile.username}`}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -412,6 +425,26 @@ function ProfilePage() {
             )}
           </div>
         </div>
+
+        {/* Blocked Notification Banner */}
+        {isUserBlocked && (
+          <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs text-destructive font-medium">
+              <UserX className="h-4 w-4 shrink-0" />
+              <span>
+                You have blocked @{profile.username}. Their posts and activity are hidden.
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleBlockToggle}
+              className="text-xs h-7 rounded-lg border-destructive/40 text-destructive hover:bg-destructive/10"
+            >
+              Unblock
+            </Button>
+          </div>
+        )}
 
         {/* Social Counters (Posts, Followers, Following, Points) */}
         <div className="mt-4 grid grid-cols-4 gap-1.5 sm:gap-2 text-center">

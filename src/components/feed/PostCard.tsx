@@ -33,15 +33,17 @@ import { UserAvatar } from "@/components/profile/UserAvatar";
 import { CommentsSection } from "@/components/feed/CommentsSection";
 import { ShareModal } from "@/components/feed/ShareModal";
 import { ReportModal } from "@/components/feed/ReportModal";
+import { PostVideoPlayer } from "@/components/feed/PostVideoPlayer";
 import type { Profile } from "@/services/profiles";
 import {
   type SocialPost,
+  type PostMedia,
   setPostLiked,
   setPostSaved,
   deletePost,
   postsKeys,
 } from "@/services/posts";
-import { blockUser } from "@/services/social";
+import { blockUser } from "@/services/blocks";
 
 export function PostCard({
   post: initialPost,
@@ -59,9 +61,7 @@ export function PostCard({
   const [showComments, setShowComments] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
-  const [activePhotoModal, setActivePhotoModal] = useState<string | null>(null);
-  const [isPlayingVideo, setIsPlayingVideo] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const [activeMediaModal, setActiveMediaModal] = useState<PostMedia | null>(null);
   const [heartBurst, setHeartBurst] = useState(false);
 
   // Sync internal state if prop changes
@@ -142,12 +142,17 @@ export function PostCard({
     }
   }
 
-  function handleBlock() {
-    blockUser(post.authorId);
-    toast.success(`Blocked @${post.authorUsername}`, {
-      description: "Their posts and profile will no longer appear in your feed.",
-    });
-    onDeleted?.(post.id);
+  async function handleBlock() {
+    try {
+      await blockUser(post.authorId);
+      toast.success(`Blocked @${post.authorUsername}`, {
+        description: "Their posts and profile will no longer appear in your feed.",
+      });
+      await queryClient.invalidateQueries({ queryKey: postsKeys.all });
+      onDeleted?.(post.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't block user.");
+    }
   }
 
   async function handleCopy() {
@@ -323,42 +328,15 @@ export function PostCard({
             <div className="mt-3.5 overflow-hidden rounded-xl border border-border bg-black/5 dark:bg-black/40">
               {post.media.length === 1 ? (
                 post.media[0]!.type === "video" ? (
-                  <div className="relative aspect-video w-full bg-black">
-                    <video
-                      src={post.media[0]!.url}
-                      className="h-full w-full object-cover"
-                      autoPlay={isPlayingVideo}
-                      muted={isMuted}
-                      loop
-                      playsInline
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/10 transition-colors">
-                      <button
-                        type="button"
-                        onClick={() => setIsPlayingVideo(!isPlayingVideo)}
-                        className="flex h-11 w-11 items-center justify-center rounded-full bg-black/70 text-white backdrop-blur-sm hover:scale-105 transition-transform"
-                        aria-label={isPlayingVideo ? "Pause video" : "Play video"}
-                      >
-                        {isPlayingVideo ? (
-                          <Pause className="h-5 w-5" />
-                        ) : (
-                          <Play className="h-5 w-5 ml-0.5" />
-                        )}
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsMuted(!isMuted)}
-                      className="absolute bottom-3 right-3 rounded-lg bg-black/60 p-2 text-white hover:bg-black/80"
-                      aria-label={isMuted ? "Unmute" : "Mute"}
-                    >
-                      {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                    </button>
-                  </div>
+                  <PostVideoPlayer
+                    url={post.media[0]!.url}
+                    storagePath={post.media[0]!.storagePath}
+                    className="w-full"
+                  />
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setActivePhotoModal(post.media![0]!.url)}
+                    onClick={() => setActiveMediaModal(post.media![0]!)}
                     className="block w-full overflow-hidden text-left"
                   >
                     <img
@@ -370,73 +348,28 @@ export function PostCard({
                   </button>
                 )
               ) : post.media.length === 2 ? (
-                <div className="grid grid-cols-2 gap-1">
-                  {post.media.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setActivePhotoModal(m.url)}
-                      className="aspect-square w-full overflow-hidden"
-                    >
-                      <img
-                        src={m.url}
-                        alt=""
-                        loading="lazy"
-                        className="h-full w-full object-cover hover:opacity-95 transition-opacity"
-                      />
-                    </button>
-                  ))}
+                <div className="grid grid-cols-2 gap-1 aspect-[16/10]">
+                  {post.media.map((m) => renderGridMediaItem(m, () => setActiveMediaModal(m)))}
                 </div>
               ) : post.media.length === 3 ? (
                 <div className="grid grid-cols-2 gap-1 aspect-[4/3]">
-                  <button
-                    type="button"
-                    onClick={() => setActivePhotoModal(post.media![0]!.url)}
-                    className="h-full w-full overflow-hidden"
-                  >
-                    <img
-                      src={post.media[0]!.url}
-                      alt=""
-                      loading="lazy"
-                      className="h-full w-full object-cover hover:opacity-95 transition-opacity"
-                    />
-                  </button>
+                  {renderGridMediaItem(post.media[0]!, () => setActiveMediaModal(post.media![0]!))}
                   <div className="grid grid-rows-2 gap-1 h-full">
-                    {post.media.slice(1, 3).map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => setActivePhotoModal(m.url)}
-                        className="h-full w-full overflow-hidden"
-                      >
-                        <img
-                          src={m.url}
-                          alt=""
-                          loading="lazy"
-                          className="h-full w-full object-cover hover:opacity-95 transition-opacity"
-                        />
-                      </button>
-                    ))}
+                    {post.media
+                      .slice(1, 3)
+                      .map((m) => renderGridMediaItem(m, () => setActiveMediaModal(m)))}
                   </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-1 aspect-square">
                   {post.media.slice(0, 4).map((m, idx) => (
                     <div key={m.id} className="relative h-full w-full overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() => setActivePhotoModal(m.url)}
-                        className="h-full w-full"
-                      >
-                        <img
-                          src={m.url}
-                          alt=""
-                          loading="lazy"
-                          className="h-full w-full object-cover hover:opacity-95 transition-opacity"
-                        />
-                      </button>
+                      {renderGridMediaItem(m, () => setActiveMediaModal(m))}
                       {idx === 3 && post.media!.length > 4 && (
-                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/60 font-semibold text-xl text-white">
+                        <div
+                          onClick={() => setActiveMediaModal(m)}
+                          className="cursor-pointer absolute inset-0 flex items-center justify-center bg-black/60 font-semibold text-xl text-white backdrop-blur-[2px]"
+                        >
                           +{post.media!.length - 4}
                         </div>
                       )}
@@ -540,31 +473,88 @@ export function PostCard({
         onOpenChange={setReportOpen}
       />
 
-      {/* Photo Lightbox Modal */}
-      {activePhotoModal && (
+      {/* Media Lightbox Modal */}
+      {activeMediaModal && (
         <div
           role="dialog"
           aria-modal="true"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-md animate-fade-in"
-          onClick={() => setActivePhotoModal(null)}
+          onClick={() => setActiveMediaModal(null)}
         >
           <button
             type="button"
-            onClick={() => setActivePhotoModal(null)}
-            className="absolute top-4 right-4 rounded-lg bg-white/10 p-2 text-white hover:bg-white/20 transition-colors"
-            aria-label="Close photo"
+            onClick={() => setActiveMediaModal(null)}
+            className="absolute top-4 right-4 z-50 rounded-lg bg-white/10 p-2 text-white hover:bg-white/20 transition-colors"
+            aria-label="Close modal"
           >
             ✕
           </button>
-          <img
-            src={activePhotoModal}
-            alt=""
-            className="max-h-[85vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
+          <div
+            className="max-h-[85vh] max-w-[90vw] overflow-hidden rounded-xl shadow-2xl flex items-center justify-center"
             onClick={(e) => e.stopPropagation()}
-          />
+          >
+            {activeMediaModal.type === "video" ? (
+              <PostVideoPlayer
+                url={activeMediaModal.url}
+                storagePath={activeMediaModal.storagePath}
+                autoPlay={true}
+                className="w-[85vw] max-w-4xl max-h-[85vh]"
+              />
+            ) : (
+              <img
+                src={activeMediaModal.url}
+                alt={activeMediaModal.caption || ""}
+                className="max-h-[85vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
+              />
+            )}
+          </div>
         </div>
       )}
     </article>
+  );
+}
+
+function renderGridMediaItem(m: PostMedia, onClick: () => void) {
+  if (m.type === "video") {
+    return (
+      <button
+        key={m.id}
+        type="button"
+        onClick={onClick}
+        className="relative h-full w-full overflow-hidden bg-black flex items-center justify-center group"
+      >
+        <video
+          src={m.url}
+          className="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+          preload="metadata"
+          muted
+          playsInline
+        />
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition-colors">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/70 text-white backdrop-blur-sm group-hover:scale-110 transition-transform">
+            <Play className="h-4 w-4 ml-0.5 fill-current" />
+          </span>
+        </div>
+        <span className="absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[0.65rem] font-semibold text-white">
+          VIDEO
+        </span>
+      </button>
+    );
+  }
+  return (
+    <button
+      key={m.id}
+      type="button"
+      onClick={onClick}
+      className="h-full w-full overflow-hidden block"
+    >
+      <img
+        src={m.url}
+        alt={m.caption || "Post photo"}
+        loading="lazy"
+        className="h-full w-full object-cover hover:opacity-95 transition-opacity"
+      />
+    </button>
   );
 }
 

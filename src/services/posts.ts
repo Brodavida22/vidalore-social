@@ -23,14 +23,46 @@ export const POST_MEDIA_MIME_TYPES: Record<string, { type: "image" | "video"; ex
   "video/quicktime": { type: "video", ext: "mov" },
 };
 
-export const POST_MEDIA_ACCEPT = Object.keys(POST_MEDIA_MIME_TYPES).join(",");
+export const POST_MEDIA_ACCEPT =
+  "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.mov";
 
 const BUCKET = "post-media";
 const SIGNED_URL_TTL = 60 * 60; // seconds
 
 export interface DraftFile {
+  name?: string;
   type: string;
   size: number;
+}
+
+export function detectMediaInfo(file: { name?: string; type?: string }): {
+  type: "image" | "video";
+  ext: string;
+  mime: string;
+} | null {
+  const rawType = (file.type || "").toLowerCase().split(";")[0]?.trim() || "";
+  if (POST_MEDIA_MIME_TYPES[rawType]) {
+    return {
+      type: POST_MEDIA_MIME_TYPES[rawType]!.type,
+      ext: POST_MEDIA_MIME_TYPES[rawType]!.ext,
+      mime: rawType,
+    };
+  }
+
+  // Fallback to file extension
+  const ext = (file.name || "").split(".").pop()?.toLowerCase();
+  if (ext) {
+    if (ext === "mp4" || ext === "m4v") return { type: "video", ext: "mp4", mime: "video/mp4" };
+    if (ext === "webm") return { type: "video", ext: "webm", mime: "video/webm" };
+    if (ext === "mov" || ext === "qt")
+      return { type: "video", ext: "mov", mime: "video/quicktime" };
+    if (ext === "jpg" || ext === "jpeg") return { type: "image", ext: "jpg", mime: "image/jpeg" };
+    if (ext === "png") return { type: "image", ext: "png", mime: "image/png" };
+    if (ext === "webp") return { type: "image", ext: "webp", mime: "image/webp" };
+    if (ext === "gif") return { type: "image", ext: "gif", mime: "image/gif" };
+  }
+
+  return null;
 }
 
 /** Returns a user-facing error message, or null if the draft is valid. */
@@ -41,7 +73,7 @@ export function validatePostDraft(draft: {
 }): string | null {
   const content = draft.content.trim();
   if (!content && draft.files.length === 0) {
-    return "Please write something or attach a photo before posting.";
+    return "Please write something or attach a photo/video before posting.";
   }
   if (content.length > POST_LIMITS.maxContent) {
     return `Posts can be up to ${POST_LIMITS.maxContent} characters.`;
@@ -53,7 +85,8 @@ export function validatePostDraft(draft: {
     return `Maximum ${POST_LIMITS.maxMedia} media attachments per post.`;
   }
   for (const f of draft.files) {
-    if (!POST_MEDIA_MIME_TYPES[f.type]) {
+    const info = detectMediaInfo(f);
+    if (!info) {
       return "Only JPG, PNG, WebP, GIF, MP4, WebM or MOV files can be attached.";
     }
     if (f.size > POST_LIMITS.maxFileBytes) {
@@ -220,6 +253,24 @@ async function signPaths(paths: string[]): Promise<Map<string, string>> {
   return out;
 }
 
+export async function getFreshSignedUrl(storagePath: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(storagePath, SIGNED_URL_TTL);
+    if (!error && data?.signedUrl) {
+      signedUrlCache.set(storagePath, {
+        url: data.signedUrl,
+        expiresAt: Date.now() + SIGNED_URL_TTL * 1000,
+      });
+      return data.signedUrl;
+    }
+  } catch (err) {
+    console.warn("Failed to refresh signed URL for", storagePath, err);
+  }
+  return null;
+}
+
 function personFrom(author: AuthorRow | null, fallbackId: string): PostPerson {
   return {
     id: author?.id ?? fallbackId,
@@ -249,7 +300,8 @@ async function hydratePosts(rows: PostRow[]): Promise<SocialPost[]> {
 
   const targetIds = [...new Set(rows.map((r) => r.repost_of_id ?? r.id).filter((id) => !!id))];
 
-  const [likesRes, savesRes, repostsRes] = await Promise.all([
+  const [blockedRes, likesRes, savesRes, repostsRes] = await Promise.all([
+    supabase.from("user_blocks").select("blocked_id").eq("blocker_id", uid),
     supabase.from("post_likes").select("post_id").eq("user_id", uid).in("post_id", targetIds),
     supabase.from("post_saves").select("post_id").eq("user_id", uid).in("post_id", targetIds),
     supabase
@@ -261,17 +313,25 @@ async function hydratePosts(rows: PostRow[]): Promise<SocialPost[]> {
   if (likesRes.error) throw friendlyError(likesRes.error, "Couldn't load posts.");
   if (savesRes.error) throw friendlyError(savesRes.error, "Couldn't load posts.");
   if (repostsRes.error) throw friendlyError(repostsRes.error, "Couldn't load posts.");
+  const blockedIds = new Set((blockedRes.data ?? []).map((b) => b.blocked_id));
   const liked = new Set((likesRes.data ?? []).map((r) => r.post_id));
   const saved = new Set((savesRes.data ?? []).map((r) => r.post_id));
   const reposted = new Set((repostsRes.data ?? []).map((r) => r.repost_of_id));
 
+  // Exclude posts authored or reposted by blocked users
+  const visibleRows = rows.filter(
+    (r) =>
+      !blockedIds.has(r.author_id) &&
+      (!r.repost_of_id || !blockedIds.has(originals.get(r.repost_of_id)?.author_id ?? "")),
+  );
+
   const allPaths: string[] = [];
-  for (const r of [...rows, ...originals.values()]) {
+  for (const r of [...visibleRows, ...originals.values()]) {
     for (const m of r.media ?? []) allPaths.push(m.storage_path);
   }
   const urls = await signPaths(allPaths);
 
-  return rows.map((row) => {
+  return visibleRows.map((row) => {
     const isRepost = !!row.repost_of_id;
     const source = isRepost ? (originals.get(row.repost_of_id!) ?? null) : row;
     const sourceAuthor = personFrom(source?.author ?? null, source?.author_id ?? row.author_id);
@@ -473,11 +533,14 @@ export async function createPost(input: {
   try {
     const rows = [];
     for (const [index, file] of input.files.entries()) {
-      const info = POST_MEDIA_MIME_TYPES[file.type]!;
+      const info = detectMediaInfo(file);
+      if (!info) {
+        throw new Error(`File "${file.name}" is not a supported format.`);
+      }
       const path = `${uid}/${post.id}/${index}-${crypto.randomUUID()}.${info.ext}`;
       const { error: upErr } = await supabase.storage
         .from(BUCKET)
-        .upload(path, file, { contentType: file.type, upsert: false });
+        .upload(path, file, { contentType: info.mime, upsert: false });
       if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
       uploaded.push(path);
       rows.push({
@@ -485,7 +548,7 @@ export async function createPost(input: {
         owner_id: uid,
         storage_path: path,
         media_type: info.type,
-        mime_type: file.type,
+        mime_type: info.mime,
         size_bytes: file.size,
         position: index,
       });

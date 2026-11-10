@@ -16,13 +16,16 @@ import {
   Menu,
   X,
   Plus,
+  ShieldAlert,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Logo } from "@/components/brand/Logo";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { myProfileQuery } from "@/services/profiles";
-import { getStoredNotifications, getStoredRelationships } from "@/services/social";
+import { getStoredRelationships } from "@/services/social";
+import { unreadNotificationsCountQuery, notificationsKeys } from "@/services/notifications";
+import { isAdminQuery } from "@/services/moderation";
 import { NotificationsModal } from "@/components/social/NotificationsModal";
 import { FriendsModal } from "@/components/social/FriendsModal";
 import { SavedPostsModal } from "@/components/social/SavedPostsModal";
@@ -30,6 +33,8 @@ import { Button } from "@/components/ui/button";
 
 export function AppShell() {
   const { data: me } = useQuery(myProfileQuery());
+  const { data: dbUnreadCount = 0 } = useQuery(unreadNotificationsCountQuery());
+  const { data: isAdmin = false } = useQuery(isAdminQuery());
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -38,13 +43,9 @@ export function AppShell() {
   const [savedOpen, setSavedOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [pendingRequests, setPendingRequests] = useState(0);
 
   function syncSocialCounters() {
-    const notifs = getStoredNotifications();
-    setUnreadNotifs(notifs.filter((n) => !n.isRead).length);
-
     const rel = getStoredRelationships();
     setPendingRequests(rel.incomingFriendRequests.length);
   }
@@ -53,11 +54,31 @@ export function AppShell() {
     syncSocialCounters();
 
     const handleUpdate = () => syncSocialCounters();
-
     window.addEventListener("vidalore:social-updated", handleUpdate);
 
-    return () => window.removeEventListener("vidalore:social-updated", handleUpdate);
-  }, []);
+    // Realtime notifications count listener
+    const channel = supabase
+      .channel("appshell-notifications-counter")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener("vidalore:social-updated", handleUpdate);
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
+  const unreadNotifs = dbUnreadCount;
 
   async function signOut() {
     await queryClient.cancelQueries();
@@ -183,6 +204,13 @@ export function AppShell() {
             <Settings className="h-5 w-5" />
             Settings
           </Link>
+
+          {isAdmin && (
+            <Link to="/admin/moderation" className={linkCls} activeProps={activeCls}>
+              <ShieldAlert className="h-5 w-5 text-[#E91E63]" />
+              Moderation
+            </Link>
+          )}
         </nav>
 
         {/* PROFILE FOOTER */}
@@ -428,6 +456,17 @@ export function AppShell() {
                 <Settings className="h-4 w-4" />
                 Settings
               </Link>
+
+              {isAdmin && (
+                <Link
+                  to="/admin/moderation"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary font-medium"
+                >
+                  <ShieldAlert className="h-4 w-4 text-[#E91E63]" />
+                  Moderation
+                </Link>
+              )}
             </nav>
 
             <button

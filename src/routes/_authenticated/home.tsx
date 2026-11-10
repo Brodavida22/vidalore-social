@@ -9,7 +9,8 @@ import { StoriesBar } from "@/components/stories/StoriesBar";
 import { RightSidebar } from "@/components/layout/RightSidebar";
 import { myProfileQuery } from "@/services/profiles";
 import { feedQuery, postsKeys, type FeedMode } from "@/services/posts";
-import { getStoredRelationships, getStoredNotifications } from "@/services/social";
+import { unreadNotificationsCountQuery } from "@/services/notifications";
+import { blockedIdsQuery } from "@/services/blocks";
 import { NotificationsModal } from "@/components/social/NotificationsModal";
 
 export const Route = createFileRoute("/_authenticated/home")({
@@ -29,10 +30,11 @@ export const Route = createFileRoute("/_authenticated/home")({
 function HomePage() {
   const queryClient = useQueryClient();
   const { data: me } = useQuery(myProfileQuery());
+  const { data: unreadCount = 0 } = useQuery(unreadNotificationsCountQuery());
+  const { data: blockedIds = [] } = useQuery(blockedIdsQuery());
 
   const [feedFilter, setFeedFilter] = useState<FeedMode>("for-you");
   const [notifOpen, setNotifOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
 
   const {
     data: allFeedPosts = [],
@@ -41,13 +43,8 @@ function HomePage() {
     refetch,
   } = useQuery(feedQuery(feedFilter));
 
-  const rel = getStoredRelationships();
-  const posts = allFeedPosts.filter((p) => !rel.blockedUsers.includes(p.authorId));
-
-  useEffect(() => {
-    const notifs = getStoredNotifications();
-    setUnreadCount(notifs.filter((n) => !n.isRead).length);
-  }, []);
+  const blockedSet = new Set(blockedIds);
+  const posts = allFeedPosts.filter((p) => !blockedSet.has(p.authorId));
 
   async function handleRefresh() {
     await queryClient.invalidateQueries({ queryKey: postsKeys.all });

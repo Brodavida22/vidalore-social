@@ -1114,6 +1114,152 @@ export type Database = {
         };
         Relationships: [];
       };
+      user_blocks: {
+        Row: {
+          id: string;
+          blocker_id: string;
+          blocked_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          blocker_id: string;
+          blocked_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          blocker_id?: string;
+          blocked_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "user_blocks_blocker_id_fkey";
+            columns: ["blocker_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_blocks_blocked_id_fkey";
+            columns: ["blocked_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      notifications: {
+        Row: {
+          id: string;
+          recipient_id: string;
+          actor_id: string;
+          type: string;
+          post_id: string | null;
+          comment_id: string | null;
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          recipient_id: string;
+          actor_id: string;
+          type: string;
+          post_id?: string | null;
+          comment_id?: string | null;
+          read_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          recipient_id?: string;
+          actor_id?: string;
+          type?: string;
+          post_id?: string | null;
+          comment_id?: string | null;
+          read_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "notifications_recipient_id_fkey";
+            columns: ["recipient_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "notifications_actor_id_fkey";
+            columns: ["actor_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      content_reports: {
+        Row: {
+          id: string;
+          reporter_id: string;
+          target_type: string;
+          target_id: string;
+          post_id: string | null;
+          comment_id: string | null;
+          profile_id: string | null;
+          reason: string;
+          description: string | null;
+          status: string;
+          admin_notes: string | null;
+          resolved_by: string | null;
+          resolved_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          reporter_id: string;
+          target_type: string;
+          target_id: string;
+          post_id?: string | null;
+          comment_id?: string | null;
+          profile_id?: string | null;
+          reason: string;
+          description?: string | null;
+          status?: string;
+          admin_notes?: string | null;
+          resolved_by?: string | null;
+          resolved_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          reporter_id?: string;
+          target_type?: string;
+          target_id?: string;
+          post_id?: string | null;
+          comment_id?: string | null;
+          profile_id?: string | null;
+          reason?: string;
+          description?: string | null;
+          status?: string;
+          admin_notes?: string | null;
+          resolved_by?: string | null;
+          resolved_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "content_reports_reporter_id_fkey";
+            columns: ["reporter_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;

@@ -11,7 +11,7 @@ import {
   postsKeys,
   POST_LIMITS,
   POST_MEDIA_ACCEPT,
-  POST_MEDIA_MIME_TYPES,
+  detectMediaInfo,
   validatePostDraft,
 } from "@/services/posts";
 
@@ -75,7 +75,7 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
 
     const additions: PendingFile[] = [];
     for (const file of incoming) {
-      const mimeInfo = POST_MEDIA_MIME_TYPES[file.type];
+      const mimeInfo = detectMediaInfo(file);
       if (!mimeInfo) {
         toast.error(`File "${file.name}" is not a supported image or video.`);
         continue;
