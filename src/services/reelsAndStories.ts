@@ -58,7 +58,7 @@ const REEL_BUCKET = "reel-videos";
 const STORY_BUCKET = "story-media";
 const SIGNED_URL_SECONDS = 60 * 60 * 24 * 365;
 const MAX_REEL_BYTES = 100 * 1024 * 1024;
-const MAX_STORY_BYTES = 25 * 1024 * 1024;
+const MAX_STORY_BYTES = 50 * 1024 * 1024;
 
 function notifyUpdated() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event("vidalore:reels-updated"));
