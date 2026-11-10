@@ -1,4 +1,6 @@
+
 import { supabase } from "@/integrations/supabase/client";
+import * as tus from "tus-js-client";
 import type { Profile } from "@/services/profiles";
 
 export interface ReelComment {
@@ -13,6 +15,7 @@ export interface ReelComment {
   reactionsCount: number;
   hasReacted?: boolean | undefined;
 }
+
 export interface ReelItem {
   id: string;
   creatorId: string;
@@ -34,6 +37,7 @@ export interface ReelItem {
   createdAt: string;
   tags?: string[] | undefined;
 }
+
 export interface StoryItem {
   id: string;
   userId: string;
@@ -45,6 +49,7 @@ export interface StoryItem {
   expiresAt: string;
   seenBy: string[];
 }
+
 export interface UserStoryGroup {
   userId: string;
   username: string;
@@ -61,8 +66,11 @@ const MAX_REEL_BYTES = 100 * 1024 * 1024;
 const MAX_STORY_BYTES = 50 * 1024 * 1024;
 
 function notifyUpdated() {
-  if (typeof window !== "undefined") window.dispatchEvent(new Event("vidalore:reels-updated"));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("vidalore:reels-updated"));
+  }
 }
+
 function message(error: unknown, fallback: string): never {
   console.error(fallback, error);
   throw new Error(error instanceof Error ? error.message : fallback);
@@ -70,62 +78,183 @@ function message(error: unknown, fallback: string): never {
 
 async function currentUserId(): Promise<string> {
   const { data, error } = await supabase.auth.getUser();
+
   if (error) message(error, "Could not verify your session.");
-  if (!data.user) throw new Error("Please sign in to continue.");
+
+  if (!data.user) {
+    throw new Error("Please sign in to continue.");
+  }
+
   return data.user.id;
 }
 
-async function signedMediaUrl(bucket: string, path: string): Promise<string> {
+async function signedMediaUrl(
+  bucket: string,
+  path: string,
+): Promise<string> {
   const { data, error } = await supabase.storage
     .from(bucket)
     .createSignedUrl(path, SIGNED_URL_SECONDS);
-  if (error || !data?.signedUrl)
-    message(error ?? new Error("Missing media URL"), "Could not access uploaded media.");
+
+  if (error || !data?.signedUrl) {
+    message(
+      error ?? new Error("Missing media URL"),
+      "Could not access uploaded media.",
+    );
+  }
+
   return data.signedUrl;
 }
 
+/**
+ * Uploads videos using resumable TUS uploads.
+ * Images continue using the standard Supabase upload method.
+ */
 async function uploadMedia(
   bucket: string,
   userId: string,
   file: File,
   maxBytes: number,
 ): Promise<string> {
-  if (file.size > maxBytes)
-    throw new Error(`File must be ${Math.round(maxBytes / 1024 / 1024)} MB or smaller.`);
+  if (file.size > maxBytes) {
+    throw new Error(
+      `File must be ${Math.round(maxBytes / 1024 / 1024)} MB or smaller.`,
+    );
+  }
+
   const ext =
     file.name
       .split(".")
       .pop()
       ?.toLowerCase()
-      .replace(/[^a-z0-9]/g, "") || (file.type.startsWith("video/") ? "mp4" : "jpg");
+      .replace(/[^a-z0-9]/g, "") ||
+    (file.type.startsWith("video/") ? "mp4" : "jpg");
+
   const path = `${userId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage
-    .from(bucket)
-    .upload(path, file, { contentType: file.type, upsert: false });
-  if (error) message(error, "Media upload failed.");
-  return path;
+
+  // Resumable upload for videos.
+  if (file.type.startsWith("video/")) {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      message(sessionError, "Could not verify your upload session.");
+    }
+
+    if (!session?.access_token) {
+      throw new Error(
+        "Your session has expired. Please sign in again.",
+      );
+    }
+
+    return new Promise<string>((resolve, reject) => {
+      const upload = new tus.Upload(file, {
+        endpoint: `${supabase.supabaseUrl}/storage/v1/upload/resumable`,
+
+        headers: {
+          authorization: `Bearer ${session.access_token}`,
+          apikey: supabase.supabaseKey,
+          "x-upsert": "false",
+        },
+
+        metadata: {
+          bucketName: bucket,
+          objectName: path,
+          contentType: file.type || "application/octet-stream",
+          cacheControl: "3600",
+        },
+
+        chunkSize: 6 * 1024 * 1024,
+
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+
+        removeFingerprintOnSuccess: true,
+
+        onError(error) {
+          console.error("Resumable video upload failed:", error);
+
+          reject(
+            new Error(
+              `Video upload failed: ${
+                error.message ||
+                "Please check your internet connection and try again."
+              }`,
+            ),
+          );
+        },
+
+        onSuccess() {
+          resolve(path);
+        },
+      });
+
+      upload.start();
+    });
+  }
+
+  // Standard upload for images.
+  try {
+    const { error } = await supabase.storage
+      .from(bucket)
+      .upload(path, file, {
+        contentType: file.type,
+        upsert: false,
+      });
+
+    if (error) {
+      message(error, "Media upload failed.");
+    }
+
+    return path;
+  } catch (error) {
+    message(
+      error,
+      "Media upload failed. Please check your connection.",
+    );
+  }
 }
 
-export async function uploadReelVideo(userId: string, file: File): Promise<string> {
-  if (!file.type.startsWith("video/")) throw new Error("Choose a valid video file.");
+export async function uploadReelVideo(
+  userId: string,
+  file: File,
+): Promise<string> {
+  if (!file.type.startsWith("video/")) {
+    throw new Error("Choose a valid video file.");
+  }
+
   return uploadMedia(REEL_BUCKET, userId, file, MAX_REEL_BYTES);
 }
-export async function uploadStoryMedia(userId: string, file: File): Promise<string> {
-  if (!file.type.startsWith("image/") && !file.type.startsWith("video/"))
+
+export async function uploadStoryMedia(
+  userId: string,
+  file: File,
+): Promise<string> {
+  if (
+    !file.type.startsWith("image/") &&
+    !file.type.startsWith("video/")
+  ) {
     throw new Error("Choose an image or video.");
+  }
+
   return uploadMedia(STORY_BUCKET, userId, file, MAX_STORY_BYTES);
 }
 
 export async function getStoredReels(): Promise<ReelItem[]> {
   const userId = await currentUserId();
+
   const { data: rows, error } = await supabase
     .from("reels")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(100);
+
   if (error) message(error, "Could not load reels.");
+
   const ids = (rows ?? []).map((r) => r.creator_id);
   const reelIds = (rows ?? []).map((r) => r.id);
+
   const [profilesResult, likesResult, savesResult] = await Promise.all([
     ids.length
       ? supabase
@@ -133,29 +262,63 @@ export async function getStoredReels(): Promise<ReelItem[]> {
           .select("id, username, display_name, avatar_url")
           .in("id", [...new Set(ids)])
       : Promise.resolve({ data: [], error: null }),
+
     reelIds.length
-      ? supabase.from("reel_likes").select("reel_id").eq("user_id", userId).in("reel_id", reelIds)
+      ? supabase
+          .from("reel_likes")
+          .select("reel_id")
+          .eq("user_id", userId)
+          .in("reel_id", reelIds)
       : Promise.resolve({ data: [], error: null }),
+
     reelIds.length
-      ? supabase.from("reel_saves").select("reel_id").eq("user_id", userId).in("reel_id", reelIds)
+      ? supabase
+          .from("reel_saves")
+          .select("reel_id")
+          .eq("user_id", userId)
+          .in("reel_id", reelIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
-  if (profilesResult.error) message(profilesResult.error, "Could not load reel creators.");
-  if (likesResult.error) message(likesResult.error, "Could not load reel likes.");
-  if (savesResult.error) message(savesResult.error, "Could not load saved reels.");
-  const profiles = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
-  const liked = new Set((likesResult.data ?? []).map((x) => x.reel_id));
-  const saved = new Set((savesResult.data ?? []).map((x) => x.reel_id));
+
+  if (profilesResult.error) {
+    message(profilesResult.error, "Could not load reel creators.");
+  }
+
+  if (likesResult.error) {
+    message(likesResult.error, "Could not load reel likes.");
+  }
+
+  if (savesResult.error) {
+    message(savesResult.error, "Could not load saved reels.");
+  }
+
+  const profiles = new Map(
+    (profilesResult.data ?? []).map((p) => [p.id, p]),
+  );
+
+  const liked = new Set(
+    (likesResult.data ?? []).map((x) => x.reel_id),
+  );
+
+  const saved = new Set(
+    (savesResult.data ?? []).map((x) => x.reel_id),
+  );
+
   return Promise.all(
     (rows ?? []).map(async (row) => {
       const profile = profiles.get(row.creator_id);
+
       const videoUrl = row.video_url.startsWith("http")
         ? row.video_url
         : await signedMediaUrl(REEL_BUCKET, row.video_url);
+
       return {
         id: row.id,
         creatorId: row.creator_id,
-        creatorName: profile?.display_name || profile?.username || "VIDALORE Member",
+        creatorName:
+          profile?.display_name ||
+          profile?.username ||
+          "VIDALORE Member",
         creatorUsername: profile?.username || "member",
         creatorAvatarUrl: profile?.avatar_url,
         creatorVerified: false,
@@ -177,59 +340,84 @@ export async function getStoredReels(): Promise<ReelItem[]> {
   );
 }
 
-/** Kept for compatibility with older callers; database content must be changed through the API functions. */
+/** Compatibility function for older callers. */
 export function saveStoredReels(_reels: ReelItem[]): void {
   notifyUpdated();
 }
 
-export async function toggleReelLike(reelId: string): Promise<ReelItem | undefined> {
+export async function toggleReelLike(
+  reelId: string,
+): Promise<ReelItem | undefined> {
   const userId = await currentUserId();
+
   const { data: existing, error: readError } = await supabase
     .from("reel_likes")
     .select("reel_id")
     .eq("reel_id", reelId)
     .eq("user_id", userId)
     .maybeSingle();
-  if (readError) message(readError, "Could not check reel like.");
+
+  if (readError) {
+    message(readError, "Could not check reel like.");
+  }
+
   if (existing) {
     const { error } = await supabase
       .from("reel_likes")
       .delete()
       .eq("reel_id", reelId)
       .eq("user_id", userId);
+
     if (error) message(error, "Could not remove like.");
   } else {
     const { error } = await supabase
       .from("reel_likes")
       .insert({ reel_id: reelId, user_id: userId });
+
     if (error) message(error, "Could not like reel.");
   }
+
   notifyUpdated();
+
   const reels = await getStoredReels();
   return reels.find((reel) => reel.id === reelId);
 }
 
-export async function toggleReelSave(reelId: string): Promise<boolean> {
+export async function toggleReelSave(
+  reelId: string,
+): Promise<boolean> {
   const userId = await currentUserId();
+
   const { data: existing, error: readError } = await supabase
     .from("reel_saves")
     .select("reel_id")
     .eq("reel_id", reelId)
     .eq("user_id", userId)
     .maybeSingle();
-  if (readError) message(readError, "Could not check saved reel.");
+
+  if (readError) {
+    message(readError, "Could not check saved reel.");
+  }
+
   if (existing) {
     const { error } = await supabase
       .from("reel_saves")
       .delete()
       .eq("reel_id", reelId)
       .eq("user_id", userId);
+
     if (error) message(error, "Could not unsave reel.");
+
     notifyUpdated();
     return false;
   }
-  const { error } = await supabase.from("reel_saves").insert({ reel_id: reelId, user_id: userId });
+
+  const { error } = await supabase
+    .from("reel_saves")
+    .insert({ reel_id: reelId, user_id: userId });
+
   if (error) message(error, "Could not save reel.");
+
   notifyUpdated();
   return true;
 }
@@ -245,8 +433,17 @@ export async function addReel(
   },
 ): Promise<ReelItem> {
   const userId = await currentUserId();
-  if (userId !== me.id) throw new Error("Your session does not match the selected profile.");
-  const videoUrl = data.videoFile ? await uploadReelVideo(userId, data.videoFile) : data.videoUrl;
+
+  if (userId !== me.id) {
+    throw new Error(
+      "Your session does not match the selected profile.",
+    );
+  }
+
+  const videoUrl = data.videoFile
+    ? await uploadReelVideo(userId, data.videoFile)
+    : data.videoUrl;
+
   const { data: row, error } = await supabase
     .from("reels")
     .insert({
@@ -258,24 +455,39 @@ export async function addReel(
     })
     .select("id")
     .single();
+
   if (error) message(error, "Could not publish reel.");
+
   notifyUpdated();
+
   const reels = await getStoredReels();
   const created = reels.find((r) => r.id === row.id);
-  if (!created) throw new Error("Reel was published but could not be reloaded.");
+
+  if (!created) {
+    throw new Error(
+      "Reel was published but could not be reloaded.",
+    );
+  }
+
   return created;
 }
 
-export async function getReelComments(reelId: string): Promise<ReelComment[]> {
+export async function getReelComments(
+  reelId: string,
+): Promise<ReelComment[]> {
   const userId = await currentUserId();
+
   const { data: rows, error } = await supabase
     .from("reel_comments")
     .select("*")
     .eq("reel_id", reelId)
     .order("created_at", { ascending: true });
+
   if (error) message(error, "Could not load comments.");
+
   const ids = (rows ?? []).map((r) => r.author_id);
   const commentIds = (rows ?? []).map((r) => r.id);
+
   const [profilesResult, reactionsResult] = await Promise.all([
     ids.length
       ? supabase
@@ -283,6 +495,7 @@ export async function getReelComments(reelId: string): Promise<ReelComment[]> {
           .select("id, username, display_name, avatar_url")
           .in("id", [...new Set(ids)])
       : Promise.resolve({ data: [], error: null }),
+
     commentIds.length
       ? supabase
           .from("reel_comment_likes")
@@ -291,17 +504,37 @@ export async function getReelComments(reelId: string): Promise<ReelComment[]> {
           .in("comment_id", commentIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
-  if (profilesResult.error) message(profilesResult.error, "Could not load comment authors.");
-  if (reactionsResult.error) message(reactionsResult.error, "Could not load comment reactions.");
-  const profiles = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
-  const reacted = new Set((reactionsResult.data ?? []).map((r) => r.comment_id));
+
+  if (profilesResult.error) {
+    message(profilesResult.error, "Could not load comment authors.");
+  }
+
+  if (reactionsResult.error) {
+    message(
+      reactionsResult.error,
+      "Could not load comment reactions.",
+    );
+  }
+
+  const profiles = new Map(
+    (profilesResult.data ?? []).map((p) => [p.id, p]),
+  );
+
+  const reacted = new Set(
+    (reactionsResult.data ?? []).map((r) => r.comment_id),
+  );
+
   return (rows ?? []).map((row) => {
     const profile = profiles.get(row.author_id);
+
     return {
       id: row.id,
       reelId: row.reel_id,
       authorId: row.author_id,
-      authorName: profile?.display_name || profile?.username || "VIDALORE Member",
+      authorName:
+        profile?.display_name ||
+        profile?.username ||
+        "VIDALORE Member",
       authorUsername: profile?.username || "member",
       authorAvatarUrl: profile?.avatar_url,
       content: row.content,
@@ -318,16 +551,35 @@ export async function addReelComment(
   content: string,
 ): Promise<ReelComment> {
   const userId = await currentUserId();
-  if (userId !== me.id) throw new Error("Your session does not match the selected profile.");
+
+  if (userId !== me.id) {
+    throw new Error(
+      "Your session does not match the selected profile.",
+    );
+  }
+
   const clean = content.trim();
-  if (!clean) throw new Error("Comment cannot be empty.");
+
+  if (!clean) {
+    throw new Error("Comment cannot be empty.");
+  }
+
   const { data, error } = await supabase
     .from("reel_comments")
-    .insert({ reel_id: reelId, author_id: userId, content: clean })
-    .select("id, reel_id, author_id, content, created_at, reactions_count")
+    .insert({
+      reel_id: reelId,
+      author_id: userId,
+      content: clean,
+    })
+    .select(
+      "id, reel_id, author_id, content, created_at, reactions_count",
+    )
     .single();
+
   if (error) message(error, "Could not add comment.");
+
   notifyUpdated();
+
   return {
     id: data.id,
     reelId: data.reel_id,
@@ -342,50 +594,85 @@ export async function addReelComment(
   };
 }
 
-export async function toggleCommentReaction(commentId: string): Promise<boolean> {
+export async function toggleCommentReaction(
+  commentId: string,
+): Promise<boolean> {
   const userId = await currentUserId();
+
   const { data: existing, error: readError } = await supabase
     .from("reel_comment_likes")
     .select("comment_id")
     .eq("comment_id", commentId)
     .eq("user_id", userId)
     .maybeSingle();
-  if (readError) message(readError, "Could not check comment reaction.");
+
+  if (readError) {
+    message(readError, "Could not check comment reaction.");
+  }
+
   if (existing) {
     const { error } = await supabase
       .from("reel_comment_likes")
       .delete()
       .eq("comment_id", commentId)
       .eq("user_id", userId);
-    if (error) message(error, "Could not remove reaction.");
+
+    if (error) {
+      message(error, "Could not remove reaction.");
+    }
+
     return false;
   }
+
   const { error } = await supabase
     .from("reel_comment_likes")
-    .insert({ comment_id: commentId, user_id: userId });
-  if (error) message(error, "Could not react to comment.");
+    .insert({
+      comment_id: commentId,
+      user_id: userId,
+    });
+
+  if (error) {
+    message(error, "Could not react to comment.");
+  }
+
   return true;
 }
 
 export async function getStoredStories(): Promise<StoryItem[]> {
   const userId = await currentUserId();
   const now = new Date().toISOString();
+
   const { data: rows, error } = await supabase
     .from("stories")
     .select("*")
     .gt("expires_at", now)
     .order("created_at", { ascending: true })
     .limit(200);
+
   if (error) message(error, "Could not load stories.");
+
   const storyIds = (rows ?? []).map((r) => r.id);
+
   const { data: views, error: viewsError } = storyIds.length
-    ? await supabase.from("story_views").select("story_id, viewer_id").in("story_id", storyIds)
+    ? await supabase
+        .from("story_views")
+        .select("story_id, viewer_id")
+        .in("story_id", storyIds)
     : { data: [], error: null };
-  if (viewsError) message(viewsError, "Could not load story views.");
+
+  if (viewsError) {
+    message(viewsError, "Could not load story views.");
+  }
+
   const viewers = new Map<string, string[]>();
-  (views ?? []).forEach((view) =>
-    viewers.set(view.story_id, [...(viewers.get(view.story_id) ?? []), view.viewer_id]),
-  );
+
+  (views ?? []).forEach((view) => {
+    viewers.set(view.story_id, [
+      ...(viewers.get(view.story_id) ?? []),
+      view.viewer_id,
+    ]);
+  });
+
   return Promise.all(
     (rows ?? []).map(async (row) => ({
       id: row.id,
@@ -393,7 +680,10 @@ export async function getStoredStories(): Promise<StoryItem[]> {
       mediaUrl: row.media_url.startsWith("http")
         ? row.media_url
         : await signedMediaUrl(STORY_BUCKET, row.media_url),
-      mediaType: row.media_type === "video" ? ("video" as const) : ("image" as const),
+      mediaType:
+        row.media_type === "video"
+          ? ("video" as const)
+          : ("image" as const),
       caption: row.caption ?? undefined,
       sticker: row.sticker ?? undefined,
       createdAt: row.created_at,
@@ -414,10 +704,23 @@ export async function addStory(
   },
 ): Promise<StoryItem> {
   const userId = await currentUserId();
-  if (userId !== me.id) throw new Error("Your session does not match the selected profile.");
-  const mediaPath = data.mediaFile ? await uploadStoryMedia(userId, data.mediaFile) : data.mediaUrl;
+
+  if (userId !== me.id) {
+    throw new Error(
+      "Your session does not match the selected profile.",
+    );
+  }
+
+  const mediaPath = data.mediaFile
+    ? await uploadStoryMedia(userId, data.mediaFile)
+    : data.mediaUrl;
+
   const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
+
+  const expiresAt = new Date(
+    createdAt.getTime() + 24 * 60 * 60 * 1000,
+  );
+
   const { data: row, error } = await supabase
     .from("stories")
     .insert({
@@ -431,11 +734,15 @@ export async function addStory(
     })
     .select("id")
     .single();
+
   if (error) message(error, "Could not publish story.");
+
   notifyUpdated();
+
   const mediaUrl = mediaPath.startsWith("http")
     ? mediaPath
     : await signedMediaUrl(STORY_BUCKET, mediaPath);
+
   return {
     id: row.id,
     userId,
@@ -449,47 +756,92 @@ export async function addStory(
   };
 }
 
-export async function markStorySeen(storyId: string, userId: string): Promise<void> {
+export async function markStorySeen(
+  storyId: string,
+  userId: string,
+): Promise<void> {
   const authenticatedUserId = await currentUserId();
-  if (authenticatedUserId !== userId)
-    throw new Error("Your session does not match the selected profile.");
+
+  if (authenticatedUserId !== userId) {
+    throw new Error(
+      "Your session does not match the selected profile.",
+    );
+  }
+
   const { error } = await supabase
     .from("story_views")
     .upsert(
-      { story_id: storyId, viewer_id: userId },
-      { onConflict: "story_id,viewer_id", ignoreDuplicates: true },
+      {
+        story_id: storyId,
+        viewer_id: userId,
+      },
+      {
+        onConflict: "story_id,viewer_id",
+        ignoreDuplicates: true,
+      },
     );
-  if (error) message(error, "Could not record story view.");
+
+  if (error) {
+    message(error, "Could not record story view.");
+  }
+
   notifyUpdated();
 }
 
-/** Compatibility no-op: stories are persisted through addStory, not by replacing a client-side cache. */
+/** Compatibility no-op: stories are persisted through addStory. */
 export function saveStoredStories(_stories: StoryItem[]): void {
   notifyUpdated();
 }
 
-export async function getStoryGroups(currentUserId?: string): Promise<UserStoryGroup[]> {
+export async function getStoryGroups(
+  currentUserId?: string,
+): Promise<UserStoryGroup[]> {
   const stories = await getStoredStories();
-  const ids = [...new Set(stories.map((story) => story.userId))];
+
+  const ids = [
+    ...new Set(stories.map((story) => story.userId)),
+  ];
+
   const { data: profiles, error } = ids.length
-    ? await supabase.from("profiles").select("id, username, display_name, avatar_url").in("id", ids)
+    ? await supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_url")
+        .in("id", ids)
     : { data: [], error: null };
-  if (error) message(error, "Could not load story profiles.");
-  const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
-  const grouped = new Map<string, StoryItem[]>();
-  stories.forEach((story) =>
-    grouped.set(story.userId, [...(grouped.get(story.userId) ?? []), story]),
+
+  if (error) {
+    message(error, "Could not load story profiles.");
+  }
+
+  const profileMap = new Map(
+    (profiles ?? []).map((profile) => [profile.id, profile]),
   );
+
+  const grouped = new Map<string, StoryItem[]>();
+
+  stories.forEach((story) => {
+    grouped.set(story.userId, [
+      ...(grouped.get(story.userId) ?? []),
+      story,
+    ]);
+  });
+
   return [...grouped.entries()].map(([userId, userStories]) => {
     const profile = profileMap.get(userId);
+
     return {
       userId,
       username: profile?.username ?? "member",
-      displayName: profile?.display_name || profile?.username || "VIDALORE Member",
+      displayName:
+        profile?.display_name ||
+        profile?.username ||
+        "VIDALORE Member",
       avatarUrl: profile?.avatar_url,
       stories: userStories,
       hasUnseen: currentUserId
-        ? userStories.some((story) => !story.seenBy.includes(currentUserId))
+        ? userStories.some(
+            (story) => !story.seenBy.includes(currentUserId),
+          )
         : true,
     };
   });
