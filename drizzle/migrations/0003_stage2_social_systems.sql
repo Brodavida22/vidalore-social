@@ -1,51 +1,112 @@
+
 -- =====================================================================
--- Stage 2: Persistent notifications, content reports, and user blocks (additive only)
+-- VIDALORE SOCIAL
+-- Stage 2: Persistent Notifications, Content Reports & User Blocks
+-- Additive migration with improved security and rerun protection
 -- =====================================================================
 
+BEGIN;
+
 -- ---------------------------------------------------------------------
--- 1. User Blocks
+-- 1. USER BLOCKS
 -- ---------------------------------------------------------------------
+
 CREATE TABLE IF NOT EXISTS public.user_blocks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   blocker_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   blocked_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now(),
+
   CONSTRAINT user_blocks_not_self CHECK (blocker_id <> blocked_id),
   CONSTRAINT user_blocks_unique UNIQUE (blocker_id, blocked_id)
 );
 
-CREATE INDEX IF NOT EXISTS user_blocks_blocker_idx ON public.user_blocks (blocker_id);
-CREATE INDEX IF NOT EXISTS user_blocks_blocked_idx ON public.user_blocks (blocked_id);
+CREATE INDEX IF NOT EXISTS user_blocks_blocker_idx
+  ON public.user_blocks (blocker_id);
+
+CREATE INDEX IF NOT EXISTS user_blocks_blocked_idx
+  ON public.user_blocks (blocked_id);
+
+ALTER TABLE public.user_blocks ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON public.user_blocks FROM PUBLIC, anon;
 
 GRANT SELECT, INSERT, DELETE ON public.user_blocks TO authenticated;
 GRANT ALL ON public.user_blocks TO service_role;
 
-ALTER TABLE public.user_blocks ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'user_blocks'
+      AND policyname = 'Users read own blocklist'
+  ) THEN
+    CREATE POLICY "Users read own blocklist"
+      ON public.user_blocks
+      FOR SELECT TO authenticated
+      USING (blocker_id = auth.uid());
+  END IF;
 
-CREATE POLICY "Users read own blocklist" ON public.user_blocks FOR SELECT TO authenticated
-  USING (blocker_id = auth.uid());
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'user_blocks'
+      AND policyname = 'Users block other users'
+  ) THEN
+    CREATE POLICY "Users block other users"
+      ON public.user_blocks
+      FOR INSERT TO authenticated
+      WITH CHECK (
+        blocker_id = auth.uid()
+        AND blocked_id <> auth.uid()
+      );
+  END IF;
 
-CREATE POLICY "Users block other users" ON public.user_blocks FOR INSERT TO authenticated
-  WITH CHECK (blocker_id = auth.uid() AND blocked_id <> auth.uid());
-
-CREATE POLICY "Users unblock other users" ON public.user_blocks FOR DELETE TO authenticated
-  USING (blocker_id = auth.uid());
-
--- Helper: Check if two users have an active block in either direction
-CREATE OR REPLACE FUNCTION public.is_blocked(_user_a uuid, _user_b uuid)
-RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.user_blocks
-    WHERE (blocker_id = _user_a AND blocked_id = _user_b)
-       OR (blocker_id = _user_b AND blocked_id = _user_a)
-  )
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'user_blocks'
+      AND policyname = 'Users unblock other users'
+  ) THEN
+    CREATE POLICY "Users unblock other users"
+      ON public.user_blocks
+      FOR DELETE TO authenticated
+      USING (blocker_id = auth.uid());
+  END IF;
+END
 $$;
 
-GRANT EXECUTE ON FUNCTION public.is_blocked(uuid, uuid) TO authenticated, service_role;
+-- Check whether two users have blocked each other.
+CREATE OR REPLACE FUNCTION public.is_blocked(
+  _user_a uuid,
+  _user_b uuid
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.user_blocks
+    WHERE (blocker_id = _user_a AND blocked_id = _user_b)
+       OR (blocker_id = _user_b AND blocked_id = _user_a)
+  );
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.is_blocked(uuid, uuid)
+  FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.is_blocked(uuid, uuid)
+  TO service_role;
+
 
 -- ---------------------------------------------------------------------
--- 2. Persistent Notifications
+-- 2. PERSISTENT NOTIFICATIONS
 -- ---------------------------------------------------------------------
+
 CREATE TABLE IF NOT EXISTS public.notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   recipient_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -55,7 +116,9 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   comment_id uuid REFERENCES public.post_comments(id) ON DELETE CASCADE,
   read_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
+
   CONSTRAINT notifications_not_self CHECK (recipient_id <> actor_id),
+
   CONSTRAINT notifications_type_valid CHECK (
     type IN (
       'post_like',
@@ -70,148 +133,411 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   )
 );
 
-CREATE INDEX IF NOT EXISTS notifications_recipient_created_idx ON public.notifications (recipient_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS notifications_recipient_unread_idx ON public.notifications (recipient_id, read_at) WHERE read_at IS NULL;
+CREATE INDEX IF NOT EXISTS notifications_recipient_created_idx
+  ON public.notifications (recipient_id, created_at DESC);
 
-GRANT SELECT, DELETE ON public.notifications TO authenticated;
-GRANT UPDATE (read_at) ON public.notifications TO authenticated;
-GRANT INSERT ON public.notifications TO authenticated, service_role;
-GRANT ALL ON public.notifications TO service_role;
+CREATE INDEX IF NOT EXISTS notifications_recipient_unread_idx
+  ON public.notifications (recipient_id, read_at)
+  WHERE read_at IS NULL;
 
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users read own notifications" ON public.notifications FOR SELECT TO authenticated
-  USING (recipient_id = auth.uid());
+REVOKE ALL ON public.notifications FROM PUBLIC, anon;
 
-CREATE POLICY "Users update own notification read status" ON public.notifications FOR UPDATE TO authenticated
-  USING (recipient_id = auth.uid())
-  WITH CHECK (recipient_id = auth.uid());
+GRANT SELECT, DELETE ON public.notifications TO authenticated;
+GRANT UPDATE (read_at) ON public.notifications TO authenticated;
+GRANT ALL ON public.notifications TO service_role;
 
-CREATE POLICY "Users delete own notifications" ON public.notifications FOR DELETE TO authenticated
-  USING (recipient_id = auth.uid());
+-- Notifications are inserted by trusted database triggers,
+-- not directly by authenticated users.
 
--- Triggers to automatically generate notifications on social actions
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'notifications'
+      AND policyname = 'Users read own notifications'
+  ) THEN
+    CREATE POLICY "Users read own notifications"
+      ON public.notifications
+      FOR SELECT TO authenticated
+      USING (recipient_id = auth.uid());
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'notifications'
+      AND policyname = 'Users update own notification read status'
+  ) THEN
+    CREATE POLICY "Users update own notification read status"
+      ON public.notifications
+      FOR UPDATE TO authenticated
+      USING (recipient_id = auth.uid())
+      WITH CHECK (recipient_id = auth.uid());
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'notifications'
+      AND policyname = 'Users delete own notifications'
+  ) THEN
+    CREATE POLICY "Users delete own notifications"
+      ON public.notifications
+      FOR DELETE TO authenticated
+      USING (recipient_id = auth.uid());
+  END IF;
+END
+$$;
+
+
+-- ---------------------------------------------------------------------
+-- 2A. POST LIKE NOTIFICATIONS
+-- ---------------------------------------------------------------------
+
 CREATE OR REPLACE FUNCTION public.handle_post_like_notification()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   _author_id uuid;
 BEGIN
-  SELECT author_id INTO _author_id FROM public.posts WHERE id = NEW.post_id;
-  IF _author_id IS NOT NULL AND _author_id <> NEW.user_id AND NOT public.is_blocked(_author_id, NEW.user_id) THEN
-    INSERT INTO public.notifications (recipient_id, actor_id, type, post_id)
-    VALUES (_author_id, NEW.user_id, 'post_like', NEW.post_id)
-    ON CONFLICT DO NOTHING;
-  END IF;
-  RETURN NEW;
-END $$;
+  SELECT author_id
+  INTO _author_id
+  FROM public.posts
+  WHERE id = NEW.post_id;
 
-DROP TRIGGER IF EXISTS trg_post_like_notification ON public.post_likes;
-CREATE TRIGGER trg_post_like_notification AFTER INSERT ON public.post_likes
-  FOR EACH ROW EXECUTE FUNCTION public.handle_post_like_notification();
+  IF _author_id IS NOT NULL
+     AND _author_id <> NEW.user_id
+     AND NOT public.is_blocked(_author_id, NEW.user_id)
+  THEN
+    INSERT INTO public.notifications (
+      recipient_id,
+      actor_id,
+      type,
+      post_id
+    )
+    VALUES (
+      _author_id,
+      NEW.user_id,
+      'post_like',
+      NEW.post_id
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_post_like_notification
+  ON public.post_likes;
+
+CREATE TRIGGER trg_post_like_notification
+AFTER INSERT ON public.post_likes
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_post_like_notification();
+
+
+-- ---------------------------------------------------------------------
+-- 2B. POST COMMENT AND COMMENT REPLY NOTIFICATIONS
+-- ---------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public.handle_post_comment_notification()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   _post_author_id uuid;
   _parent_author_id uuid;
 BEGIN
   IF NEW.parent_id IS NOT NULL THEN
-    SELECT author_id INTO _parent_author_id FROM public.post_comments WHERE id = NEW.parent_id;
-    IF _parent_author_id IS NOT NULL AND _parent_author_id <> NEW.author_id AND NOT public.is_blocked(_parent_author_id, NEW.author_id) THEN
-      INSERT INTO public.notifications (recipient_id, actor_id, type, post_id, comment_id)
-      VALUES (_parent_author_id, NEW.author_id, 'comment_reply', NEW.post_id, NEW.id);
-    END IF;
-  ELSE
-    SELECT author_id INTO _post_author_id FROM public.posts WHERE id = NEW.post_id;
-    IF _post_author_id IS NOT NULL AND _post_author_id <> NEW.author_id AND NOT public.is_blocked(_post_author_id, NEW.author_id) THEN
-      INSERT INTO public.notifications (recipient_id, actor_id, type, post_id, comment_id)
-      VALUES (_post_author_id, NEW.author_id, 'post_comment', NEW.post_id, NEW.id);
-    END IF;
-  END IF;
-  RETURN NEW;
-END $$;
 
-DROP TRIGGER IF EXISTS trg_post_comment_notification ON public.post_comments;
-CREATE TRIGGER trg_post_comment_notification AFTER INSERT ON public.post_comments
-  FOR EACH ROW EXECUTE FUNCTION public.handle_post_comment_notification();
+    SELECT author_id
+    INTO _parent_author_id
+    FROM public.post_comments
+    WHERE id = NEW.parent_id;
+
+    IF _parent_author_id IS NOT NULL
+       AND _parent_author_id <> NEW.author_id
+       AND NOT public.is_blocked(_parent_author_id, NEW.author_id)
+    THEN
+      INSERT INTO public.notifications (
+        recipient_id,
+        actor_id,
+        type,
+        post_id,
+        comment_id
+      )
+      VALUES (
+        _parent_author_id,
+        NEW.author_id,
+        'comment_reply',
+        NEW.post_id,
+        NEW.id
+      );
+    END IF;
+
+  ELSE
+
+    SELECT author_id
+    INTO _post_author_id
+    FROM public.posts
+    WHERE id = NEW.post_id;
+
+    IF _post_author_id IS NOT NULL
+       AND _post_author_id <> NEW.author_id
+       AND NOT public.is_blocked(_post_author_id, NEW.author_id)
+    THEN
+      INSERT INTO public.notifications (
+        recipient_id,
+        actor_id,
+        type,
+        post_id,
+        comment_id
+      )
+      VALUES (
+        _post_author_id,
+        NEW.author_id,
+        'post_comment',
+        NEW.post_id,
+        NEW.id
+      );
+    END IF;
+
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_post_comment_notification
+  ON public.post_comments;
+
+CREATE TRIGGER trg_post_comment_notification
+AFTER INSERT ON public.post_comments
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_post_comment_notification();
+
+
+-- ---------------------------------------------------------------------
+-- 2C. COMMENT LIKE NOTIFICATIONS
+-- ---------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public.handle_comment_like_notification()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   _comment_author_id uuid;
   _post_id uuid;
 BEGIN
-  SELECT author_id, post_id INTO _comment_author_id, _post_id FROM public.post_comments WHERE id = NEW.comment_id;
-  IF _comment_author_id IS NOT NULL AND _comment_author_id <> NEW.user_id AND NOT public.is_blocked(_comment_author_id, NEW.user_id) THEN
-    INSERT INTO public.notifications (recipient_id, actor_id, type, post_id, comment_id)
-    VALUES (_comment_author_id, NEW.user_id, 'comment_like', _post_id, NEW.comment_id);
-  END IF;
-  RETURN NEW;
-END $$;
+  SELECT author_id, post_id
+  INTO _comment_author_id, _post_id
+  FROM public.post_comments
+  WHERE id = NEW.comment_id;
 
-DROP TRIGGER IF EXISTS trg_comment_like_notification ON public.post_comment_likes;
-CREATE TRIGGER trg_comment_like_notification AFTER INSERT ON public.post_comment_likes
-  FOR EACH ROW EXECUTE FUNCTION public.handle_comment_like_notification();
+  IF _comment_author_id IS NOT NULL
+     AND _comment_author_id <> NEW.user_id
+     AND NOT public.is_blocked(_comment_author_id, NEW.user_id)
+  THEN
+    INSERT INTO public.notifications (
+      recipient_id,
+      actor_id,
+      type,
+      post_id,
+      comment_id
+    )
+    VALUES (
+      _comment_author_id,
+      NEW.user_id,
+      'comment_like',
+      _post_id,
+      NEW.comment_id
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_comment_like_notification
+  ON public.post_comment_likes;
+
+CREATE TRIGGER trg_comment_like_notification
+AFTER INSERT ON public.post_comment_likes
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_comment_like_notification();
+
+
+-- ---------------------------------------------------------------------
+-- 2D. REPOST NOTIFICATIONS
+-- ---------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public.handle_repost_notification()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   _orig_author_id uuid;
 BEGIN
   IF NEW.repost_of_id IS NOT NULL THEN
-    SELECT author_id INTO _orig_author_id FROM public.posts WHERE id = NEW.repost_of_id;
-    IF _orig_author_id IS NOT NULL AND _orig_author_id <> NEW.author_id AND NOT public.is_blocked(_orig_author_id, NEW.author_id) THEN
-      INSERT INTO public.notifications (recipient_id, actor_id, type, post_id)
-      VALUES (_orig_author_id, NEW.author_id, 'repost', NEW.repost_of_id);
-    END IF;
-  END IF;
-  RETURN NEW;
-END $$;
 
-DROP TRIGGER IF EXISTS trg_repost_notification ON public.posts;
-CREATE TRIGGER trg_repost_notification AFTER INSERT ON public.posts
-  FOR EACH ROW EXECUTE FUNCTION public.handle_repost_notification();
+    SELECT author_id
+    INTO _orig_author_id
+    FROM public.posts
+    WHERE id = NEW.repost_of_id;
+
+    IF _orig_author_id IS NOT NULL
+       AND _orig_author_id <> NEW.author_id
+       AND NOT public.is_blocked(_orig_author_id, NEW.author_id)
+    THEN
+      INSERT INTO public.notifications (
+        recipient_id,
+        actor_id,
+        type,
+        post_id
+      )
+      VALUES (
+        _orig_author_id,
+        NEW.author_id,
+        'repost',
+        NEW.repost_of_id
+      );
+    END IF;
+
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_repost_notification
+  ON public.posts;
+
+CREATE TRIGGER trg_repost_notification
+AFTER INSERT ON public.posts
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_repost_notification();
+
+
+-- ---------------------------------------------------------------------
+-- 2E. FOLLOW NOTIFICATIONS
+-- ---------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public.handle_follow_notification()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
-  IF NEW.following_id <> NEW.follower_id AND NOT public.is_blocked(NEW.following_id, NEW.follower_id) THEN
-    INSERT INTO public.notifications (recipient_id, actor_id, type)
-    VALUES (NEW.following_id, NEW.follower_id, 'follow');
+  IF NEW.following_id <> NEW.follower_id
+     AND NOT public.is_blocked(NEW.following_id, NEW.follower_id)
+  THEN
+    INSERT INTO public.notifications (
+      recipient_id,
+      actor_id,
+      type
+    )
+    VALUES (
+      NEW.following_id,
+      NEW.follower_id,
+      'follow'
+    );
   END IF;
-  RETURN NEW;
-END $$;
 
-DROP TRIGGER IF EXISTS trg_follow_notification ON public.follows;
-CREATE TRIGGER trg_follow_notification AFTER INSERT ON public.follows
-  FOR EACH ROW EXECUTE FUNCTION public.handle_follow_notification();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_follow_notification
+  ON public.follows;
+
+CREATE TRIGGER trg_follow_notification
+AFTER INSERT ON public.follows
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_follow_notification();
+
+
+-- ---------------------------------------------------------------------
+-- 2F. FRIEND REQUEST AND ACCEPTANCE NOTIFICATIONS
+-- ---------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public.handle_friend_request_notification()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
+
   IF TG_OP = 'INSERT' THEN
-    IF NEW.recipient_id <> NEW.requester_id AND NOT public.is_blocked(NEW.recipient_id, NEW.requester_id) THEN
-      INSERT INTO public.notifications (recipient_id, actor_id, type)
-      VALUES (NEW.recipient_id, NEW.requester_id, 'friend_request');
+
+    IF NEW.recipient_id <> NEW.requester_id
+       AND NOT public.is_blocked(NEW.recipient_id, NEW.requester_id)
+    THEN
+      INSERT INTO public.notifications (
+        recipient_id,
+        actor_id,
+        type
+      )
+      VALUES (
+        NEW.recipient_id,
+        NEW.requester_id,
+        'friend_request'
+      );
     END IF;
+
   ELSIF TG_OP = 'UPDATE' THEN
-    IF NEW.status = 'accepted' AND OLD.status <> 'accepted' THEN
-      IF NEW.requester_id <> auth.uid() AND NOT public.is_blocked(NEW.requester_id, auth.uid()) THEN
-        INSERT INTO public.notifications (recipient_id, actor_id, type)
-        VALUES (NEW.requester_id, auth.uid(), 'friend_accept');
-      END IF;
+
+    IF NEW.status = 'accepted'
+       AND OLD.status IS DISTINCT FROM 'accepted'
+       AND auth.uid() IS NOT NULL
+       AND NEW.requester_id <> auth.uid()
+       AND NOT public.is_blocked(NEW.requester_id, auth.uid())
+    THEN
+      INSERT INTO public.notifications (
+        recipient_id,
+        actor_id,
+        type
+      )
+      VALUES (
+        NEW.requester_id,
+        auth.uid(),
+        'friend_accept'
+      );
     END IF;
+
   END IF;
+
   RETURN NEW;
-END $$;
+END;
+$$;
 
-DROP TRIGGER IF EXISTS trg_friend_request_notification ON public.friend_requests;
-CREATE TRIGGER trg_friend_request_notification AFTER INSERT OR UPDATE OF status ON public.friend_requests
-  FOR EACH ROW EXECUTE FUNCTION public.handle_friend_request_notification();
+DROP TRIGGER IF EXISTS trg_friend_request_notification
+  ON public.friend_requests;
+
+CREATE TRIGGER trg_friend_request_notification
+AFTER INSERT OR UPDATE OF status
+ON public.friend_requests
+FOR EACH ROW
+EXECUTE FUNCTION public.handle_friend_request_notification();
+
 
 -- ---------------------------------------------------------------------
--- 3. Content Reporting System
+-- 3. CONTENT REPORTS
 -- ---------------------------------------------------------------------
+
 CREATE TABLE IF NOT EXISTS public.content_reports (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   reporter_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -228,31 +554,101 @@ CREATE TABLE IF NOT EXISTS public.content_reports (
   resolved_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT content_reports_target_type_valid CHECK (target_type IN ('post', 'comment', 'profile')),
-  CONSTRAINT content_reports_status_valid CHECK (status IN ('pending', 'reviewing', 'resolved', 'dismissed')),
-  CONSTRAINT content_reports_reason_len CHECK (char_length(btrim(reason)) BETWEEN 2 AND 120),
-  CONSTRAINT content_reports_description_len CHECK (description IS NULL OR char_length(description) <= 1000)
+
+  CONSTRAINT content_reports_target_type_valid
+    CHECK (target_type IN ('post', 'comment', 'profile')),
+
+  CONSTRAINT content_reports_status_valid
+    CHECK (status IN ('pending', 'reviewing', 'resolved', 'dismissed')),
+
+  CONSTRAINT content_reports_reason_len
+    CHECK (char_length(btrim(reason)) BETWEEN 2 AND 120),
+
+  CONSTRAINT content_reports_description_len
+    CHECK (description IS NULL OR char_length(description) <= 1000)
 );
 
-CREATE INDEX IF NOT EXISTS content_reports_status_idx ON public.content_reports (status, created_at DESC);
-CREATE INDEX IF NOT EXISTS content_reports_reporter_idx ON public.content_reports (reporter_id);
-CREATE INDEX IF NOT EXISTS content_reports_target_idx ON public.content_reports (target_type, target_id);
+CREATE INDEX IF NOT EXISTS content_reports_status_idx
+  ON public.content_reports (status, created_at DESC);
 
-GRANT SELECT, INSERT ON public.content_reports TO authenticated;
-GRANT UPDATE (status, admin_notes, resolved_by, resolved_at) ON public.content_reports TO authenticated;
-GRANT ALL ON public.content_reports TO service_role;
+CREATE INDEX IF NOT EXISTS content_reports_reporter_idx
+  ON public.content_reports (reporter_id);
+
+CREATE INDEX IF NOT EXISTS content_reports_target_idx
+  ON public.content_reports (target_type, target_id);
 
 ALTER TABLE public.content_reports ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users read own reports or admins read all" ON public.content_reports FOR SELECT TO authenticated
-  USING (reporter_id = auth.uid() OR public.has_role(auth.uid(), 'admin'));
+REVOKE ALL ON public.content_reports FROM PUBLIC, anon;
 
-CREATE POLICY "Users create reports as themselves" ON public.content_reports FOR INSERT TO authenticated
-  WITH CHECK (reporter_id = auth.uid());
+GRANT SELECT, INSERT ON public.content_reports TO authenticated;
 
-CREATE POLICY "Admins update reports" ON public.content_reports FOR UPDATE TO authenticated
-  USING (public.has_role(auth.uid(), 'admin'))
-  WITH CHECK (public.has_role(auth.uid(), 'admin'));
+GRANT UPDATE (
+  status,
+  admin_notes,
+  resolved_by,
+  resolved_at
+) ON public.content_reports TO authenticated;
 
-CREATE TRIGGER content_reports_touch BEFORE UPDATE ON public.content_reports
-  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+GRANT ALL ON public.content_reports TO service_role;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'content_reports'
+      AND policyname = 'Users read own reports or admins read all'
+  ) THEN
+    CREATE POLICY "Users read own reports or admins read all"
+      ON public.content_reports
+      FOR SELECT TO authenticated
+      USING (
+        reporter_id = auth.uid()
+        OR public.has_role(auth.uid(), 'admin')
+      );
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'content_reports'
+      AND policyname = 'Users create reports as themselves'
+  ) THEN
+    CREATE POLICY "Users create reports as themselves"
+      ON public.content_reports
+      FOR INSERT TO authenticated
+      WITH CHECK (reporter_id = auth.uid());
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'content_reports'
+      AND policyname = 'Admins update reports'
+  ) THEN
+    CREATE POLICY "Admins update reports"
+      ON public.content_reports
+      FOR UPDATE TO authenticated
+      USING (public.has_role(auth.uid(), 'admin'))
+      WITH CHECK (public.has_role(auth.uid(), 'admin'));
+  END IF;
+END
+$$;
+
+DROP TRIGGER IF EXISTS content_reports_touch
+  ON public.content_reports;
+
+CREATE TRIGGER content_reports_touch
+BEFORE UPDATE ON public.content_reports
+FOR EACH ROW
+EXECUTE FUNCTION public.touch_updated_at();
+
+
+-- ---------------------------------------------------------------------
+-- 4. FINISH
+-- ---------------------------------------------------------------------
+
+COMMIT;
+
+-- Stage 2 migration completed.
