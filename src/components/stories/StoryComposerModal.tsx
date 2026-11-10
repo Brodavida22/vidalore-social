@@ -59,6 +59,12 @@ export function StoryComposerModal({
     const isVideo = file.type.startsWith("video/");
     const isImage = file.type.startsWith("image/");
 
+    // Temporary diagnostic: shows the actual selected file details.
+    toast.info("Selected media details", {
+      description: `Type: ${file.type || "Unknown"} | Size: ${fileSizeMB.toFixed(2)} MB`,
+      duration: 8000,
+    });
+
     if (!isVideo && !isImage) {
       toast.error("Choose an image or video file.");
       e.target.value = "";
