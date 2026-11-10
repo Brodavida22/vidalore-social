@@ -1,10 +1,15 @@
+
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
-import { X, Send } from "lucide-react";
+import { X, Send, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { Input } from "@/components/ui/input";
-import { markStorySeen, type UserStoryGroup, type StoryItem } from "@/services/reelsAndStories";
+import {
+  markStorySeen,
+  type UserStoryGroup,
+  type StoryItem,
+} from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
 
 const STORY_DURATION_MS = 5000;
@@ -28,23 +33,34 @@ export function StoryViewerModal({
   const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [replyText, setReplyText] = useState("");
+  const [videoLoading, setVideoLoading] = useState(true);
+  const [videoError, setVideoError] = useState(false);
 
   const currentGroup = storyGroups[groupIndex];
-  const currentStory: StoryItem | undefined = currentGroup?.stories[storyIndex];
+  const currentStory: StoryItem | undefined =
+    currentGroup?.stories[storyIndex];
 
   useEffect(() => {
     setGroupIndex(initialGroupIndex);
     setStoryIndex(0);
     setProgress(0);
+    setVideoLoading(true);
+    setVideoError(false);
   }, [initialGroupIndex, open]);
 
   useEffect(() => {
-    if (currentStory && me) {
+    setProgress(0);
+    setVideoLoading(currentStory?.mediaType === "video");
+    setVideoError(false);
+  }, [currentStory?.id]);
+
+  useEffect(() => {
+    if (currentStory && me && open) {
       void markStorySeen(currentStory.id, me.id).catch((error) =>
         console.error("Could not record story view", error),
       );
     }
-  }, [currentStory, me]);
+  }, [currentStory?.id, me?.id, open]);
 
   const handleNext = useCallback(() => {
     if (!currentGroup) return;
@@ -59,7 +75,13 @@ export function StoryViewerModal({
     } else {
       onClose();
     }
-  }, [currentGroup, storyIndex, groupIndex, storyGroups.length, onClose]);
+  }, [
+    currentGroup,
+    storyIndex,
+    groupIndex,
+    storyGroups.length,
+    onClose,
+  ]);
 
   const handlePrev = useCallback(() => {
     if (storyIndex > 0) {
@@ -73,27 +95,41 @@ export function StoryViewerModal({
     }
   }, [storyIndex, groupIndex, storyGroups]);
 
+  // Images advance after five seconds.
+  // Videos advance only when their playback finishes.
   useEffect(() => {
-    if (!open || isPaused || !currentStory) return;
+    if (
+      !open ||
+      isPaused ||
+      !currentStory ||
+      currentStory.mediaType === "video"
+    ) {
+      return;
+    }
 
     const interval = 50;
     const step = (interval / STORY_DURATION_MS) * 100;
 
     const timer = setInterval(() => {
       setProgress((prev) => {
-        if (prev >= 100) {
+        const next = prev + step;
+
+        if (next >= 100) {
+          clearInterval(timer);
           handleNext();
-          return 0;
+          return 100;
         }
-        return prev + step;
+
+        return next;
       });
     }, interval);
 
     return () => clearInterval(timer);
-  }, [open, isPaused, currentStory, handleNext]);
+  }, [open, isPaused, currentStory?.id, handleNext]);
 
   function handleSendReply() {
     if (!replyText.trim()) return;
+
     toast.success(`Reply sent to @${currentGroup?.username}`);
     setReplyText("");
   }
@@ -117,20 +153,101 @@ export function StoryViewerModal({
       onTouchEnd={() => setIsPaused(false)}
     >
       <div className="relative h-full w-full max-w-sm sm:max-h-[92vh] sm:rounded-2xl overflow-hidden bg-black flex flex-col justify-between shadow-2xl border border-white/10">
+
         {/* Media Background */}
-        <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0 z-0 flex items-center justify-center bg-black">
           {currentStory.mediaType === "video" ? (
-            <video
-              src={currentStory.mediaUrl}
-              autoPlay
-              muted
-              loop
-              playsInline
-              className="h-full w-full object-cover"
-            />
+            <>
+              <video
+                key={currentStory.id}
+                src={currentStory.mediaUrl}
+                autoPlay
+                muted
+                loop={false}
+                playsInline
+                preload="auto"
+                controls={false}
+                className="h-full w-full object-contain"
+                onLoadStart={() => {
+                  setVideoLoading(true);
+                  setVideoError(false);
+                }}
+                onCanPlay={() => {
+                  setVideoLoading(false);
+                  setVideoError(false);
+                }}
+                onPlaying={() => {
+                  setVideoLoading(false);
+                  setVideoError(false);
+                }}
+                onWaiting={() => setVideoLoading(true)}
+                onEnded={handleNext}
+                onError={(event) => {
+                  console.error(
+                    "Story video playback error:",
+                    event.currentTarget.error,
+                    currentStory.mediaUrl,
+                  );
+                  setVideoLoading(false);
+                  setVideoError(true);
+                }}
+              />
+
+              {videoLoading && !videoError && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/60 text-white pointer-events-none">
+                  <Loader2 className="h-8 w-8 animate-spin text-[#E91E63]" />
+                  <p className="text-xs text-white/80">
+                    Loading your story video...
+                  </p>
+                </div>
+              )}
+
+              {videoError && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black text-white">
+                  <AlertCircle className="h-10 w-10 text-red-400" />
+                  <p className="text-sm font-semibold">
+                    Video could not be played
+                  </p>
+                  <p className="max-w-[240px] text-center text-xs text-white/60">
+                    Check your internet connection or try uploading the video
+                    again.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVideoError(false);
+                      setVideoLoading(true);
+                      const video = document.querySelector(
+                        "video",
+                      );
+                      if (video) {
+                        video.load();
+                        void video.play().catch((error) => {
+                          console.error("Video retry failed:", error);
+                        });
+                      }
+                    }}
+                    className="rounded-lg bg-[#E91E63] px-4 py-2 text-xs font-semibold text-white"
+                  >
+                    Retry video
+                  </button>
+                </div>
+              )}
+            </>
           ) : (
-            <img src={currentStory.mediaUrl} alt="" className="h-full w-full object-cover" />
+            <img
+              src={currentStory.mediaUrl}
+              alt="Story"
+              className="h-full w-full object-contain"
+              onError={() => {
+                console.error(
+                  "Story image could not be loaded:",
+                  currentStory.mediaUrl,
+                );
+              }}
+            />
           )}
+
           <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-transparent to-black/80 pointer-events-none" />
         </div>
 
@@ -142,6 +259,7 @@ export function StoryViewerModal({
           }}
           className="absolute inset-y-16 left-0 w-2/5 z-10 cursor-pointer"
         />
+
         <div
           onClick={(e) => {
             e.stopPropagation();
@@ -152,17 +270,28 @@ export function StoryViewerModal({
 
         {/* Top Header & Progress Bar */}
         <div className="relative z-20 p-4 space-y-3 pointer-events-auto">
-          {/* Progress Bars */}
           <div className="flex gap-1 items-center">
             {currentGroup.stories.map((s, idx) => {
               const isPast = idx < storyIndex;
               const isCurrent = idx === storyIndex;
+
               return (
-                <div key={s.id} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
+                <div
+                  key={s.id}
+                  className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden"
+                >
                   <div
                     className="h-full bg-primary transition-all duration-75"
                     style={{
-                      width: isPast ? "100%" : isCurrent ? `${progress}%` : "0%",
+                      width: isPast
+                        ? "100%"
+                        : isCurrent
+                          ? `${
+                              currentStory.mediaType === "video"
+                                ? 0
+                                : progress
+                            }%`
+                          : "0%",
                     }}
                   />
                 </div>
@@ -170,7 +299,6 @@ export function StoryViewerModal({
             })}
           </div>
 
-          {/* User info & Close */}
           <div className="flex items-center justify-between">
             <Link
               to="/u/$username"
@@ -186,6 +314,7 @@ export function StoryViewerModal({
                 }}
                 className="h-8 w-8 text-xs ring-1 ring-white/50"
               />
+
               <div>
                 <p className="text-xs font-semibold text-white group-hover:text-primary transition-colors truncate max-w-[140px]">
                   {currentGroup.displayName}
@@ -216,7 +345,6 @@ export function StoryViewerModal({
 
         {/* Bottom Reaction & Reply Bar */}
         <div className="relative z-20 p-4 space-y-2.5 pointer-events-auto">
-          {/* Fast Emoji Reactions */}
           <div className="flex items-center justify-center gap-2">
             {QUICK_REACTIONS.map((emoji) => (
               <button
@@ -230,7 +358,6 @@ export function StoryViewerModal({
             ))}
           </div>
 
-          {/* Reply Input */}
           <div className="flex items-center gap-2">
             <Input
               value={replyText}
@@ -241,6 +368,7 @@ export function StoryViewerModal({
               placeholder={`Reply to ${currentGroup.displayName}...`}
               className="h-9 rounded-lg bg-black/60 border-white/20 text-white placeholder:text-white/50 text-xs focus-visible:ring-primary"
             />
+
             <button
               type="button"
               onClick={handleSendReply}
@@ -259,10 +387,16 @@ export function StoryViewerModal({
 
 function formatStoryTime(date: Date): string {
   const diffSec = Math.floor((Date.now() - date.getTime()) / 1000);
+
   if (diffSec < 60) return "just now";
+
   const diffMin = Math.floor(diffSec / 60);
+
   if (diffMin < 60) return `${diffMin}m`;
+
   const diffHours = Math.floor(diffMin / 60);
+
   if (diffHours < 24) return `${diffHours}h`;
+
   return "yesterday";
 }
