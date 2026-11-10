@@ -1,11 +1,10 @@
-import { useState } from "react";
-import { Bookmark, BookmarkCheck, Trash2, ExternalLink } from "lucide-react";
+import { Bookmark, BookmarkCheck, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/profile/UserAvatar";
-import { getStoredPosts, togglePostSave, type SocialPost } from "@/services/social";
+import { savedPostsQuery, setPostSaved, postsKeys } from "@/services/posts";
 import type { Profile } from "@/services/profiles";
 
 export function SavedPostsModal({
@@ -17,14 +16,21 @@ export function SavedPostsModal({
   onOpenChange: (open: boolean) => void;
   me?: Profile | null | undefined;
 }) {
-  const [savedPosts, setSavedPosts] = useState<SocialPost[]>(() =>
-    getStoredPosts().filter((p) => p.hasSaved),
-  );
+  const queryClient = useQueryClient();
+  const { data: savedPosts = [], isLoading } = useQuery({
+    ...savedPostsQuery(),
+    enabled: open && !!me,
+  });
 
-  function handleRemove(postId: string) {
-    togglePostSave(postId);
-    setSavedPosts((prev) => prev.filter((p) => p.id !== postId));
-    toast.info("Removed from saved collection");
+  async function handleRemove(postId: string) {
+    try {
+      await setPostSaved(postId, false);
+      toast.info("Removed from saved collection");
+      await queryClient.invalidateQueries({ queryKey: postsKeys.saved() });
+      await queryClient.invalidateQueries({ queryKey: postsKeys.all });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't remove bookmark.");
+    }
   }
 
   return (
@@ -34,14 +40,21 @@ export function SavedPostsModal({
           <DialogTitle className="font-display text-xl flex items-center gap-2 text-foreground">
             <BookmarkCheck className="h-5 w-5 text-[#E91E63]" />
             Saved Posts
-            <span className="text-xs text-muted-foreground font-sans font-normal">
-              ({savedPosts.length})
-            </span>
+            {!isLoading && (
+              <span className="text-xs text-muted-foreground font-sans font-normal">
+                ({savedPosts.length})
+              </span>
+            )}
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-3 py-2 pr-1">
-          {savedPosts.length === 0 ? (
+          {isLoading ? (
+            <div className="py-14 flex flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin text-[#E91E63]" />
+              <span>Loading saved collection...</span>
+            </div>
+          ) : savedPosts.length === 0 ? (
             <div className="py-14 text-center space-y-2">
               <Bookmark className="h-10 w-10 text-muted-foreground/60 mx-auto" />
               <p className="font-semibold text-foreground text-sm">No saved posts yet</p>
@@ -82,7 +95,7 @@ export function SavedPostsModal({
 
                   <button
                     type="button"
-                    onClick={() => handleRemove(post.id)}
+                    onClick={() => handleRemove(post.postId)}
                     className="rounded-full p-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors"
                     title="Remove from saved"
                   >
@@ -90,9 +103,11 @@ export function SavedPostsModal({
                   </button>
                 </div>
 
-                <p className="text-xs text-foreground/90 line-clamp-3 leading-relaxed">
-                  {post.content}
-                </p>
+                {post.content && (
+                  <p className="text-xs text-foreground/90 line-clamp-3 leading-relaxed">
+                    {post.content}
+                  </p>
+                )}
 
                 {post.media && post.media.length > 0 && (
                   <div className="h-28 w-full rounded-xl overflow-hidden bg-black/30">

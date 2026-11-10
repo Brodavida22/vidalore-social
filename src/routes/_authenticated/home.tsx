@@ -1,20 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { Sparkles, UserPen, Flame, Users, Compass, RefreshCw, Search, Bell } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Flame, Users, Compass, RefreshCw, Search, Bell } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PostComposer } from "@/components/feed/PostComposer";
 import { PostCard } from "@/components/feed/PostCard";
 import { StoriesBar } from "@/components/stories/StoriesBar";
 import { RightSidebar } from "@/components/layout/RightSidebar";
 import { myProfileQuery } from "@/services/profiles";
-import {
-  getStoredPosts,
-  getStoredRelationships,
-  getStoredNotifications,
-  type SocialPost,
-} from "@/services/social";
+import { feedQuery, postsKeys, type FeedMode } from "@/services/posts";
+import { getStoredRelationships, getStoredNotifications } from "@/services/social";
 import { NotificationsModal } from "@/components/social/NotificationsModal";
 
 export const Route = createFileRoute("/_authenticated/home")({
@@ -32,47 +27,32 @@ export const Route = createFileRoute("/_authenticated/home")({
 });
 
 function HomePage() {
-  const { data: me, isLoading: profileLoading } = useQuery(myProfileQuery());
+  const queryClient = useQueryClient();
+  const { data: me } = useQuery(myProfileQuery());
 
-  const [posts, setPosts] = useState<SocialPost[]>([]);
-  const [loadingPosts, setLoadingPosts] = useState(true);
-  const [feedFilter, setFeedFilter] = useState<"for-you" | "following" | "trending">("for-you");
+  const [feedFilter, setFeedFilter] = useState<FeedMode>("for-you");
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const reloadPosts = useCallback(() => {
-    setLoadingPosts(true);
-    setTimeout(() => {
-      const stored = getStoredPosts();
-      const rel = getStoredRelationships();
+  const {
+    data: allFeedPosts = [],
+    isLoading: loadingPosts,
+    isRefetching,
+    refetch,
+  } = useQuery(feedQuery(feedFilter));
 
-      // Filter blocked authors
-      const safe = stored.filter((p) => !rel.blockedUsers.includes(p.authorId));
-
-      if (feedFilter === "following") {
-        setPosts(safe.filter((p) => rel.following.includes(p.authorId) || p.authorId === me?.id));
-      } else if (feedFilter === "trending") {
-        setPosts([...safe].sort((a, b) => b.reactionsCount - a.reactionsCount));
-      } else {
-        setPosts(safe);
-      }
-      setLoadingPosts(false);
-    }, 150);
-  }, [feedFilter, me?.id]);
-
-  useEffect(() => {
-    reloadPosts();
-    const handleUpdate = () => reloadPosts();
-    window.addEventListener("vidalore:social-updated", handleUpdate);
-    return () => window.removeEventListener("vidalore:social-updated", handleUpdate);
-  }, [reloadPosts]);
+  const rel = getStoredRelationships();
+  const posts = allFeedPosts.filter((p) => !rel.blockedUsers.includes(p.authorId));
 
   useEffect(() => {
     const notifs = getStoredNotifications();
     setUnreadCount(notifs.filter((n) => !n.isRead).length);
   }, []);
 
-  const complete = me && me.avatar_url && me.display_name && me.bio;
+  async function handleRefresh() {
+    await queryClient.invalidateQueries({ queryKey: postsKeys.all });
+    await refetch();
+  }
 
   return (
     <div className="flex justify-center mx-auto max-w-7xl px-3 sm:px-4 lg:px-6">
@@ -112,7 +92,7 @@ function HomePage() {
         <StoriesBar me={me} />
 
         {/* 3. Create Post / Composer Section */}
-        {me && <PostComposer me={me} onPostCreated={reloadPosts} />}
+        {me && <PostComposer me={me} onPostCreated={handleRefresh} />}
 
         {/* 4. Feed Filter Tabs */}
         <div className="flex items-center justify-between border-b border-border pb-2 px-1">
@@ -156,12 +136,14 @@ function HomePage() {
 
           <button
             type="button"
-            onClick={reloadPosts}
+            onClick={handleRefresh}
             title="Refresh feed"
             className="rounded-lg p-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
           >
             <RefreshCw
-              className={`h-3.5 w-3.5 ${loadingPosts ? "animate-spin text-[#E91E63]" : ""}`}
+              className={`h-3.5 w-3.5 ${
+                loadingPosts || isRefetching ? "animate-spin text-[#E91E63]" : ""
+              }`}
             />
           </button>
         </div>
@@ -186,11 +168,11 @@ function HomePage() {
                 key={post.id}
                 post={post}
                 me={me ?? null}
-                onDeleted={(deletedId) => {
-                  setPosts((prev) => prev.filter((p) => p.id !== deletedId));
+                onDeleted={() => {
+                  refetch();
                 }}
-                onPostUpdated={(updated) => {
-                  setPosts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+                onPostUpdated={() => {
+                  refetch();
                 }}
               />
             ))}

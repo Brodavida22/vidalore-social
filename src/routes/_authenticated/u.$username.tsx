@@ -40,12 +40,12 @@ import {
   profileByUsernameQuery,
 } from "@/services/profiles";
 import {
-  getStoredPosts,
   getStoredRelationships,
   toggleFollow,
   sendFriendRequest,
   blockUser,
 } from "@/services/social";
+import { userPostsQuery, mentionPostsQuery } from "@/services/posts";
 import { getStoredReels } from "@/services/reelsAndStories";
 
 import {
@@ -130,12 +130,23 @@ function ProfilePage() {
     return () => window.removeEventListener("vidalore:reels-updated", handleUpdate);
   }, [queryClient]);
 
-  const allPosts = getStoredPosts();
-  const userPosts = (Array.isArray(allPosts) ? allPosts : []).filter(
-    (p) =>
-      p.authorUsername.toLowerCase() === username.toLowerCase() ||
-      (profile && p.authorId === profile.id),
-  );
+  const {
+    data: userPosts = [],
+    isLoading: userPostsLoading,
+    refetch: refetchUserPosts,
+  } = useQuery({
+    ...userPostsQuery(profile?.id ?? ""),
+    enabled: !!profile?.id,
+  });
+
+  const {
+    data: taggedPosts = [],
+    isLoading: taggedPostsLoading,
+    refetch: refetchTaggedPosts,
+  } = useQuery({
+    ...mentionPostsQuery(profile?.username ?? username),
+    enabled: !!profile?.username || !!username,
+  });
 
   const reelsQuery = useQuery({
     queryKey: ["reels", "all"],
@@ -147,10 +158,6 @@ function ProfilePage() {
     (r) =>
       r.creatorUsername.toLowerCase() === username.toLowerCase() ||
       (profile && r.creatorId === profile.id),
-  );
-
-  const taggedPosts = (Array.isArray(allPosts) ? allPosts : []).filter(
-    (p) => p.hasSaved || p.content.includes(`@${username}`),
   );
 
   if (isLoading) {
@@ -459,7 +466,12 @@ function ProfilePage() {
           {/* Posts Tab */}
           {activeTab === "posts" && (
             <div className="space-y-4">
-              {userPosts.length === 0 ? (
+              {userPostsLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-44 rounded-xl" />
+                  <Skeleton className="h-44 rounded-xl" />
+                </div>
+              ) : userPosts.length === 0 ? (
                 <div className="rounded-xl p-8 text-center space-y-2 border border-border bg-card">
                   <p className="font-semibold text-foreground text-sm">No posts shared yet</p>
                   <p className="text-xs text-muted-foreground">
@@ -469,7 +481,21 @@ function ProfilePage() {
                   </p>
                 </div>
               ) : (
-                userPosts.map((post) => <PostCard key={post.id} post={post} me={me ?? null} />)
+                userPosts.map((post) => (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    me={me ?? null}
+                    onDeleted={() => {
+                      refetchUserPosts();
+                      refetchTaggedPosts();
+                    }}
+                    onPostUpdated={() => {
+                      refetchUserPosts();
+                      refetchTaggedPosts();
+                    }}
+                  />
+                ))
               )}
             </div>
           )}
@@ -509,16 +535,34 @@ function ProfilePage() {
           {/* Tagged Tab (Section 9) */}
           {activeTab === "tagged" && (
             <div className="space-y-4">
-              {taggedPosts.length === 0 ? (
+              {taggedPostsLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-44 rounded-xl" />
+                </div>
+              ) : taggedPosts.length === 0 ? (
                 <div className="rounded-xl p-8 text-center space-y-2 border border-border bg-card">
                   <Bookmark className="h-8 w-8 text-muted-foreground mx-auto" />
                   <p className="font-semibold text-foreground text-sm">No tagged posts</p>
                   <p className="text-xs text-muted-foreground">
-                    Posts mentioning @{profile.username} or saved posts will show here.
+                    Posts mentioning @{profile.username} will show here.
                   </p>
                 </div>
               ) : (
-                taggedPosts.map((post) => <PostCard key={post.id} post={post} me={me ?? null} />)
+                taggedPosts.map((post) => (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    me={me ?? null}
+                    onDeleted={() => {
+                      refetchUserPosts();
+                      refetchTaggedPosts();
+                    }}
+                    onPostUpdated={() => {
+                      refetchUserPosts();
+                      refetchTaggedPosts();
+                    }}
+                  />
+                ))
               )}
             </div>
           )}

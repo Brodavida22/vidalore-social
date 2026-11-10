@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Heart, Reply, Trash2, Send, CornerDownRight, X } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Heart, Reply, Trash2, Send, CornerDownRight, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import type { Profile } from "@/services/profiles";
 import {
-  getStoredComments,
+  commentsQuery,
   addComment,
-  toggleCommentReaction,
   deleteComment,
+  setCommentLiked,
+  postsKeys,
   type PostComment,
-} from "@/services/social";
+} from "@/services/posts";
 
 const EMOJI_SHORTCUTS = ["👍", "❤️", "🔥", "👏", "💡", "🙌", "✨", "🎯"];
 
@@ -22,43 +24,64 @@ export function CommentsSection({
 }: {
   postId: string;
   me?: Profile | null | undefined;
-  onCommentChange?: () => void;
+  onCommentChange?: (delta: number) => void;
 }) {
-  const [comments, setComments] = useState<PostComment[]>(() =>
-    getStoredComments().filter((c) => c.postId === postId),
-  );
+  const queryClient = useQueryClient();
+  const { data: comments = [], isLoading } = useQuery(commentsQuery(postId));
   const [inputText, setInputText] = useState("");
   const [replyingTo, setReplyingTo] = useState<PostComment | null>(null);
+  const [isSending, setIsSending] = useState(false);
 
   const parentComments = comments.filter((c) => !c.parentId);
   const replies = comments.filter((c) => !!c.parentId);
 
-  function handleSend() {
+  async function handleSend() {
     if (!inputText.trim()) return;
     if (!me) {
       toast.error("Please sign in to leave a comment.");
       return;
     }
-    const newComment = addComment(me, postId, inputText.trim(), replyingTo ? replyingTo.id : null);
-    setComments((prev) => [...prev, newComment]);
-    setInputText("");
-    setReplyingTo(null);
-    toast.success("Comment added");
-    onCommentChange?.();
-  }
 
-  function handleReaction(commentId: string) {
-    const updated = toggleCommentReaction(commentId);
-    if (updated) {
-      setComments((prev) => prev.map((c) => (c.id === commentId ? { ...c, ...updated } : c)));
+    setIsSending(true);
+    try {
+      await addComment(postId, inputText.trim(), replyingTo ? replyingTo.id : null);
+      setInputText("");
+      setReplyingTo(null);
+      toast.success(replyingTo ? "Reply posted" : "Comment added");
+      await queryClient.invalidateQueries({ queryKey: postsKeys.comments(postId) });
+      await queryClient.invalidateQueries({ queryKey: postsKeys.all });
+      onCommentChange?.(1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't add comment.");
+    } finally {
+      setIsSending(false);
     }
   }
 
-  function handleDelete(commentId: string) {
-    deleteComment(commentId);
-    setComments((prev) => prev.filter((c) => c.id !== commentId && c.parentId !== commentId));
-    toast.info("Comment removed");
-    onCommentChange?.();
+  async function handleReaction(comment: PostComment) {
+    if (!me) {
+      toast.error("Please sign in to like comments.");
+      return;
+    }
+    const nextReacted = !comment.hasReacted;
+    try {
+      await setCommentLiked(comment.id, nextReacted);
+      await queryClient.invalidateQueries({ queryKey: postsKeys.comments(postId) });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't update reaction.");
+    }
+  }
+
+  async function handleDelete(commentId: string) {
+    try {
+      await deleteComment(commentId);
+      toast.info("Comment removed");
+      await queryClient.invalidateQueries({ queryKey: postsKeys.comments(postId) });
+      await queryClient.invalidateQueries({ queryKey: postsKeys.all });
+      onCommentChange?.(-1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't delete comment.");
+    }
   }
 
   function insertEmoji(emoji: string) {
@@ -69,7 +92,12 @@ export function CommentsSection({
     <div className="space-y-4 pt-3 border-t border-border mt-3">
       {/* Existing Comments List */}
       <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-        {parentComments.length === 0 ? (
+        {isLoading ? (
+          <div className="py-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin text-[#E91E63]" />
+            <span>Loading comments...</span>
+          </div>
+        ) : parentComments.length === 0 ? (
           <p className="py-4 text-center text-xs text-muted-foreground">
             No comments yet. Be the first to start the conversation.
           </p>
@@ -100,7 +128,7 @@ export function CommentsSection({
                       <Link
                         to="/u/$username"
                         params={{ username: parent.authorUsername }}
-                        className="text-xs font-semibold hover:text-primary transition-colors"
+                        className="text-xs font-semibold hover:text-[#E91E63] transition-colors"
                       >
                         {parent.authorName}
                       </Link>
@@ -109,6 +137,7 @@ export function CommentsSection({
                           hour: "2-digit",
                           minute: "2-digit",
                         })}
+                        {parent.isEdited && " · edited"}
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-foreground leading-relaxed whitespace-pre-wrap">
@@ -117,12 +146,16 @@ export function CommentsSection({
                     <div className="mt-2 flex items-center gap-3 text-[0.7rem] text-muted-foreground">
                       <button
                         type="button"
-                        onClick={() => handleReaction(parent.id)}
-                        className={`flex items-center gap-1 hover:text-primary transition-colors ${
-                          parent.hasReacted ? "text-primary font-semibold" : ""
+                        onClick={() => handleReaction(parent)}
+                        className={`flex items-center gap-1 hover:text-[#E91E63] transition-colors ${
+                          parent.hasReacted ? "text-[#E91E63] font-semibold" : ""
                         }`}
                       >
-                        <Heart className={`h-3 w-3 ${parent.hasReacted ? "fill-primary" : ""}`} />
+                        <Heart
+                          className={`h-3 w-3 ${
+                            parent.hasReacted ? "fill-[#E91E63] text-[#E91E63]" : ""
+                          }`}
+                        />
                         {parent.reactionsCount > 0 && parent.reactionsCount}
                       </button>
 
@@ -132,7 +165,7 @@ export function CommentsSection({
                           setReplyingTo(parent);
                           setInputText(`@${parent.authorUsername} `);
                         }}
-                        className="hover:text-primary transition-colors flex items-center gap-1"
+                        className="hover:text-[#E91E63] transition-colors flex items-center gap-1"
                       >
                         <Reply className="h-3 w-3" /> Reply
                       </button>
@@ -151,7 +184,7 @@ export function CommentsSection({
                   </div>
                 </div>
 
-                {/* Nested 1-level replies */}
+                {/* Nested replies */}
                 {childReplies.length > 0 && (
                   <div className="ml-8 space-y-2 pl-3 border-l-2 border-border">
                     {childReplies.map((reply) => {
@@ -182,6 +215,7 @@ export function CommentsSection({
                                   hour: "2-digit",
                                   minute: "2-digit",
                                 })}
+                                {reply.isEdited && " · edited"}
                               </span>
                             </div>
                             <p className="mt-0.5 text-xs text-foreground leading-relaxed">
@@ -190,13 +224,15 @@ export function CommentsSection({
                             <div className="mt-1 flex items-center gap-3 text-[0.65rem] text-muted-foreground">
                               <button
                                 type="button"
-                                onClick={() => handleReaction(reply.id)}
-                                className={`flex items-center gap-1 hover:text-primary ${
-                                  reply.hasReacted ? "text-primary font-semibold" : ""
+                                onClick={() => handleReaction(reply)}
+                                className={`flex items-center gap-1 hover:text-[#E91E63] ${
+                                  reply.hasReacted ? "text-[#E91E63] font-semibold" : ""
                                 }`}
                               >
                                 <Heart
-                                  className={`h-2.5 w-2.5 ${reply.hasReacted ? "fill-primary" : ""}`}
+                                  className={`h-2.5 w-2.5 ${
+                                    reply.hasReacted ? "fill-[#E91E63] text-[#E91E63]" : ""
+                                  }`}
                                 />
                                 {reply.reactionsCount > 0 && reply.reactionsCount}
                               </button>
@@ -205,6 +241,7 @@ export function CommentsSection({
                                   type="button"
                                   onClick={() => handleDelete(reply.id)}
                                   className="hover:text-destructive ml-auto opacity-0 group-hover/rep:opacity-100"
+                                  title="Delete reply"
                                 >
                                   <Trash2 className="h-2.5 w-2.5" />
                                 </button>
@@ -224,7 +261,7 @@ export function CommentsSection({
 
       {/* Replying indicator */}
       {replyingTo && (
-        <div className="flex items-center justify-between rounded-lg bg-secondary px-3 py-1.5 text-xs text-primary font-medium">
+        <div className="flex items-center justify-between rounded-lg bg-secondary px-3 py-1.5 text-xs text-[#E91E63] font-medium">
           <span className="flex items-center gap-1.5">
             <CornerDownRight className="h-3.5 w-3.5" />
             Replying to @{replyingTo.authorUsername}
@@ -286,11 +323,15 @@ export function CommentsSection({
           <button
             type="button"
             onClick={handleSend}
-            disabled={!inputText.trim()}
+            disabled={!inputText.trim() || isSending}
             className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[#E91E63] disabled:opacity-40 hover:text-[#C2185B] transition-colors"
             aria-label="Send comment"
           >
-            <Send className="h-4 w-4" />
+            {isSending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
           </button>
         </div>
       </div>

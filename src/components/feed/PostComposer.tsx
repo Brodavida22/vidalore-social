@@ -1,11 +1,19 @@
-import { useState, useRef, type ChangeEvent } from "react";
+import { useState, useRef, useEffect, type ChangeEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Image as ImageIcon, Smile, X, Loader2, Send } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import type { Profile } from "@/services/profiles";
-import { createPost, type PostMedia } from "@/services/social";
+import {
+  createPost,
+  postsKeys,
+  POST_LIMITS,
+  POST_MEDIA_ACCEPT,
+  POST_MEDIA_MIME_TYPES,
+  validatePostDraft,
+} from "@/services/posts";
 
 const POST_TAGS = ["Design", "Technology", "Photography", "Architecture", "Community"];
 
@@ -17,21 +25,38 @@ const POST_STATUSES = [
   "Building",
 ];
 
+interface PendingFile {
+  id: string;
+  file: File;
+  previewUrl: string;
+  type: "image" | "video";
+}
+
 export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated?: () => void }) {
+  const queryClient = useQueryClient();
   const [content, setContent] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedMood, setSelectedMood] = useState<string | null>(null);
   const [showMoods, setShowMoods] = useState(false);
-  const [mediaList, setMediaList] = useState<PostMedia[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Clean up object URLs on unmount
+  useEffect(() => {
+    return () => {
+      pendingFiles.forEach((p) => {
+        if (p.previewUrl.startsWith("blob:")) URL.revokeObjectURL(p.previewUrl);
+      });
+    };
+  }, [pendingFiles]);
 
   function toggleTag(tag: string) {
     if (selectedTags.includes(tag)) {
       setSelectedTags(selectedTags.filter((t) => t !== tag));
     } else {
-      if (selectedTags.length >= 3) {
-        toast.info("Up to 3 tags per post");
+      if (selectedTags.length >= POST_LIMITS.maxTags) {
+        toast.info(`Up to ${POST_LIMITS.maxTags} tags per post`);
         return;
       }
       setSelectedTags([...selectedTags, tag]);
@@ -39,66 +64,91 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
   }
 
   function handleFileUpload(e: ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
 
-    if (mediaList.length + files.length > 4) {
-      toast.error("Maximum 4 media attachments per post");
+    const incoming = Array.from(fileList);
+    if (pendingFiles.length + incoming.length > POST_LIMITS.maxMedia) {
+      toast.error(`Maximum ${POST_LIMITS.maxMedia} media attachments per post`);
       return;
     }
 
-    Array.from(files).forEach((file) => {
-      const isVideo = file.type.startsWith("video/");
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          setMediaList((prev) => [
-            ...prev,
-            {
-              id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-              type: isVideo ? "video" : "image",
-              url: reader.result as string,
-              caption: file.name,
-            },
-          ]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    const additions: PendingFile[] = [];
+    for (const file of incoming) {
+      const mimeInfo = POST_MEDIA_MIME_TYPES[file.type];
+      if (!mimeInfo) {
+        toast.error(`File "${file.name}" is not a supported image or video.`);
+        continue;
+      }
+      if (file.size > POST_LIMITS.maxFileBytes) {
+        toast.error(`File "${file.name}" exceeds the 50 MB limit.`);
+        continue;
+      }
+      additions.push({
+        id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+        type: mimeInfo.type,
+      });
+    }
+
+    if (additions.length > 0) {
+      setPendingFiles((prev) => [...prev, ...additions]);
+    }
 
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   function removeMedia(id: string) {
-    setMediaList(mediaList.filter((m) => m.id !== id));
+    setPendingFiles((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target && target.previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return prev.filter((p) => p.id !== id);
+    });
   }
 
   async function handleSubmit() {
-    if (!content.trim() && mediaList.length === 0) {
-      toast.error("Please write something or attach a photo before posting.");
+    const errorMsg = validatePostDraft({
+      content,
+      files: pendingFiles.map((p) => ({ type: p.file.type, size: p.file.size })),
+      tags: selectedTags,
+    });
+    if (errorMsg) {
+      toast.error(errorMsg);
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await createPost(me, {
+      await createPost({
         content: content.trim(),
-        media: mediaList,
+        files: pendingFiles.map((p) => p.file),
         tags: selectedTags,
-        mood: selectedMood ?? undefined,
+        mood: selectedMood || undefined,
+        location: me.location || undefined,
+      });
+
+      // Cleanup preview URLs
+      pendingFiles.forEach((p) => {
+        if (p.previewUrl.startsWith("blob:")) URL.revokeObjectURL(p.previewUrl);
       });
 
       setContent("");
       setSelectedTags([]);
       setSelectedMood(null);
-      setMediaList([]);
+      setPendingFiles([]);
       setShowMoods(false);
 
-      toast.success("Post published successfully (+10 points)");
+      toast.success("Post published successfully");
 
+      // Invalidate posts query cache so all feeds update immediately
+      await queryClient.invalidateQueries({ queryKey: postsKeys.all });
       onPostCreated?.();
-    } catch {
-      toast.error("Couldn't publish your post. Please try again.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Couldn't publish your post.";
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -132,22 +182,22 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
             onChange={(e) => setContent(e.target.value)}
             placeholder="Share your thoughts or work..."
             rows={content.length > 80 ? 3 : 2}
-            maxLength={600}
+            maxLength={POST_LIMITS.maxContent}
             className="mt-2 w-full resize-none border-none bg-transparent p-0 text-sm placeholder:text-muted-foreground focus-visible:ring-0 leading-relaxed"
           />
 
           {/* Media preview grid */}
-          {mediaList.length > 0 && (
+          {pendingFiles.length > 0 && (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {mediaList.map((m) => (
+              {pendingFiles.map((m) => (
                 <div
                   key={m.id}
                   className="relative group aspect-square rounded-lg overflow-hidden bg-secondary border border-border"
                 >
                   {m.type === "video" ? (
-                    <video src={m.url} className="h-full w-full object-cover" muted />
+                    <video src={m.previewUrl} className="h-full w-full object-cover" muted />
                   ) : (
-                    <img src={m.url} alt="" className="h-full w-full object-cover" />
+                    <img src={m.previewUrl} alt="" className="h-full w-full object-cover" />
                   )}
                   <button
                     type="button"
@@ -217,7 +267,7 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,video/mp4,video/webm"
+                accept={POST_MEDIA_ACCEPT}
                 multiple
                 className="hidden"
                 onChange={handleFileUpload}
@@ -247,13 +297,15 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
 
             <div className="flex items-center gap-3 ml-auto">
               {content.length > 0 && (
-                <span className="text-[0.7rem] text-muted-foreground">{content.length}/600</span>
+                <span className="text-[0.7rem] text-muted-foreground">
+                  {content.length}/{POST_LIMITS.maxContent}
+                </span>
               )}
 
               <Button
                 type="button"
                 size="sm"
-                disabled={isSubmitting || (!content.trim() && mediaList.length === 0)}
+                disabled={isSubmitting || (!content.trim() && pendingFiles.length === 0)}
                 onClick={handleSubmit}
                 className="rounded-lg px-4 text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white shadow-sm"
               >

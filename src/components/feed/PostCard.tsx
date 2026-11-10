@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Heart,
   MessageCircle,
@@ -17,6 +18,7 @@ import {
   UserX,
   Copy,
   BadgeCheck,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -33,12 +35,13 @@ import { ShareModal } from "@/components/feed/ShareModal";
 import { ReportModal } from "@/components/feed/ReportModal";
 import type { Profile } from "@/services/profiles";
 import {
-  togglePostReaction,
-  togglePostSave,
-  deletePost,
-  blockUser,
   type SocialPost,
-} from "@/services/social";
+  setPostLiked,
+  setPostSaved,
+  deletePost,
+  postsKeys,
+} from "@/services/posts";
+import { blockUser } from "@/services/social";
 
 export function PostCard({
   post: initialPost,
@@ -51,6 +54,7 @@ export function PostCard({
   onDeleted?: (id: string) => void;
   onPostUpdated?: (updated: SocialPost) => void;
 }) {
+  const queryClient = useQueryClient();
   const [post, setPost] = useState<SocialPost>(initialPost);
   const [showComments, setShowComments] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -60,32 +64,82 @@ export function PostCard({
   const [isMuted, setIsMuted] = useState(true);
   const [heartBurst, setHeartBurst] = useState(false);
 
-  const isMe = Boolean(me && me.id === post.authorId);
+  // Sync internal state if prop changes
+  if (initialPost.id !== post.id || initialPost.reactionsCount !== post.reactionsCount) {
+    setPost(initialPost);
+  }
 
-  function handleReaction() {
+  const isMe = Boolean(me && me.id === post.authorId);
+  const isMyRepost = Boolean(me && post.isRepost && post.reposter?.id === me.id);
+  const canDelete = isMe || isMyRepost;
+
+  async function handleReaction() {
+    if (!me) {
+      toast.error("Please sign in to like posts.");
+      return;
+    }
     setHeartBurst(true);
     setTimeout(() => setHeartBurst(false), 400);
-    const updated = togglePostReaction(post.id);
-    if (updated) {
-      setPost({ ...updated });
-      onPostUpdated?.(updated);
+
+    const nextReacted = !post.hasReacted;
+    const prev = post;
+    const updatedPost: SocialPost = {
+      ...post,
+      hasReacted: nextReacted,
+      reactionsCount: Math.max(0, post.reactionsCount + (nextReacted ? 1 : -1)),
+    };
+    setPost(updatedPost);
+    onPostUpdated?.(updatedPost);
+
+    try {
+      const counts = await setPostLiked(post.postId, nextReacted);
+      const synced: SocialPost = {
+        ...updatedPost,
+        reactionsCount: counts.reactionsCount,
+      };
+      setPost(synced);
+      onPostUpdated?.(synced);
+    } catch (err) {
+      setPost(prev);
+      onPostUpdated?.(prev);
+      toast.error(err instanceof Error ? err.message : "Couldn't update like.");
     }
   }
 
-  function handleSave() {
-    const isSaved = togglePostSave(post.id);
-    setPost((prev) => ({
-      ...prev,
-      hasSaved: isSaved,
-      savesCount: Math.max(0, prev.savesCount + (isSaved ? 1 : -1)),
-    }));
-    toast(isSaved ? "Saved to your bookmarks" : "Removed from bookmarks");
+  async function handleSave() {
+    if (!me) {
+      toast.error("Please sign in to bookmark posts.");
+      return;
+    }
+    const nextSaved = !post.hasSaved;
+    const prev = post;
+    const updatedPost: SocialPost = {
+      ...post,
+      hasSaved: nextSaved,
+      savesCount: Math.max(0, post.savesCount + (nextSaved ? 1 : -1)),
+    };
+    setPost(updatedPost);
+    toast(nextSaved ? "Saved to your bookmarks" : "Removed from bookmarks");
+
+    try {
+      const counts = await setPostSaved(post.postId, nextSaved);
+      setPost((p) => ({ ...p, savesCount: counts.savesCount }));
+      await queryClient.invalidateQueries({ queryKey: postsKeys.saved() });
+    } catch (err) {
+      setPost(prev);
+      toast.error(err instanceof Error ? err.message : "Couldn't update bookmark.");
+    }
   }
 
-  function handleDelete() {
-    deletePost(post.id);
-    toast.info("Post deleted");
-    onDeleted?.(post.id);
+  async function handleDelete() {
+    try {
+      await deletePost(post.id);
+      toast.info("Post deleted");
+      await queryClient.invalidateQueries({ queryKey: postsKeys.all });
+      onDeleted?.(post.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't delete post.");
+    }
   }
 
   function handleBlock() {
@@ -107,250 +161,292 @@ export function PostCard({
   return (
     <article className="relative rounded-xl p-4 sm:p-5 border border-border bg-card shadow-sm transition-colors">
       {/* Repost Header Attribution */}
-      {post.isRepost && (
-        <div className="mb-3 flex items-center gap-2 rounded-lg bg-secondary px-3 py-1.5 text-xs text-muted-foreground font-medium">
-          <Repeat className="h-3.5 w-3.5 text-[#E91E63]" />
-          <span>
-            <strong className="text-foreground">{post.authorName}</strong> reposted
-            {post.originalAuthor ? ` from @${post.originalAuthor.username}` : ""}
-          </span>
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <Link
-          to="/u/$username"
-          params={{ username: post.authorUsername }}
-          className="flex items-center gap-3 group min-w-0"
-        >
-          <UserAvatar
-            profile={{
-              avatar_url: post.authorAvatarUrl,
-              username: post.authorUsername,
-              display_name: post.authorName,
-            }}
-            className="h-10 w-10 ring-1 ring-border group-hover:ring-[#E91E63] transition-all shrink-0"
-          />
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-sm font-semibold text-foreground group-hover:text-[#E91E63] transition-colors truncate">
-                {post.authorName}
-              </span>
-              {post.authorVerified && <BadgeCheck className="h-4 w-4 text-[#E91E63] shrink-0" />}
-              <span className="text-xs text-muted-foreground">@{post.authorUsername}</span>
-            </div>
-            <div className="flex items-center gap-2 text-[0.7rem] text-muted-foreground">
-              <span>{timeFormatted}</span>
-              {post.location && (
-                <span className="flex items-center gap-0.5">
-                  · <MapPin className="h-3 w-3 inline" /> {post.location}
-                </span>
-              )}
-              {post.mood && <span>· {post.mood}</span>}
-            </div>
-          </div>
-        </Link>
-
-        {/* More Actions Menu */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Post options"
-              className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 bg-popover border-border">
-            <DropdownMenuItem onClick={handleCopy} className="text-xs cursor-pointer">
-              <Copy className="h-3.5 w-3.5 mr-2" /> Copy link
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleSave} className="text-xs cursor-pointer">
-              <Bookmark className="h-3.5 w-3.5 mr-2" />
-              {post.hasSaved ? "Remove from saved" : "Save post"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setShareOpen(true)} className="text-xs cursor-pointer">
-              <Share2 className="h-3.5 w-3.5 mr-2" /> Share post
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            {isMe ? (
-              <DropdownMenuItem
-                onClick={handleDelete}
-                className="text-xs text-destructive cursor-pointer"
+      {post.isRepost && post.reposter && (
+        <div className="mb-3 flex items-center justify-between rounded-lg bg-secondary px-3 py-1.5 text-xs text-muted-foreground font-medium">
+          <div className="flex items-center gap-2 min-w-0">
+            <Repeat className="h-3.5 w-3.5 text-[#E91E63] shrink-0" />
+            <span className="truncate">
+              <Link
+                to="/u/$username"
+                params={{ username: post.reposter.username }}
+                className="font-semibold text-foreground hover:text-[#E91E63]"
               >
-                <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete post
-              </DropdownMenuItem>
-            ) : (
-              <>
-                <DropdownMenuItem
-                  onClick={() => setReportOpen(true)}
-                  className="text-xs text-destructive cursor-pointer"
-                >
-                  <Flag className="h-3.5 w-3.5 mr-2" /> Report post
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={handleBlock}
-                  className="text-xs text-destructive cursor-pointer"
-                >
-                  <UserX className="h-3.5 w-3.5 mr-2" /> Block @{post.authorUsername}
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {/* Content Body */}
-      {post.content && (
-        <p className="mt-3 text-sm text-foreground leading-relaxed whitespace-pre-line">
-          {renderStyledText(post.content)}
-        </p>
-      )}
-
-      {/* Tag Badges */}
-      {post.tags && post.tags.length > 0 && (
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {post.tags.map((tag) => (
-            <span
-              key={tag}
-              className="text-xs font-medium text-[#E91E63] hover:underline transition-colors cursor-pointer"
-            >
-              #{tag}
+                {post.reposter.name}
+              </Link>{" "}
+              reposted
             </span>
-          ))}
+          </div>
+          {post.repostedAt && (
+            <span className="text-[0.65rem] shrink-0 text-muted-foreground">
+              {formatTimeAgo(new Date(post.repostedAt))}
+            </span>
+          )}
         </div>
       )}
 
-      {/* Media Presentation */}
-      {post.media && post.media.length > 0 && (
-        <div className="mt-3.5 overflow-hidden rounded-xl border border-border bg-black/5 dark:bg-black/40">
-          {post.media.length === 1 ? (
-            post.media[0]!.type === "video" ? (
-              <div className="relative aspect-video w-full bg-black">
-                <video
-                  src={post.media[0]!.url}
-                  className="h-full w-full object-cover"
-                  autoPlay={isPlayingVideo}
-                  muted={isMuted}
-                  loop
-                  playsInline
-                />
-                <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/10 transition-colors">
-                  <button
-                    type="button"
-                    onClick={() => setIsPlayingVideo(!isPlayingVideo)}
-                    className="flex h-11 w-11 items-center justify-center rounded-full bg-black/70 text-white backdrop-blur-sm hover:scale-105 transition-transform"
-                    aria-label={isPlayingVideo ? "Pause video" : "Play video"}
-                  >
-                    {isPlayingVideo ? (
-                      <Pause className="h-5 w-5" />
-                    ) : (
-                      <Play className="h-5 w-5 ml-0.5" />
-                    )}
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsMuted(!isMuted)}
-                  className="absolute bottom-3 right-3 rounded-lg bg-black/60 p-2 text-white hover:bg-black/80"
-                  aria-label={isMuted ? "Unmute" : "Mute"}
-                >
-                  {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setActivePhotoModal(post.media![0]!.url)}
-                className="block w-full overflow-hidden text-left"
-              >
-                <img
-                  src={post.media[0]!.url}
-                  alt={post.media[0]!.caption || "Post photo"}
-                  loading="lazy"
-                  className="w-full max-h-[460px] object-cover hover:opacity-95 transition-opacity"
-                />
-              </button>
-            )
-          ) : post.media.length === 2 ? (
-            <div className="grid grid-cols-2 gap-1">
-              {post.media.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setActivePhotoModal(m.url)}
-                  className="aspect-square w-full overflow-hidden"
-                >
-                  <img
-                    src={m.url}
-                    alt=""
-                    loading="lazy"
-                    className="h-full w-full object-cover hover:opacity-95 transition-opacity"
-                  />
-                </button>
-              ))}
-            </div>
-          ) : post.media.length === 3 ? (
-            <div className="grid grid-cols-2 gap-1 aspect-[4/3]">
-              <button
-                type="button"
-                onClick={() => setActivePhotoModal(post.media![0]!.url)}
-                className="h-full w-full overflow-hidden"
-              >
-                <img
-                  src={post.media[0]!.url}
-                  alt=""
-                  loading="lazy"
-                  className="h-full w-full object-cover hover:opacity-95 transition-opacity"
-                />
-              </button>
-              <div className="grid grid-rows-2 gap-1 h-full">
-                {post.media.slice(1, 3).map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setActivePhotoModal(m.url)}
-                    className="h-full w-full overflow-hidden"
-                  >
-                    <img
-                      src={m.url}
-                      alt=""
-                      loading="lazy"
-                      className="h-full w-full object-cover hover:opacity-95 transition-opacity"
-                    />
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-1 aspect-square">
-              {post.media.slice(0, 4).map((m, idx) => (
-                <div key={m.id} className="relative h-full w-full overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setActivePhotoModal(m.url)}
-                    className="h-full w-full"
-                  >
-                    <img
-                      src={m.url}
-                      alt=""
-                      loading="lazy"
-                      className="h-full w-full object-cover hover:opacity-95 transition-opacity"
-                    />
-                  </button>
-                  {idx === 3 && post.media!.length > 4 && (
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/60 font-semibold text-xl text-white">
-                      +{post.media!.length - 4}
-                    </div>
+      {/* Repost Note */}
+      {post.isRepost && post.repostNote && (
+        <div className="mb-3 rounded-lg border border-border/70 bg-secondary/40 p-3 text-xs text-foreground leading-relaxed">
+          <p className="font-semibold text-muted-foreground text-[0.65rem] uppercase tracking-wider mb-1">
+            Note
+          </p>
+          <p className="whitespace-pre-line">{renderStyledText(post.repostNote)}</p>
+        </div>
+      )}
+
+      {/* If original post was deleted or is private */}
+      {post.originalUnavailable ? (
+        <div className="rounded-xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground space-y-1">
+          <AlertCircle className="h-5 w-5 mx-auto text-muted-foreground/60 mb-1" />
+          <p className="font-medium text-foreground">Original post unavailable</p>
+          <p className="text-[0.7rem]">
+            This post may have been deleted or is restricted by the author&apos;s privacy settings.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Header */}
+          <div className="flex items-start justify-between gap-3">
+            <Link
+              to="/u/$username"
+              params={{ username: post.authorUsername }}
+              className="flex items-center gap-3 group min-w-0"
+            >
+              <UserAvatar
+                profile={{
+                  avatar_url: post.authorAvatarUrl,
+                  username: post.authorUsername,
+                  display_name: post.authorName,
+                }}
+                className="h-10 w-10 ring-1 ring-border group-hover:ring-[#E91E63] transition-all shrink-0"
+              />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-sm font-semibold text-foreground group-hover:text-[#E91E63] transition-colors truncate">
+                    {post.authorName}
+                  </span>
+                  {(post.authorPoints ?? 0) > 100 && (
+                    <BadgeCheck className="h-4 w-4 text-[#E91E63] shrink-0" />
                   )}
+                  <span className="text-xs text-muted-foreground">@{post.authorUsername}</span>
                 </div>
+                <div className="flex items-center gap-2 text-[0.7rem] text-muted-foreground">
+                  <span>{timeFormatted}</span>
+                  {post.isEdited && <span>· edited</span>}
+                  {post.location && (
+                    <span className="flex items-center gap-0.5">
+                      · <MapPin className="h-3 w-3 inline" /> {post.location}
+                    </span>
+                  )}
+                  {post.mood && <span>· {post.mood}</span>}
+                </div>
+              </div>
+            </Link>
+
+            {/* More Actions Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Post options"
+                  className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48 bg-popover border-border">
+                <DropdownMenuItem onClick={handleCopy} className="text-xs cursor-pointer">
+                  <Copy className="h-3.5 w-3.5 mr-2" /> Copy link
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSave} className="text-xs cursor-pointer">
+                  <Bookmark className="h-3.5 w-3.5 mr-2" />
+                  {post.hasSaved ? "Remove from saved" : "Save post"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setShareOpen(true)}
+                  className="text-xs cursor-pointer"
+                >
+                  <Share2 className="h-3.5 w-3.5 mr-2" /> Share post
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {canDelete ? (
+                  <DropdownMenuItem
+                    onClick={handleDelete}
+                    className="text-xs text-destructive cursor-pointer"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete post
+                  </DropdownMenuItem>
+                ) : (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => setReportOpen(true)}
+                      className="text-xs text-destructive cursor-pointer"
+                    >
+                      <Flag className="h-3.5 w-3.5 mr-2" /> Report post
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={handleBlock}
+                      className="text-xs text-destructive cursor-pointer"
+                    >
+                      <UserX className="h-3.5 w-3.5 mr-2" /> Block @{post.authorUsername}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          {/* Content Body */}
+          {post.content && (
+            <p className="mt-3 text-sm text-foreground leading-relaxed whitespace-pre-line">
+              {renderStyledText(post.content)}
+            </p>
+          )}
+
+          {/* Tag Badges */}
+          {post.tags && post.tags.length > 0 && (
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {post.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="text-xs font-medium text-[#E91E63] hover:underline transition-colors cursor-pointer"
+                >
+                  #{tag}
+                </span>
               ))}
             </div>
           )}
-        </div>
+
+          {/* Media Presentation */}
+          {post.media && post.media.length > 0 && (
+            <div className="mt-3.5 overflow-hidden rounded-xl border border-border bg-black/5 dark:bg-black/40">
+              {post.media.length === 1 ? (
+                post.media[0]!.type === "video" ? (
+                  <div className="relative aspect-video w-full bg-black">
+                    <video
+                      src={post.media[0]!.url}
+                      className="h-full w-full object-cover"
+                      autoPlay={isPlayingVideo}
+                      muted={isMuted}
+                      loop
+                      playsInline
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/10 transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => setIsPlayingVideo(!isPlayingVideo)}
+                        className="flex h-11 w-11 items-center justify-center rounded-full bg-black/70 text-white backdrop-blur-sm hover:scale-105 transition-transform"
+                        aria-label={isPlayingVideo ? "Pause video" : "Play video"}
+                      >
+                        {isPlayingVideo ? (
+                          <Pause className="h-5 w-5" />
+                        ) : (
+                          <Play className="h-5 w-5 ml-0.5" />
+                        )}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsMuted(!isMuted)}
+                      className="absolute bottom-3 right-3 rounded-lg bg-black/60 p-2 text-white hover:bg-black/80"
+                      aria-label={isMuted ? "Unmute" : "Mute"}
+                    >
+                      {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setActivePhotoModal(post.media![0]!.url)}
+                    className="block w-full overflow-hidden text-left"
+                  >
+                    <img
+                      src={post.media[0]!.url}
+                      alt={post.media[0]!.caption || "Post photo"}
+                      loading="lazy"
+                      className="w-full max-h-[460px] object-cover hover:opacity-95 transition-opacity"
+                    />
+                  </button>
+                )
+              ) : post.media.length === 2 ? (
+                <div className="grid grid-cols-2 gap-1">
+                  {post.media.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setActivePhotoModal(m.url)}
+                      className="aspect-square w-full overflow-hidden"
+                    >
+                      <img
+                        src={m.url}
+                        alt=""
+                        loading="lazy"
+                        className="h-full w-full object-cover hover:opacity-95 transition-opacity"
+                      />
+                    </button>
+                  ))}
+                </div>
+              ) : post.media.length === 3 ? (
+                <div className="grid grid-cols-2 gap-1 aspect-[4/3]">
+                  <button
+                    type="button"
+                    onClick={() => setActivePhotoModal(post.media![0]!.url)}
+                    className="h-full w-full overflow-hidden"
+                  >
+                    <img
+                      src={post.media[0]!.url}
+                      alt=""
+                      loading="lazy"
+                      className="h-full w-full object-cover hover:opacity-95 transition-opacity"
+                    />
+                  </button>
+                  <div className="grid grid-rows-2 gap-1 h-full">
+                    {post.media.slice(1, 3).map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setActivePhotoModal(m.url)}
+                        className="h-full w-full overflow-hidden"
+                      >
+                        <img
+                          src={m.url}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-cover hover:opacity-95 transition-opacity"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-1 aspect-square">
+                  {post.media.slice(0, 4).map((m, idx) => (
+                    <div key={m.id} className="relative h-full w-full overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setActivePhotoModal(m.url)}
+                        className="h-full w-full"
+                      >
+                        <img
+                          src={m.url}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-cover hover:opacity-95 transition-opacity"
+                        />
+                      </button>
+                      {idx === 3 && post.media!.length > 4 && (
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/60 font-semibold text-xl text-white">
+                          +{post.media!.length - 4}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
 
       {/* Action Bar (Real SVG Icons with Pink Like State) */}
@@ -416,10 +512,10 @@ export function PostCard({
       {/* Inline Comments Section */}
       {showComments && (
         <CommentsSection
-          postId={post.id}
+          postId={post.postId}
           me={me}
-          onCommentChange={() => {
-            setPost((p) => ({ ...p, commentsCount: p.commentsCount + 1 }));
+          onCommentChange={(delta = 1) => {
+            setPost((p) => ({ ...p, commentsCount: Math.max(0, p.commentsCount + delta) }));
           }}
         />
       )}
@@ -431,13 +527,13 @@ export function PostCard({
         open={shareOpen}
         onOpenChange={setShareOpen}
         onShared={() => {
-          setPost((p) => ({ ...p, sharesCount: p.sharesCount + 1 }));
+          setPost((p) => ({ ...p, sharesCount: p.sharesCount + 1, hasShared: true }));
         }}
       />
 
       {/* Report Modal */}
       <ReportModal
-        targetId={post.id}
+        targetId={post.postId}
         targetType="post"
         targetLabel={`@${post.authorUsername}'s post`}
         open={reportOpen}

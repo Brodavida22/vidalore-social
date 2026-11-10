@@ -239,9 +239,7 @@ async function hydratePosts(rows: PostRow[]): Promise<SocialPost[]> {
   const uid = await currentUserId();
 
   // Load originals for reposts
-  const originalIds = [
-    ...new Set(rows.map((r) => r.repost_of_id).filter((v): v is string => !!v)),
-  ];
+  const originalIds = [...new Set(rows.map((r) => r.repost_of_id).filter((v): v is string => !!v))];
   const originals = new Map<string, PostRow>();
   if (originalIds.length > 0) {
     const { data, error } = await supabase.from("posts").select(POST_SELECT).in("id", originalIds);
@@ -249,9 +247,7 @@ async function hydratePosts(rows: PostRow[]): Promise<SocialPost[]> {
     for (const o of (data ?? []) as unknown as PostRow[]) originals.set(o.id, o);
   }
 
-  const targetIds = [
-    ...new Set(rows.map((r) => r.repost_of_id ?? r.id).filter((id) => !!id)),
-  ];
+  const targetIds = [...new Set(rows.map((r) => r.repost_of_id ?? r.id).filter((id) => !!id))];
 
   const [likesRes, savesRes, repostsRes] = await Promise.all([
     supabase.from("post_likes").select("post_id").eq("user_id", uid).in("post_id", targetIds),
@@ -397,7 +393,10 @@ export async function fetchSavedPosts(): Promise<SocialPost[]> {
   if (error) throw friendlyError(error, "Couldn't load saved posts.");
   const ids = (saves ?? []).map((s) => s.post_id);
   if (ids.length === 0) return [];
-  const { data, error: postsError } = await supabase.from("posts").select(POST_SELECT).in("id", ids);
+  const { data, error: postsError } = await supabase
+    .from("posts")
+    .select(POST_SELECT)
+    .in("id", ids);
   if (postsError) throw friendlyError(postsError, "Couldn't load saved posts.");
   const byId = new Map(((data ?? []) as unknown as PostRow[]).map((p) => [p.id, p]));
   const ordered = ids.map((id) => byId.get(id)).filter((p): p is PostRow => !!p);

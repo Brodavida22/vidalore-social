@@ -4,10 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Compass, Search, Sparkles, UserPlus, UserCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { PostCard } from "@/components/feed/PostCard";
 import { myProfileQuery, communityProfilesQuery } from "@/services/profiles";
-import { getStoredPosts, getStoredRelationships, toggleFollow } from "@/services/social";
+import { explorePostsQuery } from "@/services/posts";
+import { getStoredRelationships, toggleFollow } from "@/services/social";
 
 export const Route = createFileRoute("/_authenticated/explore")({
   head: () => ({
@@ -42,24 +44,24 @@ function ExplorePage() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [rel, setRel] = useState(() => getStoredRelationships());
 
-  const allPosts = getStoredPosts();
+  const tagFilter = selectedCategory === "All" ? null : selectedCategory;
+  const { data: allExplorePosts = [], isLoading, refetch } = useQuery(explorePostsQuery(tagFilter));
 
   function handleFollowToggle(targetId: string) {
     toggleFollow(targetId);
     setRel(getStoredRelationships());
   }
 
-  const filteredPosts = allPosts.filter((p) => {
-    const matchesSearch =
-      !search.trim() ||
-      p.content.toLowerCase().includes(search.toLowerCase()) ||
-      p.authorName.toLowerCase().includes(search.toLowerCase()) ||
-      p.authorUsername.toLowerCase().includes(search.toLowerCase()) ||
-      (p.tags || []).some((t) => t.toLowerCase().includes(search.toLowerCase()));
-
-    const matchesCat = selectedCategory === "All" || (p.tags || []).includes(selectedCategory);
-
-    return matchesSearch && matchesCat;
+  const filteredPosts = allExplorePosts.filter((p) => {
+    if (rel.blockedUsers.includes(p.authorId)) return false;
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      p.content.toLowerCase().includes(q) ||
+      p.authorName.toLowerCase().includes(q) ||
+      p.authorUsername.toLowerCase().includes(q) ||
+      (p.tags || []).some((t) => t.toLowerCase().includes(q))
+    );
   });
 
   return (
@@ -68,7 +70,7 @@ function ExplorePage() {
       <div className="space-y-3">
         <div>
           <h1 className="font-display text-2xl font-bold flex items-center gap-2 text-foreground">
-            <Compass className="h-6 w-6 text-primary" />
+            <Compass className="h-6 w-6 text-[#E91E63]" />
             Explore
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -95,7 +97,7 @@ function ExplorePage() {
               onClick={() => setSelectedCategory(cat)}
               className={`rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
                 selectedCategory === cat
-                  ? "bg-primary text-primary-foreground font-semibold"
+                  ? "bg-[#E91E63] text-white font-semibold"
                   : "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
               }`}
             >
@@ -110,7 +112,7 @@ function ExplorePage() {
         <section className="rounded-xl p-4 border border-border bg-card shadow-sm">
           <div className="flex items-center justify-between mb-3 px-1">
             <h2 className="text-xs uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
-              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              <Sparkles className="h-3.5 w-3.5 text-[#E91E63]" />
               Featured Creators
             </h2>
           </div>
@@ -120,7 +122,7 @@ function ExplorePage() {
               return (
                 <div
                   key={c.id}
-                  className="rounded-xl bg-secondary/50 p-3 text-center flex flex-col items-center justify-between space-y-2 border border-border hover:border-primary/40 transition-colors"
+                  className="rounded-xl bg-secondary/50 p-3 text-center flex flex-col items-center justify-between space-y-2 border border-border hover:border-[#E91E63]/40 transition-colors"
                 >
                   <Link to="/u/$username" params={{ username: c.username }}>
                     <UserAvatar
@@ -167,7 +169,12 @@ function ExplorePage() {
 
       {/* Explore Grid / Feed */}
       <div className="space-y-4">
-        {filteredPosts.length === 0 ? (
+        {isLoading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-44 rounded-xl" />
+            <Skeleton className="h-56 rounded-xl" />
+          </div>
+        ) : filteredPosts.length === 0 ? (
           <div className="rounded-xl p-10 text-center space-y-2 border border-border bg-card">
             <p className="font-semibold text-foreground text-sm">No posts found</p>
             <p className="text-xs text-muted-foreground">
@@ -175,7 +182,19 @@ function ExplorePage() {
             </p>
           </div>
         ) : (
-          filteredPosts.map((post) => <PostCard key={post.id} post={post} me={me ?? null} />)
+          filteredPosts.map((post) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              me={me ?? null}
+              onDeleted={() => {
+                refetch();
+              }}
+              onPostUpdated={() => {
+                refetch();
+              }}
+            />
+          ))
         )}
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Copy, Check, Repeat, Share2 } from "lucide-react";
+import { Copy, Check, Repeat, Share2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -10,8 +11,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import type { SocialPost } from "@/services/social";
-import { sharePost } from "@/services/social";
+import type { SocialPost } from "@/services/posts";
+import { repostPost, postsKeys, POST_LIMITS } from "@/services/posts";
 import type { Profile } from "@/services/profiles";
 
 export function ShareModal({
@@ -27,6 +28,7 @@ export function ShareModal({
   onOpenChange: (open: boolean) => void;
   onShared?: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
   const [repostNote, setRepostNote] = useState("");
   const [isReposting, setIsReposting] = useState(false);
@@ -63,19 +65,22 @@ export function ShareModal({
     }
   }
 
-  function handleRepost() {
+  async function handleRepost() {
     if (!me) {
       toast.error("Please sign in to share posts.");
       return;
     }
     setIsReposting(true);
     try {
-      sharePost(me, post.id, repostNote.trim() || undefined);
-      toast.success("Post shared to your feed");
+      await repostPost(post.postId, repostNote.trim() || undefined);
+      toast.success("Post reposted to your feed");
+      await queryClient.invalidateQueries({ queryKey: postsKeys.all });
       onShared?.();
       onOpenChange(false);
-    } catch {
-      toast.error("Failed to repost");
+      setRepostNote("");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to repost.";
+      toast.error(msg);
     } finally {
       setIsReposting(false);
     }
@@ -97,7 +102,7 @@ export function ShareModal({
           {/* Repost with note */}
           <div className="rounded-xl bg-secondary p-3.5 space-y-2.5 border border-border">
             <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              <Repeat className="h-3.5 w-3.5 text-primary" />
+              <Repeat className="h-3.5 w-3.5 text-[#E91E63]" />
               Repost to Feed
             </span>
             <Textarea
@@ -105,6 +110,7 @@ export function ShareModal({
               value={repostNote}
               onChange={(e) => setRepostNote(e.target.value)}
               rows={2}
+              maxLength={POST_LIMITS.maxRepostNote}
               className="resize-none rounded-lg bg-card text-xs border-border"
             />
             <Button
@@ -112,9 +118,15 @@ export function ShareModal({
               size="sm"
               disabled={isReposting}
               onClick={handleRepost}
-              className="w-full text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white rounded-lg"
+              className="w-full text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white rounded-lg shadow-sm"
             >
-              Share to Feed
+              {isReposting ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Reposting...
+                </>
+              ) : (
+                "Share to Feed"
+              )}
             </Button>
           </div>
 
@@ -124,7 +136,7 @@ export function ShareModal({
               type="button"
               variant="outline"
               onClick={handleCopy}
-              className="text-xs flex items-center justify-center gap-2 h-9 rounded-lg border-border"
+              className="text-xs flex items-center justify-center gap-2 h-9 rounded-lg border-border hover:bg-secondary"
             >
               {copied ? <Check className="h-4 w-4 text-[#22C55E]" /> : <Copy className="h-4 w-4" />}
               {copied ? "Link Copied" : "Copy Link"}
@@ -134,9 +146,9 @@ export function ShareModal({
               type="button"
               variant="outline"
               onClick={handleNativeShare}
-              className="text-xs flex items-center justify-center gap-2 h-9 rounded-lg border-border"
+              className="text-xs flex items-center justify-center gap-2 h-9 rounded-lg border-border hover:bg-secondary"
             >
-              <Share2 className="h-4 w-4 text-primary" />
+              <Share2 className="h-4 w-4 text-[#E91E63]" />
               External Share
             </Button>
           </div>
