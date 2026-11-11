@@ -16,6 +16,7 @@ import {
   Menu,
   X,
   Plus,
+  Search,
   ShieldAlert,
 } from "lucide-react";
 
@@ -150,7 +151,7 @@ export function AppShell() {
 
             {unreadNotifs > 0 && (
               <span className="rounded-full bg-[#E91E63] px-2 py-0.5 text-[0.7rem] font-bold text-white">
-                {unreadNotifs > 99 ? "99+" : unreadNotifs}
+                {unreadNotifs}
               </span>
             )}
           </button>
@@ -253,22 +254,22 @@ export function AppShell() {
 
         <div className="flex items-center gap-1.5">
           <Link
-            to="/create"
+            to="/explore"
             className="rounded-lg p-2 text-muted-foreground hover:text-[#E91E63] hover:bg-secondary transition-colors"
-            aria-label="Create Post"
+            aria-label="Search and explore"
           >
-            <Plus className="h-5 w-5" />
+            <Search className="h-5 w-5" />
           </Link>
 
           <button
             type="button"
             onClick={() => setNotificationsOpen(true)}
             className="relative rounded-lg p-2 text-muted-foreground hover:text-foreground transition-colors"
-            aria-label={unreadNotifs > 0 ? `Notifications, ${unreadNotifs} unread` : "Notifications"}
+            aria-label="Notifications"
           >
             <Bell className="h-5 w-5" />
             {unreadNotifs > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 min-w-[1.15rem] h-[1.15rem] px-1 flex items-center justify-center rounded-full bg-[#E91E63] text-[0.6rem] font-bold leading-none text-white ring-2 ring-background">
+              <span className="absolute -right-0.5 -top-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-[#E91E63] text-[10px] leading-none font-bold text-white ring-2 ring-background">
                 {unreadNotifs > 99 ? "99+" : unreadNotifs}
               </span>
             )}
@@ -393,7 +394,7 @@ export function AppShell() {
                 </span>
                 {unreadNotifs > 0 && (
                   <span className="rounded-full bg-[#E91E63] px-2 py-0.5 text-xs text-white">
-                    {unreadNotifs > 99 ? "99+" : unreadNotifs}
+                    {unreadNotifs}
                   </span>
                 )}
               </button>
@@ -573,4 +574,4 @@ export function AppShell() {
       <SavedPostsModal open={savedOpen} onOpenChange={setSavedOpen} me={me ?? null} />
     </div>
   );
-}
+                }
