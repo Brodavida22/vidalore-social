@@ -66,7 +66,8 @@ export function ReelPlayer({
   const [showPlayIcon, setShowPlayIcon] = useState(false);
   const [heartBurst, setHeartBurst] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [isFollowing, setIsFollowing] = useState(reel.isFollowing ?? false);\n  const [isFollowPending, setIsFollowPending] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(reel.isFollowing ?? false);
+  const [isFollowPending, setIsFollowPending] = useState(false);
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const [progress, setProgress] = useState(0);
 
