@@ -657,49 +657,47 @@ export async function addReel(
     ? await uploadReelVideo(userId, data.videoFile, data.onUploadProgress)
     : data.videoUrl;
 
-  const { data: row, error } = await supabase
-    .from("reels")
-    .insert({
-      creator_id: userId,
-      video_url: videoUrl,
-      caption: data.caption,
-      audio_title: data.audioTitle ?? null,
-      tags: data.tags ?? [],
-    })
-    .select("id")
-    .single();
+  const reelId = crypto.randomUUID();
+
+  const { error } = await supabase.from("reels").insert({
+    id: reelId,
+    creator_id: userId,
+    video_url: videoUrl,
+    caption: data.caption,
+    audio_title: data.audioTitle ?? null,
+    tags: data.tags ?? [],
+  });
 
   if (error) message(error, "Could not publish reel.");
 
   notifyUpdated();
 
-  const reels = await getStoredReels();
-  const created =
-    reels.find((r) => r.id === row.id) ??
-    ({
-      id: row.id,
-      creatorId: userId,
-      creatorName: me.display_name || me.username || "You",
-      creatorUsername: me.username || "you",
-      creatorAvatarUrl: me.avatar_url,
-      creatorVerified: false,
-      videoUrl: videoUrl.startsWith("http")
-        ? videoUrl
-        : await signedMediaUrl(REEL_BUCKET, videoUrl),
-      storagePath: videoUrl,
-      caption: data.caption,
-      audioTitle: data.audioTitle ?? "Original Audio",
-      likesCount: 0,
-      commentsCount: 0,
-      sharesCount: 0,
-      savesCount: 0,
-      viewsCount: 0,
-      hasLiked: false,
-      hasSaved: false,
-      isFollowing: false,
-      createdAt: new Date().toISOString(),
-      tags: data.tags ?? [],
-    } satisfies ReelItem);
+  const signedUrl = videoUrl.startsWith("http")
+    ? videoUrl
+    : await signedMediaUrl(REEL_BUCKET, videoUrl);
+
+  const created: ReelItem = {
+    id: reelId,
+    creatorId: userId,
+    creatorName: me.display_name || me.username || "You",
+    creatorUsername: me.username || "you",
+    creatorAvatarUrl: me.avatar_url,
+    creatorVerified: false,
+    videoUrl: signedUrl,
+    storagePath: videoUrl,
+    caption: data.caption,
+    audioTitle: data.audioTitle ?? "Original Audio",
+    likesCount: 0,
+    commentsCount: 0,
+    sharesCount: 0,
+    savesCount: 0,
+    viewsCount: 0,
+    hasLiked: false,
+    hasSaved: false,
+    isFollowing: false,
+    createdAt: new Date().toISOString(),
+    tags: data.tags ?? [],
+  };
 
   sessionReelsCache.set(created.id, created);
   return created;
@@ -829,30 +827,30 @@ export async function addReelComment(
     throw new Error("Comment cannot be empty.");
   }
 
-  const { data, error } = await supabase
-    .from("reel_comments")
-    .insert({
-      reel_id: reelId,
-      author_id: userId,
-      content: clean,
-    })
-    .select("id, reel_id, author_id, content, created_at, reactions_count")
-    .single();
+  const commentId = crypto.randomUUID();
+  const createdAt = new Date().toISOString();
+
+  const { error } = await supabase.from("reel_comments").insert({
+    id: commentId,
+    reel_id: reelId,
+    author_id: userId,
+    content: clean,
+  });
 
   if (error) message(error, "Could not add comment.");
 
   notifyUpdated();
 
   return {
-    id: data.id,
-    reelId: data.reel_id,
-    authorId: data.author_id,
+    id: commentId,
+    reelId,
+    authorId: userId,
     authorName: me.display_name || me.username,
     authorUsername: me.username,
     authorAvatarUrl: me.avatar_url,
-    content: data.content,
-    createdAt: data.created_at,
-    reactionsCount: data.reactions_count,
+    content: clean,
+    createdAt,
+    reactionsCount: 0,
     hasReacted: false,
   };
 }
@@ -968,19 +966,18 @@ export async function addStory(
 
   const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
 
-  const { data: row, error } = await supabase
-    .from("stories")
-    .insert({
-      user_id: userId,
-      media_url: mediaPath,
-      media_type: data.mediaType,
-      caption: data.caption ?? null,
-      sticker: data.sticker ?? null,
-      created_at: createdAt.toISOString(),
-      expires_at: expiresAt.toISOString(),
-    })
-    .select("id")
-    .single();
+  const storyId = crypto.randomUUID();
+
+  const { error } = await supabase.from("stories").insert({
+    id: storyId,
+    user_id: userId,
+    media_url: mediaPath,
+    media_type: data.mediaType,
+    caption: data.caption ?? null,
+    sticker: data.sticker ?? null,
+    created_at: createdAt.toISOString(),
+    expires_at: expiresAt.toISOString(),
+  });
 
   if (error) message(error, "Could not publish story.");
 
@@ -991,7 +988,7 @@ export async function addStory(
     : await signedMediaUrl(STORY_BUCKET, mediaPath);
 
   return {
-    id: row.id,
+    id: storyId,
     userId,
     mediaUrl,
     mediaType: data.mediaType,

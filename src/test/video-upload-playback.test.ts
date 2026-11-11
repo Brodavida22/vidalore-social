@@ -80,4 +80,79 @@ describe("Video Upload and Playback Utilities", () => {
       globalThis.fetch = origFetch;
     }
   });
+
+  it("ensures addReel inserts without select() to prevent PostgREST is_blocked RLS failure", async () => {
+    const origFetch = globalThis.fetch;
+    let postRequestUrl = "";
+    let postRequestBody: Record<string, unknown> | null = null;
+
+    globalThis.fetch = vi
+      .fn()
+      .mockImplementation(async (url: RequestInfo | URL, init?: RequestInit) => {
+        const urlStr = String(url);
+        if (urlStr.includes("/rest/v1/reels")) {
+          postRequestUrl = urlStr;
+          if (init?.body) {
+            try {
+              postRequestBody = JSON.parse(String(init.body));
+            } catch {
+              // ignore
+            }
+          }
+          return new Response(null, {
+            status: 201,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      });
+
+    const testUid = "00000000-0000-4000-8000-000000000001";
+    const { supabase } = await import("@/integrations/supabase/client");
+    const getSessionSpy = vi.spyOn(supabase.auth, "getSession").mockResolvedValue({
+      data: {
+        session: {
+          user: { id: testUid },
+        } as unknown as import("@supabase/supabase-js").Session,
+      },
+      error: null,
+    });
+
+    try {
+      const { addReel } = await import("@/services/reelsAndStories");
+      const mockProfile = {
+        id: testUid,
+        username: "testuser",
+        display_name: "Test User",
+        avatar_url: null,
+        bio: null,
+        location: null,
+        website: null,
+        points_balance: 50,
+        status: null,
+        theme_preference: "system",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const reel = await addReel(mockProfile, {
+        videoUrl: "https://example.com/test.mp4",
+        caption: "Test reel",
+      });
+
+      expect(postRequestUrl).toContain("/rest/v1/reels");
+      // Must NOT contain select= query param which triggers PostgreSQL SELECT policy & is_blocked
+      expect(postRequestUrl).not.toContain("select=");
+      expect(postRequestBody).toBeDefined();
+      expect(postRequestBody?.id).toBeDefined();
+      expect(postRequestBody?.creator_id).toBe(testUid);
+      expect(reel.id).toBe(postRequestBody?.id);
+    } finally {
+      getSessionSpy.mockRestore();
+      globalThis.fetch = origFetch;
+    }
+  });
 });
