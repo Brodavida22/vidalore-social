@@ -291,12 +291,16 @@ export function StoryComposerModal({
               <div className="relative aspect-[9/16] max-h-80 w-auto mx-auto rounded-xl overflow-hidden bg-black shadow-lg border border-border">
                 {mediaType === "video" ? (
                   <video
-                    src={mediaUrl}
+                    src={mediaUrl || undefined}
                     className="h-full w-full object-cover"
                     autoPlay
                     loop
                     muted
                     playsInline
+                    onError={(e) => {
+                      e.stopPropagation();
+                      console.warn("Story composer video playback error");
+                    }}
                   />
                 ) : (
                   <img src={mediaUrl} alt="" className="h-full w-full object-cover" />

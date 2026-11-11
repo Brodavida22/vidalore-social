@@ -49,6 +49,31 @@ function isErrorLike(value: unknown): value is Error {
   return value instanceof Error;
 }
 
+function isMediaError(val: unknown): boolean {
+  if (!val) return false;
+  if (typeof val === "object") {
+    const obj = val as Record<string, unknown>;
+    if (obj.target && typeof obj.target === "object") {
+      const tag = String((obj.target as Record<string, unknown>).tagName || "").toUpperCase();
+      if (tag === "VIDEO" || tag === "AUDIO" || tag === "SOURCE") return true;
+    }
+  }
+  const str = String((val as { message?: unknown })?.message ?? val);
+  if (str.includes("no supported sources") || str.includes("MEDIA_ELEMENT_ERROR")) {
+    return true;
+  }
+  if (val instanceof Error) {
+    if (
+      val.message?.includes("supported sources") ||
+      val.name === "NotSupportedError" ||
+      val.name === "MediaError"
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Wrap console.error so errors logged by any layer — including h3's internal
 // unhandled-error logging, which this file cannot hook directly — are both
 // recorded for consumeLastCapturedError and expanded before serialization.
@@ -56,17 +81,28 @@ const originalConsoleError = console.error.bind(console);
 console.error = (...args: unknown[]) => {
   const expanded = args.map((arg) => {
     if (!isErrorLike(arg)) return arg;
-    record(arg);
+    if (!isMediaError(arg)) {
+      record(arg);
+    }
     return describeError(arg);
   });
   originalConsoleError(...expanded);
 };
 
 if (typeof globalThis.addEventListener === "function") {
-  globalThis.addEventListener("error", (event) => record((event as ErrorEvent).error ?? event));
-  globalThis.addEventListener("unhandledrejection", (event) =>
-    record((event as PromiseRejectionEvent).reason),
-  );
+  globalThis.addEventListener("error", (event) => {
+    if (isMediaError(event) || isMediaError((event as ErrorEvent).error)) {
+      return;
+    }
+    record((event as ErrorEvent).error ?? event);
+  });
+  globalThis.addEventListener("unhandledrejection", (event) => {
+    const reason = (event as PromiseRejectionEvent).reason;
+    if (isMediaError(reason)) {
+      return;
+    }
+    record(reason);
+  });
 }
 
 export function consumeLastCapturedError(): unknown {

@@ -57,14 +57,25 @@ export function VideoUploadProgressCard({
     }
   };
 
+  const [previewError, setPreviewError] = useState(false);
+
   return (
     <div className="relative rounded-2xl border border-border bg-card p-4 shadow-md space-y-3 overflow-hidden select-none">
       {/* Top Header: Thumbnail + Status Title + Stage indicator */}
       <div className="flex items-center gap-3">
         {/* Video Thumbnail / Icon */}
         <div className="relative h-14 w-14 rounded-xl overflow-hidden bg-secondary border border-border shrink-0 flex items-center justify-center">
-          {videoPreviewUrl ? (
-            <video src={videoPreviewUrl} className="h-full w-full object-cover" muted playsInline />
+          {videoPreviewUrl && !previewError ? (
+            <video
+              src={videoPreviewUrl}
+              className="h-full w-full object-cover"
+              muted
+              playsInline
+              onError={(e) => {
+                e.stopPropagation();
+                setPreviewError(true);
+              }}
+            />
           ) : (
             <Film size={22} className="text-[#E91E63]" />
           )}

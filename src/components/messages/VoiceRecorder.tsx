@@ -243,6 +243,10 @@ export function VoiceRecorder({
               ref={previewAudioRef}
               src={previewUrl}
               onEnded={() => setIsPlayingPreview(false)}
+              onError={(e) => {
+                e.stopPropagation();
+                setIsPlayingPreview(false);
+              }}
             />
           )}
 

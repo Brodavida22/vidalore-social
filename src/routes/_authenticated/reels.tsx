@@ -227,7 +227,17 @@ function ReelsPage() {
                 }}
                 className="group relative aspect-[9/16] rounded-xl overflow-hidden bg-black cursor-pointer border border-border hover:border-primary transition-all shadow-sm"
               >
-                <video src={reel.videoUrl} className="h-full w-full object-cover" muted />
+                <video
+                  src={reel.videoUrl || undefined}
+                  className="h-full w-full object-cover"
+                  muted
+                  playsInline
+                  preload="metadata"
+                  onError={(e) => {
+                    e.stopPropagation();
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-between p-2.5">
                   <span className="self-end rounded bg-black/60 px-2 py-0.5 text-[0.65rem] text-white font-medium">
                     {reel.likesCount} likes

@@ -139,7 +139,8 @@ export function PostVideoPlayer({
     }
   }
 
-  function handleVideoError(_e: SyntheticEvent<HTMLVideoElement, Event>) {
+  function handleVideoError(e: SyntheticEvent<HTMLVideoElement, Event>) {
+    e.stopPropagation();
     setHasError(true);
     setIsBuffering(false);
     setIsPlaying(false);
@@ -197,25 +198,27 @@ export function PostVideoPlayer({
       ) : null}
 
       {/* Video Element */}
-      <video
-        ref={videoRef}
-        src={src}
-        preload="metadata"
-        playsInline
-        muted={isMuted}
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        onWaiting={() => setIsBuffering(true)}
-        onPlaying={() => {
-          setIsBuffering(false);
-          setIsPlaying(true);
-        }}
-        onPause={() => setIsPlaying(false)}
-        onEnded={() => setIsPlaying(false)}
-        onError={handleVideoError}
-        onClick={togglePlay}
-        className="h-full w-full object-contain cursor-pointer"
-      />
+      {src ? (
+        <video
+          ref={videoRef}
+          src={src}
+          preload="metadata"
+          playsInline
+          muted={isMuted}
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onWaiting={() => setIsBuffering(true)}
+          onPlaying={() => {
+            setIsBuffering(false);
+            setIsPlaying(true);
+          }}
+          onPause={() => setIsPlaying(false)}
+          onEnded={() => setIsPlaying(false)}
+          onError={handleVideoError}
+          onClick={togglePlay}
+          className="h-full w-full object-contain cursor-pointer"
+        />
+      ) : null}
 
       {/* Buffering Indicator */}
       {isBuffering && !hasError && (

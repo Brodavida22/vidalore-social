@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -24,12 +23,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,21 +38,9 @@ import {
   myProfileQuery,
   profileByUsernameQuery,
 } from "@/services/profiles";
-import {
-  getStoredRelationships,
-  sendFriendRequest,
-} from "@/services/social";
-import {
-  blockUser,
-  unblockUser,
-  blocksKeys,
-  blockedIdsQuery,
-} from "@/services/blocks";
-import {
-  userPostsQuery,
-  mentionPostsQuery,
-  postsKeys,
-} from "@/services/posts";
+import { getStoredRelationships, sendFriendRequest } from "@/services/social";
+import { blockUser, unblockUser, blocksKeys, blockedIdsQuery } from "@/services/blocks";
+import { userPostsQuery, mentionPostsQuery, postsKeys } from "@/services/posts";
 import { getStoredReels } from "@/services/reelsAndStories";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -101,12 +83,7 @@ function ProfilePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const {
-    data: profile,
-    isLoading,
-    error,
-    refetch,
-  } = useQuery(profileByUsernameQuery(username));
+  const { data: profile, isLoading, error, refetch } = useQuery(profileByUsernameQuery(username));
 
   const { data: me } = useQuery(myProfileQuery());
 
@@ -122,13 +99,9 @@ function ProfilePage() {
   const [reportOpen, setReportOpen] = useState(false);
   const [followListOpen, setFollowListOpen] = useState(false);
 
-  const [followListType, setFollowListType] = useState<
-    "followers" | "following"
-  >("followers");
+  const [followListType, setFollowListType] = useState<"followers" | "following">("followers");
 
-  const [relState, setRelState] = useState(() =>
-    getStoredRelationships()
-  );
+  const [relState, setRelState] = useState(() => getStoredRelationships());
 
   const isMe = me?.id === profile?.id;
 
@@ -138,10 +111,7 @@ function ProfilePage() {
     enabled: !!profile,
   });
 
-  const {
-    data: isFollowingUser,
-    isLoading: isFollowingLoading,
-  } = useQuery({
+  const { data: isFollowingUser, isLoading: isFollowingLoading } = useQuery({
     queryKey: ["is-following", profile?.id],
     queryFn: () => checkIsFollowing(profile!.id),
     enabled: !!profile && !isMe,
@@ -161,15 +131,11 @@ function ProfilePage() {
 
   const hasSentFriendRequest =
     friendStatus?.status === "pending" ||
-    (profile
-      ? relState.outgoingFriendRequests.includes(profile.id)
-      : false);
+    (profile ? relState.outgoingFriendRequests.includes(profile.id) : false);
 
   const { data: blockedIds = [] } = useQuery(blockedIdsQuery());
 
-  const isUserBlocked = Boolean(
-    profile && blockedIds.includes(profile.id)
-  );
+  const isUserBlocked = Boolean(profile && blockedIds.includes(profile.id));
 
   // Load the selected profile's followers or following list.
   const {
@@ -178,15 +144,9 @@ function ProfilePage() {
     isError: followListError,
     refetch: refetchFollowList,
   } = useQuery({
-    queryKey: [
-      "profile-follow-list",
-      profile?.id,
-      followListType,
-    ],
+    queryKey: ["profile-follow-list", profile?.id, followListType],
     queryFn: () =>
-      followListType === "followers"
-        ? getFollowers(profile!.id)
-        : getFollowing(profile!.id),
+      followListType === "followers" ? getFollowers(profile!.id) : getFollowing(profile!.id),
     enabled: !!profile?.id && followListOpen,
   });
 
@@ -200,8 +160,7 @@ function ProfilePage() {
   } = useQuery({
     queryKey: ["viewer-following-ids"],
     queryFn: async () => {
-      const { data: auth, error: authError } =
-        await supabase.auth.getUser();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
 
       if (authError) throw authError;
 
@@ -226,16 +185,9 @@ function ProfilePage() {
       });
     };
 
-    window.addEventListener(
-      "vidalore:reels-updated",
-      handleUpdate
-    );
+    window.addEventListener("vidalore:reels-updated", handleUpdate);
 
-    return () =>
-      window.removeEventListener(
-        "vidalore:reels-updated",
-        handleUpdate
-      );
+    return () => window.removeEventListener("vidalore:reels-updated", handleUpdate);
   }, [queryClient]);
 
   const {
@@ -263,12 +215,10 @@ function ProfilePage() {
 
   const allReels = reelsQuery.data ?? [];
 
-  const userReels = (
-    Array.isArray(allReels) ? allReels : []
-  ).filter(
+  const userReels = (Array.isArray(allReels) ? allReels : []).filter(
     (r) =>
       r.creatorUsername.toLowerCase() === username.toLowerCase() ||
-      (profile && r.creatorId === profile.id)
+      (profile && r.creatorId === profile.id),
   );
 
   if (isLoading) {
@@ -283,15 +233,9 @@ function ProfilePage() {
   if (error) {
     return (
       <div className="p-12 text-center space-y-3">
-        <p className="text-muted-foreground text-sm">
-          Couldn't load this profile.
-        </p>
+        <p className="text-muted-foreground text-sm">Couldn't load this profile.</p>
 
-        <Button
-          variant="outline"
-          onClick={() => refetch()}
-          className="text-xs rounded-lg"
-        >
+        <Button variant="outline" onClick={() => refetch()} className="text-xs rounded-lg">
           Retry
         </Button>
       </div>
@@ -301,13 +245,9 @@ function ProfilePage() {
   if (!profile) {
     return (
       <div className="p-14 text-center space-y-3">
-        <h1 className="text-2xl font-bold text-foreground">
-          User not found
-        </h1>
+        <h1 className="text-2xl font-bold text-foreground">User not found</h1>
 
-        <p className="text-muted-foreground text-xs">
-          @{username} doesn't exist or was removed.
-        </p>
+        <p className="text-muted-foreground text-xs">@{username} doesn't exist or was removed.</p>
 
         <Button
           asChild
@@ -319,13 +259,10 @@ function ProfilePage() {
     );
   }
 
-  const joined = new Date(profile.created_at).toLocaleDateString(
-    undefined,
-    {
-      month: "long",
-      year: "numeric",
-    }
-  );
+  const joined = new Date(profile.created_at).toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
 
   async function shareProfile() {
     const url = window.location.href;
@@ -372,19 +309,13 @@ function ProfilePage() {
       ]);
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Couldn't update follow status. Please try again."
+        error instanceof Error ? error.message : "Couldn't update follow status. Please try again.",
       );
     }
   }
 
-  async function handleListFollowToggle(
-    person: (typeof followList)[number]
-  ) {
-    const currentlyFollowing = viewerFollowingIds.includes(
-      person.id
-    );
+  async function handleListFollowToggle(person: (typeof followList)[number]) {
+    const currentlyFollowing = viewerFollowingIds.includes(person.id);
 
     try {
       if (currentlyFollowing) {
@@ -408,9 +339,7 @@ function ProfilePage() {
       ]);
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Couldn't update follow status. Please try again."
+        error instanceof Error ? error.message : "Couldn't update follow status. Please try again.",
       );
     }
   }
@@ -420,16 +349,12 @@ function ProfilePage() {
       await sendSupabaseFriendRequest(profile.id);
       await refetchFriendStatus();
 
-      toast.success(
-        `Friend request sent to @${profile.username}`
-      );
+      toast.success(`Friend request sent to @${profile.username}`);
     } catch {
       sendFriendRequest(profile.id);
       setRelState(getStoredRelationships());
 
-      toast.success(
-        `Friend request sent to @${profile.username}`
-      );
+      toast.success(`Friend request sent to @${profile.username}`);
     }
   }
 
@@ -442,8 +367,7 @@ function ProfilePage() {
         await blockUser(profile.id);
 
         toast.success(`Blocked @${profile.username}`, {
-          description:
-            "Their posts and interactions are now hidden from your feeds.",
+          description: "Their posts and interactions are now hidden from your feeds.",
         });
       }
 
@@ -455,11 +379,7 @@ function ProfilePage() {
         queryKey: postsKeys.all,
       });
     } catch (err) {
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : "Couldn't update block status."
-      );
+      toast.error(err instanceof Error ? err.message : "Couldn't update block status.");
     }
   }
 
@@ -468,11 +388,7 @@ function ProfilePage() {
       {/* Cover Photo */}
       <div className="relative h-40 sm:h-52 overflow-hidden bg-secondary md:mt-4 md:rounded-xl border border-border shadow-sm">
         {profile.cover_url ? (
-          <img
-            src={profile.cover_url}
-            alt=""
-            className="h-full w-full object-cover"
-          />
+          <img src={profile.cover_url} alt="" className="h-full w-full object-cover" />
         ) : (
           <div className="h-full w-full bg-[#111111] flex items-center justify-center">
             <span className="font-display text-2xl font-black tracking-widest text-white/20 select-none">
@@ -562,9 +478,7 @@ function ProfilePage() {
                     onClick={handleFriendRequest}
                     className="rounded-lg px-3 text-xs border-border hidden sm:inline-flex"
                   >
-                    {hasSentFriendRequest
-                      ? "Requested"
-                      : "+ Friend"}
+                    {hasSentFriendRequest ? "Requested" : "+ Friend"}
                   </Button>
                 )}
 
@@ -579,10 +493,7 @@ function ProfilePage() {
                     </Button>
                   </DropdownMenuTrigger>
 
-                  <DropdownMenuContent
-                    align="end"
-                    className="bg-popover border-border"
-                  >
+                  <DropdownMenuContent align="end" className="bg-popover border-border">
                     <DropdownMenuItem
                       onClick={() => setReportOpen(true)}
                       className="text-xs text-destructive cursor-pointer"
@@ -614,14 +525,10 @@ function ProfilePage() {
               {profile.display_name || profile.username}
             </h1>
 
-            {profile.points_balance > 100 && (
-              <BadgeCheck className="h-4 w-4 text-[#E91E63]" />
-            )}
+            {profile.points_balance > 100 && <BadgeCheck className="h-4 w-4 text-[#E91E63]" />}
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            @{profile.username}
-          </p>
+          <p className="text-xs text-muted-foreground">@{profile.username}</p>
 
           {profile.bio && (
             <p className="mt-2 text-xs sm:text-sm text-foreground whitespace-pre-line leading-relaxed max-w-xl">
@@ -657,8 +564,7 @@ function ProfilePage() {
             <div className="flex items-center gap-2 text-xs text-destructive font-medium">
               <UserX className="h-4 w-4 shrink-0" />
               <span>
-                You have blocked @{profile.username}. Their posts
-                and activity are hidden.
+                You have blocked @{profile.username}. Their posts and activity are hidden.
               </span>
             </div>
 
@@ -675,10 +581,7 @@ function ProfilePage() {
 
         {/* Social Counters */}
         <div className="mt-4 grid grid-cols-4 gap-1.5 sm:gap-2 text-center">
-          <Stat
-            label="Posts"
-            value={userPosts.length.toString()}
-          />
+          <Stat label="Posts" value={userPosts.length.toString()} />
 
           <Stat
             label="Followers"
@@ -698,11 +601,7 @@ function ProfilePage() {
             }}
           />
 
-          <Stat
-            label="Points"
-            value={profile.points_balance.toString()}
-            highlight
-          />
+          <Stat label="Points" value={profile.points_balance.toString()} highlight />
         </div>
 
         {/* Profile Tabs */}
@@ -755,9 +654,7 @@ function ProfilePage() {
                 </div>
               ) : userPosts.length === 0 ? (
                 <div className="rounded-xl p-8 text-center space-y-2 border border-border bg-card">
-                  <p className="font-semibold text-foreground text-sm">
-                    No posts shared yet
-                  </p>
+                  <p className="font-semibold text-foreground text-sm">No posts shared yet</p>
 
                   <p className="text-xs text-muted-foreground">
                     {isMe
@@ -792,9 +689,7 @@ function ProfilePage() {
                 <div className="rounded-xl p-8 text-center space-y-2 border border-border bg-card">
                   <Clapperboard className="h-8 w-8 text-muted-foreground mx-auto" />
 
-                  <p className="font-semibold text-foreground text-sm">
-                    No reels uploaded
-                  </p>
+                  <p className="font-semibold text-foreground text-sm">No reels uploaded</p>
 
                   <p className="text-xs text-muted-foreground">
                     Vertical video reels will appear here.
@@ -809,9 +704,15 @@ function ProfilePage() {
                       className="aspect-[9/16] rounded-xl overflow-hidden bg-black relative border border-border cursor-pointer group"
                     >
                       <video
-                        src={reel.videoUrl}
+                        src={reel.videoUrl || undefined}
                         className="h-full w-full object-cover"
                         muted
+                        playsInline
+                        preload="metadata"
+                        onError={(e) => {
+                          e.stopPropagation();
+                          e.currentTarget.style.display = "none";
+                        }}
                       />
 
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-2.5">
@@ -837,9 +738,7 @@ function ProfilePage() {
                 <div className="rounded-xl p-8 text-center space-y-2 border border-border bg-card">
                   <Bookmark className="h-8 w-8 text-muted-foreground mx-auto" />
 
-                  <p className="font-semibold text-foreground text-sm">
-                    No tagged posts
-                  </p>
+                  <p className="font-semibold text-foreground text-sm">No tagged posts</p>
 
                   <p className="text-xs text-muted-foreground">
                     Posts mentioning @{profile.username} will show here.
@@ -895,8 +794,7 @@ function ProfilePage() {
                   ))
                 ) : (
                   <p className="text-xs text-muted-foreground py-4 col-span-2 text-center">
-                    No achievements unlocked yet. Participate and
-                    post to earn badges.
+                    No achievements unlocked yet. Participate and post to earn badges.
                   </p>
                 )}
               </div>
@@ -906,32 +804,24 @@ function ProfilePage() {
           {/* About Tab */}
           {activeTab === "about" && (
             <section className="rounded-xl p-5 space-y-3 border border-border bg-card shadow-sm">
-              <h2 className="text-base font-semibold text-foreground">
-                About @{profile.username}
-              </h2>
+              <h2 className="text-base font-semibold text-foreground">About @{profile.username}</h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div className="rounded-lg bg-secondary p-3 border border-border">
                   <p className="text-muted-foreground">Status</p>
-                  <p className="font-semibold text-foreground mt-0.5">
-                    Active Member
-                  </p>
+                  <p className="font-semibold text-foreground mt-0.5">Active Member</p>
                 </div>
 
                 <div className="rounded-lg bg-secondary p-3 border border-border">
                   <p className="text-muted-foreground">Privacy</p>
                   <p className="font-semibold text-foreground mt-0.5">
-                    {profile.is_private
-                      ? "Private Account (Followers only)"
-                      : "Public Account"}
+                    {profile.is_private ? "Private Account (Followers only)" : "Public Account"}
                   </p>
                 </div>
 
                 <div className="rounded-lg bg-secondary p-3 border border-border">
                   <p className="text-muted-foreground">Member Since</p>
-                  <p className="font-semibold text-foreground mt-0.5">
-                    {joined}
-                  </p>
+                  <p className="font-semibold text-foreground mt-0.5">{joined}</p>
                 </div>
 
                 <div className="rounded-lg bg-secondary p-3 border border-border">
@@ -947,16 +837,11 @@ function ProfilePage() {
       </div>
 
       {/* Followers and Following Dialog */}
-      <Dialog
-        open={followListOpen}
-        onOpenChange={setFollowListOpen}
-      >
+      <Dialog open={followListOpen} onOpenChange={setFollowListOpen}>
         <DialogContent className="max-w-md bg-card border-border rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-foreground">
-              {followListType === "followers"
-                ? "Followers"
-                : "Following"}
+              {followListType === "followers" ? "Followers" : "Following"}
             </DialogTitle>
           </DialogHeader>
 
@@ -969,9 +854,7 @@ function ProfilePage() {
               </div>
             ) : followListError ? (
               <div className="py-8 text-center space-y-3">
-                <p className="text-sm text-destructive">
-                  Couldn't load this list.
-                </p>
+                <p className="text-sm text-destructive">Couldn't load this list.</p>
 
                 <Button
                   type="button"
@@ -990,8 +873,7 @@ function ProfilePage() {
               </p>
             ) : (
               followList.map((person) => {
-                const isViewerFollowing =
-                  viewerFollowingIds.includes(person.id);
+                const isViewerFollowing = viewerFollowingIds.includes(person.id);
 
                 const isSelf = person.id === me?.id;
 
@@ -1014,19 +896,14 @@ function ProfilePage() {
                       }}
                       className="flex min-w-0 flex-1 items-center gap-3 text-left"
                     >
-                      <UserAvatar
-                        profile={person}
-                        className="h-11 w-11 shrink-0"
-                      />
+                      <UserAvatar profile={person} className="h-11 w-11 shrink-0" />
 
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-foreground truncate">
                           {person.display_name || person.username}
                         </p>
 
-                        <p className="text-xs text-muted-foreground truncate">
-                          @{person.username}
-                        </p>
+                        <p className="text-xs text-muted-foreground truncate">@{person.username}</p>
                       </div>
                     </button>
 
@@ -1034,16 +911,9 @@ function ProfilePage() {
                       <Button
                         type="button"
                         size="sm"
-                        variant={
-                          isViewerFollowing ? "outline" : "default"
-                        }
-                        disabled={
-                          viewerFollowingLoading ||
-                          viewerFollowingError
-                        }
-                        onClick={() =>
-                          void handleListFollowToggle(person)
-                        }
+                        variant={isViewerFollowing ? "outline" : "default"}
+                        disabled={viewerFollowingLoading || viewerFollowingError}
+                        onClick={() => void handleListFollowToggle(person)}
                         className={`shrink-0 rounded-lg text-xs px-3 ${
                           isViewerFollowing
                             ? "border-border text-foreground hover:bg-secondary"
@@ -1101,15 +971,11 @@ function Stat({
 
   const content = (
     <>
-      <p className="font-semibold text-xs sm:text-sm truncate">
-        {value}
-      </p>
+      <p className="font-semibold text-xs sm:text-sm truncate">{value}</p>
 
       <p
         className={`text-[0.65rem] truncate ${
-          highlight
-            ? "text-white/90 font-medium"
-            : "text-muted-foreground"
+          highlight ? "text-white/90 font-medium" : "text-muted-foreground"
         }`}
       >
         {label}

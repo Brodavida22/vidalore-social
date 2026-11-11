@@ -33,6 +33,7 @@ export function VideoUploadModal({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [previewError, setPreviewError] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
@@ -52,6 +53,7 @@ export function VideoUploadModal({
     }
 
     setVideoFile(file);
+    setPreviewError(false);
     const objectUrl = URL.createObjectURL(file);
     setVideoUrl(objectUrl);
   }
@@ -63,6 +65,7 @@ export function VideoUploadModal({
     setVideoFile(null);
     setVideoUrl("");
     setIsPlaying(false);
+    setPreviewError(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -143,40 +146,62 @@ export function VideoUploadModal({
             <div className="space-y-3">
               {/* Active Video Preview Player */}
               <div className="relative aspect-[9/16] max-h-72 w-auto mx-auto rounded-2xl overflow-hidden bg-black shadow-lg">
-                <video
-                  ref={videoPreviewRef}
-                  src={videoUrl}
-                  className="h-full w-full object-cover"
-                  loop
-                  playsInline
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const v = videoPreviewRef.current;
-                    if (!v) return;
-                    if (v.paused) {
-                      v.play();
-                      setIsPlaying(true);
-                    } else {
-                      v.pause();
+                {!previewError ? (
+                  <video
+                    ref={videoPreviewRef}
+                    src={videoUrl || undefined}
+                    className="h-full w-full object-cover"
+                    loop
+                    playsInline
+                    onError={(e) => {
+                      e.stopPropagation();
+                      setPreviewError(true);
                       setIsPlaying(false);
-                    }
-                  }}
-                  className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors"
-                >
-                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md">
-                    {isPlaying ? (
-                      <Pause className="h-5 w-5" />
-                    ) : (
-                      <Play className="h-5 w-5 ml-0.5" />
-                    )}
-                  </span>
-                </button>
+                    }}
+                  />
+                ) : (
+                  <div className="h-full w-full flex flex-col items-center justify-center p-4 text-center bg-zinc-900 text-white space-y-2">
+                    <Video className="h-8 w-8 text-muted-foreground" />
+                    <p className="text-xs font-semibold">Video preview ready</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      Codec preview not supported in browser, but ready to publish.
+                    </p>
+                  </div>
+                )}
+                {!previewError && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const v = videoPreviewRef.current;
+                      if (!v) return;
+                      if (v.paused) {
+                        const p = v.play();
+                        if (p !== undefined) {
+                          p.then(() => setIsPlaying(true)).catch((err) => {
+                            console.warn("Video preview play error:", err);
+                            setIsPlaying(false);
+                          });
+                        }
+                      } else {
+                        v.pause();
+                        setIsPlaying(false);
+                      }
+                    }}
+                    className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors"
+                  >
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md">
+                      {isPlaying ? (
+                        <Pause className="h-5 w-5" />
+                      ) : (
+                        <Play className="h-5 w-5 ml-0.5" />
+                      )}
+                    </span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={removeSelectedVideo}
-                  className="absolute top-2 right-2 rounded-full bg-black/70 p-1.5 text-white hover:bg-destructive transition-colors"
+                  className="absolute top-2 right-2 rounded-full bg-black/70 p-1.5 text-white hover:bg-destructive transition-colors z-10"
                   aria-label="Remove video"
                 >
                   <X className="h-4 w-4" />

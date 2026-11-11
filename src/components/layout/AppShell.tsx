@@ -574,4 +574,4 @@ export function AppShell() {
       <SavedPostsModal open={savedOpen} onOpenChange={setSavedOpen} me={me ?? null} />
     </div>
   );
-                }
+}

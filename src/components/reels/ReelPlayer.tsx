@@ -14,6 +14,7 @@ import {
   Music,
   Eye,
   BadgeCheck,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/profile/UserAvatar";
@@ -43,6 +44,7 @@ export function ReelPlayer({
   const [isFollowing, setIsFollowing] = useState(reel.isFollowing ?? false);
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [videoError, setVideoError] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -50,7 +52,7 @@ export function ReelPlayer({
     const video = videoRef.current;
     if (!video) return;
 
-    if (isActive) {
+    if (isActive && !videoError) {
       video.currentTime = 0;
       const playPromise = video.play();
       if (playPromise !== undefined) {
@@ -64,7 +66,7 @@ export function ReelPlayer({
       video.pause();
       setIsPlaying(false);
     }
-  }, [isActive]);
+  }, [isActive, videoError]);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -74,10 +76,18 @@ export function ReelPlayer({
 
   function handleVideoClick() {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || videoError) return;
 
     if (video.paused) {
-      video.play().then(() => setIsPlaying(true));
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => setIsPlaying(true))
+          .catch((err) => {
+            console.warn("Reel video play failed:", err);
+            setIsPlaying(false);
+          });
+      }
       setShowPlayIcon(true);
       setTimeout(() => setShowPlayIcon(false), 500);
     } else {
@@ -162,7 +172,7 @@ export function ReelPlayer({
       {/* Video Element */}
       <video
         ref={videoRef}
-        src={reel.videoUrl}
+        src={reel.videoUrl || undefined}
         className="h-full w-full object-cover cursor-pointer"
         loop
         playsInline
@@ -170,7 +180,23 @@ export function ReelPlayer({
         onClick={handleVideoClick}
         onDoubleClick={handleDoubleTap}
         onTimeUpdate={handleTimeUpdate}
+        onError={(e) => {
+          e.stopPropagation();
+          setVideoError(true);
+          setIsPlaying(false);
+        }}
       />
+
+      {/* Video Playback Error Fallback */}
+      {videoError && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 text-white p-6 text-center space-y-2 z-10">
+          <AlertCircle className="h-10 w-10 text-destructive mb-1 animate-pulse" />
+          <p className="text-sm font-semibold">Video preview unavailable</p>
+          <p className="text-xs text-muted-foreground max-w-xs">
+            The media source is currently processing or unsupported by your device.
+          </p>
+        </div>
+      )}
 
       {/* Floating double-tap heart animation */}
       {heartBurst && (

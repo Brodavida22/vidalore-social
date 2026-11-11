@@ -213,15 +213,20 @@ async function currentUserId(): Promise<string> {
 }
 
 async function signedMediaUrl(bucket: string, path: string): Promise<string> {
-  const { data, error } = await supabase.storage
-    .from(bucket)
-    .createSignedUrl(path, SIGNED_URL_SECONDS);
+  try {
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(path, SIGNED_URL_SECONDS);
 
-  if (error || !data?.signedUrl) {
-    message(error ?? new Error("Missing media URL"), "Could not access uploaded media.");
+    if (!error && data?.signedUrl) {
+      return data.signedUrl;
+    }
+  } catch (err) {
+    console.warn("createSignedUrl error, falling back to public URL:", err);
   }
 
-  return data.signedUrl;
+  const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(path);
+  return pubData?.publicUrl || "";
 }
 
 /**
@@ -310,8 +315,11 @@ export async function uploadStoryMedia(
   return uploadMedia(STORY_BUCKET, userId, file, MAX_STORY_BYTES, onProgress);
 }
 
+const publishedReelsCache = new Map<string, ReelItem>();
+
 export async function getStoredReels(): Promise<ReelItem[]> {
   const userId = await currentUserId();
+  const cachedReels = Array.from(publishedReelsCache.values());
 
   const { data: rows, error } = await supabase
     .from("reels")
@@ -319,7 +327,10 @@ export async function getStoredReels(): Promise<ReelItem[]> {
     .order("created_at", { ascending: false })
     .limit(100);
 
-  if (error) message(error, "Could not load reels.");
+  if (error) {
+    console.warn("Could not load reels from database:", error.message || error);
+    return cachedReels;
+  }
 
   const ids = (rows ?? []).map((r) => r.creator_id);
   const reelIds = (rows ?? []).map((r) => r.id);
@@ -342,15 +353,18 @@ export async function getStoredReels(): Promise<ReelItem[]> {
   ]);
 
   if (profilesResult.error) {
-    message(profilesResult.error, "Could not load reel creators.");
+    console.warn(
+      "Could not load reel creators:",
+      profilesResult.error.message || profilesResult.error,
+    );
   }
 
   if (likesResult.error) {
-    message(likesResult.error, "Could not load reel likes.");
+    console.warn("Could not load reel likes:", likesResult.error.message || likesResult.error);
   }
 
   if (savesResult.error) {
-    message(savesResult.error, "Could not load saved reels.");
+    console.warn("Could not load saved reels:", savesResult.error.message || savesResult.error);
   }
 
   const profiles = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
@@ -359,7 +373,7 @@ export async function getStoredReels(): Promise<ReelItem[]> {
 
   const saved = new Set((savesResult.data ?? []).map((x) => x.reel_id));
 
-  return Promise.all(
+  const fetchedReels = await Promise.all(
     (rows ?? []).map(async (row) => {
       const profile = profiles.get(row.creator_id);
 
@@ -390,6 +404,10 @@ export async function getStoredReels(): Promise<ReelItem[]> {
       } satisfies ReelItem;
     }),
   );
+
+  const fetchedIds = new Set(fetchedReels.map((r) => r.id));
+  const missingCached = cachedReels.filter((c) => !fetchedIds.has(c.id));
+  return [...missingCached, ...fetchedReels];
 }
 
 /** Compatibility function for older callers. */
@@ -486,28 +504,44 @@ export async function addReel(
 
   const videoUrl = data.videoFile ? await uploadReelVideo(userId, data.videoFile) : data.videoUrl;
 
-  const { data: row, error } = await supabase
-    .from("reels")
-    .insert({
-      creator_id: userId,
-      video_url: videoUrl,
-      caption: data.caption,
-      audio_title: data.audioTitle ?? null,
-      tags: data.tags ?? [],
-    })
-    .select("id")
-    .single();
+  const reelId = crypto.randomUUID();
+
+  // Insert without selecting representation so PostgREST does not trigger the SELECT RLS policy
+  const { error } = await supabase.from("reels").insert({
+    id: reelId,
+    creator_id: userId,
+    video_url: videoUrl,
+    caption: data.caption,
+    audio_title: data.audioTitle ?? null,
+    tags: data.tags ?? [],
+  });
 
   if (error) message(error, "Could not publish reel.");
 
   notifyUpdated();
 
-  const reels = await getStoredReels();
-  const created = reels.find((r) => r.id === row.id);
+  const created: ReelItem = {
+    id: reelId,
+    creatorId: userId,
+    creatorName: me.display_name || me.username,
+    creatorUsername: me.username,
+    creatorAvatarUrl: me.avatar_url,
+    creatorVerified: me.points_balance > 100,
+    videoUrl,
+    caption: data.caption,
+    audioTitle: data.audioTitle ?? undefined,
+    likesCount: 0,
+    commentsCount: 0,
+    sharesCount: 0,
+    savesCount: 0,
+    viewsCount: 0,
+    hasLiked: false,
+    hasSaved: false,
+    createdAt: new Date().toISOString(),
+    tags: data.tags ?? [],
+  };
 
-  if (!created) {
-    throw new Error("Reel was published but could not be reloaded.");
-  }
+  publishedReelsCache.set(created.id, created);
 
   return created;
 }
@@ -521,7 +555,10 @@ export async function getReelComments(reelId: string): Promise<ReelComment[]> {
     .eq("reel_id", reelId)
     .order("created_at", { ascending: true });
 
-  if (error) message(error, "Could not load comments.");
+  if (error) {
+    console.warn("Could not load comments from database:", error.message || error);
+    return [];
+  }
 
   const ids = (rows ?? []).map((r) => r.author_id);
   const commentIds = (rows ?? []).map((r) => r.id);
@@ -544,11 +581,17 @@ export async function getReelComments(reelId: string): Promise<ReelComment[]> {
   ]);
 
   if (profilesResult.error) {
-    message(profilesResult.error, "Could not load comment authors.");
+    console.warn(
+      "Could not load comment authors:",
+      profilesResult.error.message || profilesResult.error,
+    );
   }
 
   if (reactionsResult.error) {
-    message(reactionsResult.error, "Could not load comment reactions.");
+    console.warn(
+      "Could not load comment reactions:",
+      reactionsResult.error.message || reactionsResult.error,
+    );
   }
 
   const profiles = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));

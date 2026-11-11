@@ -49,6 +49,9 @@ REVOKE EXECUTE ON FUNCTION public.can_view_reel(uuid) FROM anon;
 REVOKE EXECUTE ON FUNCTION public.can_view_reel_object(text) FROM anon;
 REVOKE EXECUTE ON FUNCTION public.can_view_story_object(text) FROM anon;
 
+-- Ensure authenticated users can evaluate RLS read policies that check blocking
+GRANT EXECUTE ON FUNCTION public.is_blocked(uuid, uuid) TO authenticated;
+
 -- profiles: hidden from people the profile owner has blocked
 DROP POLICY IF EXISTS "Signed-in users read profiles" ON public.profiles;
 CREATE POLICY "Signed-in users read profiles unless blocked by owner"

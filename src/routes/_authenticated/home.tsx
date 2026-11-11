@@ -145,7 +145,6 @@ function HomePage() {
 
       {/* Right discovery sidebar on desktop */}
       <RightSidebar me={me} />
-
     </div>
   );
-      }
+}

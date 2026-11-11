@@ -165,11 +165,8 @@ export function StoryViewerModal({
                 onWaiting={() => setVideoLoading(true)}
                 onEnded={handleNext}
                 onError={(event) => {
-                  console.error(
-                    "Story video playback error:",
-                    event.currentTarget.error,
-                    currentStory.mediaUrl,
-                  );
+                  event.stopPropagation();
+                  console.warn("Story video playback error for:", currentStory.mediaUrl);
                   setVideoLoading(false);
                   setVideoError(true);
                 }}
@@ -214,8 +211,9 @@ export function StoryViewerModal({
               src={currentStory.mediaUrl}
               alt="Story"
               className="h-full w-full object-contain"
-              onError={() => {
-                console.error("Story image could not be loaded:", currentStory.mediaUrl);
+              onError={(e) => {
+                e.stopPropagation();
+                console.warn("Story image could not be loaded:", currentStory.mediaUrl);
               }}
             />
           )}

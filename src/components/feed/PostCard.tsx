@@ -524,11 +524,15 @@ function renderGridMediaItem(m: PostMedia, onClick: () => void) {
         className="relative h-full w-full overflow-hidden bg-black flex items-center justify-center group"
       >
         <video
-          src={m.url}
+          src={m.url || undefined}
           className="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
           preload="metadata"
           muted
           playsInline
+          onError={(e) => {
+            e.stopPropagation();
+            e.currentTarget.style.display = "none";
+          }}
         />
         <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition-colors">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/70 text-white backdrop-blur-sm group-hover:scale-110 transition-transform">

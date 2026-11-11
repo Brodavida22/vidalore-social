@@ -1,33 +1,17 @@
-
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import {
-  Compass,
-  Search,
-  Sparkles,
-  UserPlus,
-  UserCheck,
-} from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Compass, Search, Sparkles, UserPlus, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { PostCard } from "@/components/feed/PostCard";
-import {
-  myProfileQuery,
-  communityProfilesQuery,
-} from "@/services/profiles";
+import { myProfileQuery, communityProfilesQuery } from "@/services/profiles";
 import { explorePostsQuery } from "@/services/posts";
 import { getStoredRelationships } from "@/services/social";
-import {
-  followUser,
-  unfollowUser,
-} from "@/services/relationships";
+import { followUser, unfollowUser } from "@/services/relationships";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/explore")({
@@ -36,8 +20,7 @@ export const Route = createFileRoute("/_authenticated/explore")({
       { title: "Explore — VIDALORE SOCIAL" },
       {
         name: "description",
-        content:
-          "Discover inspiring creators, photography, and conversations.",
+        content: "Discover inspiring creators, photography, and conversations.",
       },
       {
         property: "og:title",
@@ -45,8 +28,7 @@ export const Route = createFileRoute("/_authenticated/explore")({
       },
       {
         property: "og:description",
-        content:
-          "Discover inspiring creators and conversations.",
+        content: "Discover inspiring creators and conversations.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -69,29 +51,18 @@ function ExplorePage() {
 
   const { data: me } = useQuery(myProfileQuery());
 
-  const { data: dbProfiles } = useQuery(
-    communityProfilesQuery(10)
-  );
+  const { data: dbProfiles } = useQuery(communityProfilesQuery(10));
 
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
 
-  const [blockedUserIds] = useState(
-    () => getStoredRelationships().blockedUsers
-  );
+  const [blockedUserIds] = useState(() => getStoredRelationships().blockedUsers);
 
-  const [pendingFollowId, setPendingFollowId] = useState<
-    string | null
-  >(null);
+  const [pendingFollowId, setPendingFollowId] = useState<string | null>(null);
 
-  const tagFilter =
-    selectedCategory === "All" ? null : selectedCategory;
+  const tagFilter = selectedCategory === "All" ? null : selectedCategory;
 
-  const {
-    data: allExplorePosts = [],
-    isLoading,
-    refetch,
-  } = useQuery(explorePostsQuery(tagFilter));
+  const { data: allExplorePosts = [], isLoading, refetch } = useQuery(explorePostsQuery(tagFilter));
 
   // Always read the signed-in user's following list from Supabase.
   // This keeps Explore synchronized with profile pages and the
@@ -103,8 +74,7 @@ function ExplorePage() {
   } = useQuery({
     queryKey: ["viewer-following-ids", me?.id],
     queryFn: async () => {
-      const { data: auth, error: authError } =
-        await supabase.auth.getUser();
+      const { data: auth, error: authError } = await supabase.auth.getUser();
 
       if (authError) throw authError;
 
@@ -164,9 +134,7 @@ function ExplorePage() {
       ]);
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : "Couldn't update follow status. Please try again."
+        error instanceof Error ? error.message : "Couldn't update follow status. Please try again.",
       );
     } finally {
       setPendingFollowId(null);
@@ -184,9 +152,7 @@ function ExplorePage() {
       p.content.toLowerCase().includes(q) ||
       p.authorName.toLowerCase().includes(q) ||
       p.authorUsername.toLowerCase().includes(q) ||
-      (p.tags || []).some((t) =>
-        t.toLowerCase().includes(q)
-      )
+      (p.tags || []).some((t) => t.toLowerCase().includes(q))
     );
   });
 
@@ -201,8 +167,7 @@ function ExplorePage() {
           </h1>
 
           <p className="text-xs text-muted-foreground mt-0.5">
-            Discover creators, ideas, and active discussions
-            across the network.
+            Discover creators, ideas, and active discussions across the network.
           </p>
         </div>
 
@@ -257,11 +222,7 @@ function ExplorePage() {
                   key={c.id}
                   className="rounded-xl bg-secondary/50 p-3 text-center flex flex-col items-center justify-between space-y-2 border border-border hover:border-[#E91E63]/40 transition-colors"
                 >
-                  <Link
-                    to="/u/$username"
-                    params={{ username: c.username }}
-                    className="w-full"
-                  >
+                  <Link to="/u/$username" params={{ username: c.username }} className="w-full">
                     <UserAvatar
                       profile={c}
                       className="h-11 w-11 text-xs ring-1 ring-border mx-auto"
@@ -282,14 +243,9 @@ function ExplorePage() {
                       size="sm"
                       variant={isFollowing ? "outline" : "default"}
                       disabled={
-                        followingLoading ||
-                        followingError ||
-                        isPending ||
-                        !!pendingFollowId
+                        followingLoading || followingError || isPending || !!pendingFollowId
                       }
-                      onClick={() =>
-                        void handleFollowToggle(c.id)
-                      }
+                      onClick={() => void handleFollowToggle(c.id)}
                       className={`h-7 w-full rounded-lg text-[0.7rem] font-medium ${
                         isFollowing
                           ? "border-border text-foreground hover:bg-secondary"
@@ -327,13 +283,10 @@ function ExplorePage() {
           </div>
         ) : filteredPosts.length === 0 ? (
           <div className="rounded-xl p-10 text-center space-y-2 border border-border bg-card">
-            <p className="font-semibold text-foreground text-sm">
-              No posts found
-            </p>
+            <p className="font-semibold text-foreground text-sm">No posts found</p>
 
             <p className="text-xs text-muted-foreground">
-              Try adjusting your search query or selecting
-              another topic.
+              Try adjusting your search query or selecting another topic.
             </p>
           </div>
         ) : (

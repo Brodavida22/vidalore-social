@@ -502,7 +502,10 @@ export async function addGroupMembers(conversationId: string, userIds: string[])
 
   const [convRes, memRes] = await Promise.all([
     supabase.from("conversations").select("created_by").eq("id", conversationId).single(),
-    supabase.from("conversation_members").select("user_id, role").eq("conversation_id", conversationId),
+    supabase
+      .from("conversation_members")
+      .select("user_id, role")
+      .eq("conversation_id", conversationId),
   ]);
 
   if (convRes.error || !convRes.data) throw new Error("Conversation not found.");
@@ -541,7 +544,10 @@ export async function updateGroupMemberRole(
 
   const [convRes, memRes] = await Promise.all([
     supabase.from("conversations").select("created_by").eq("id", conversationId).single(),
-    supabase.from("conversation_members").select("user_id, role").eq("conversation_id", conversationId),
+    supabase
+      .from("conversation_members")
+      .select("user_id, role")
+      .eq("conversation_id", conversationId),
   ]);
 
   if (convRes.error || !convRes.data) throw new Error("Conversation not found.");
@@ -611,7 +617,10 @@ export async function removeGroupMember(
 
   const [convRes, memRes] = await Promise.all([
     supabase.from("conversations").select("created_by").eq("id", conversationId).single(),
-    supabase.from("conversation_members").select("user_id, role").eq("conversation_id", conversationId),
+    supabase
+      .from("conversation_members")
+      .select("user_id, role")
+      .eq("conversation_id", conversationId),
   ]);
 
   if (convRes.error || !convRes.data) throw new Error("Conversation not found.");
@@ -1168,7 +1177,9 @@ export function subscribeToConversationChannel(
     // 6. Broadcast: Typing indicator
     .on("broadcast", { event: "typing" }, (event) => {
       if (event["payload"] && handlers.onTyping) {
-        handlers.onTyping(event["payload"] as { userId: string; username: string; isTyping: boolean });
+        handlers.onTyping(
+          event["payload"] as { userId: string; username: string; isTyping: boolean },
+        );
       }
     })
     // 7. Presence: Online tracking

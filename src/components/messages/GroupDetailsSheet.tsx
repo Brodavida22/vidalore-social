@@ -95,11 +95,7 @@ export function GroupDetailsSheet({
   const [transferTarget, setTransferTarget] = useState<{ id: string; name: string } | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
 
-  const myRole: GroupRole = getEffectiveRole(
-    currentUserId,
-    conversation,
-    conversation.members,
-  );
+  const myRole: GroupRole = getEffectiveRole(currentUserId, conversation, conversation.members);
   const canEditSettings = canManageGroup(myRole);
 
   const otherMembers = conversation.members.filter((m) => m.user_id !== currentUserId);
@@ -453,7 +449,13 @@ export function GroupDetailsSheet({
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <UserAvatar
-                        profile={member.profile ?? { username: "member", display_name: null, avatar_url: null }}
+                        profile={
+                          member.profile ?? {
+                            username: "member",
+                            display_name: null,
+                            avatar_url: null,
+                          }
+                        }
                         className="h-8 w-8 ring-1 ring-border"
                       />
                       <div className="min-w-0">
@@ -519,7 +521,9 @@ export function GroupDetailsSheet({
                           <DropdownMenuContent align="end" className="w-44 text-xs">
                             {canPromoteToAdmin && (
                               <DropdownMenuItem
-                                onClick={() => handleRoleChange(member.user_id, member.name, "admin")}
+                                onClick={() =>
+                                  handleRoleChange(member.user_id, member.name, "admin")
+                                }
                                 className="gap-2 cursor-pointer text-[#E91E63]"
                               >
                                 <Shield size={13} />
@@ -662,7 +666,9 @@ export function GroupDetailsSheet({
               variant="destructive"
               size="sm"
               onClick={handleExecuteLeave}
-              disabled={isLeaving || (isLastAdmin && otherMembers.length > 0 && !selectedSuccessorId)}
+              disabled={
+                isLeaving || (isLastAdmin && otherMembers.length > 0 && !selectedSuccessorId)
+              }
               className="text-xs rounded-lg font-semibold gap-1.5"
             >
               {isLeaving ? <Loader2 size={13} className="animate-spin" /> : <LogOut size={13} />}

@@ -270,7 +270,16 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
                   className="relative group aspect-square rounded-lg overflow-hidden bg-secondary border border-border"
                 >
                   {m.type === "video" ? (
-                    <video src={m.previewUrl} className="h-full w-full object-cover" muted />
+                    <video
+                      src={m.previewUrl || undefined}
+                      className="h-full w-full object-cover"
+                      muted
+                      playsInline
+                      onError={(e) => {
+                        e.stopPropagation();
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
                   ) : (
                     <img src={m.previewUrl} alt="" className="h-full w-full object-cover" />
                   )}

@@ -37,7 +37,8 @@ export function MessageMediaRenderer({
       setIsPlayingAudio(false);
       setAudioProgress(0);
     };
-    const onError = () => {
+    const onError = (e: Event) => {
+      e.stopPropagation?.();
       setMediaError(true);
       setIsPlayingAudio(false);
     };
@@ -130,7 +131,10 @@ export function MessageMediaRenderer({
           playsInline
           preload="metadata"
           className="max-h-72 w-full rounded-xl bg-black"
-          onError={() => setMediaError(true)}
+          onError={(e) => {
+            e.stopPropagation();
+            setMediaError(true);
+          }}
         />
         {mediaName && (
           <p
@@ -153,7 +157,15 @@ export function MessageMediaRenderer({
           isMine ? "bg-white/10 text-white" : "bg-secondary text-foreground"
         }`}
       >
-        <audio ref={audioRef} src={mediaUrl} preload="metadata" />
+        <audio
+          ref={audioRef}
+          src={mediaUrl}
+          preload="metadata"
+          onError={(e) => {
+            e.stopPropagation();
+            setMediaError(true);
+          }}
+        />
 
         <button
           type="button"

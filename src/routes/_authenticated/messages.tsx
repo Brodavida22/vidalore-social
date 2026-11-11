@@ -339,22 +339,18 @@ function MessagesPage() {
     if (!selectedId || !currentUserId) return;
 
     // Immediately clear unread badge in conversation list cache
-    queryClient.setQueryData<ConversationListItem[]>(
-      ["messages", "conversations"],
-      (old = []) =>
-        old.map((c) =>
-          c.id === selectedId
-            ? {
-                ...c,
-                unreadCount: 0,
-                members: c.members.map((m) =>
-                  m.user_id === currentUserId
-                    ? { ...m, last_read_at: new Date().toISOString() }
-                    : m,
-                ),
-              }
-            : c,
-        ),
+    queryClient.setQueryData<ConversationListItem[]>(["messages", "conversations"], (old = []) =>
+      old.map((c) =>
+        c.id === selectedId
+          ? {
+              ...c,
+              unreadCount: 0,
+              members: c.members.map((m) =>
+                m.user_id === currentUserId ? { ...m, last_read_at: new Date().toISOString() } : m,
+              ),
+            }
+          : c,
+      ),
     );
 
     // Persist read state in database
@@ -519,22 +515,18 @@ function MessagesPage() {
       channelRef.current.sendTyping(false, currentProfile.display_name || currentProfile.username);
     }
     setSelectedConversation(conv);
-    queryClient.setQueryData<ConversationListItem[]>(
-      ["messages", "conversations"],
-      (old = []) =>
-        old.map((c) =>
-          c.id === conv.id
-            ? {
-                ...c,
-                unreadCount: 0,
-                members: c.members.map((m) =>
-                  m.user_id === currentUserId
-                    ? { ...m, last_read_at: new Date().toISOString() }
-                    : m,
-                ),
-              }
-            : c,
-        ),
+    queryClient.setQueryData<ConversationListItem[]>(["messages", "conversations"], (old = []) =>
+      old.map((c) =>
+        c.id === conv.id
+          ? {
+              ...c,
+              unreadCount: 0,
+              members: c.members.map((m) =>
+                m.user_id === currentUserId ? { ...m, last_read_at: new Date().toISOString() } : m,
+              ),
+            }
+          : c,
+      ),
     );
     void markConversationAsRead(conv.id);
   };
@@ -716,7 +708,7 @@ function MessagesPage() {
                 <button
                   key={conv.id}
                   type="button"
-                  onClick={() => setSelectedConversation(conv)}
+                  onClick={() => handleSelectConversation(conv)}
                   className={`flex w-full items-center gap-3 p-3.5 text-left transition select-none ${
                     active ? "bg-[#E91E63]/10" : "hover:bg-secondary/60"
                   }`}
@@ -887,8 +879,11 @@ function MessagesPage() {
                       <span className="h-1.5 w-1.5 rounded-full bg-[#E91E63]"></span>
                     </div>
                     <span className="text-[11px] font-medium">
-                      {activeTypingNames.join(", ")} {activeTypingNames.length === 1 ? "is" : "are"}{" "}
-                      typing...
+                      {activeTypingNames.length === 1
+                        ? `${activeTypingNames[0]} is typing...`
+                        : activeTypingNames.length === 2
+                          ? `${activeTypingNames[0]} and ${activeTypingNames[1]} are typing...`
+                          : `${activeTypingNames[0]}, ${activeTypingNames[1]} and ${activeTypingNames.length - 2} others are typing...`}
                     </span>
                   </div>
                 )}
