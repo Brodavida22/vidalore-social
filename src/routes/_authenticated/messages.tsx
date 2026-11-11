@@ -398,10 +398,10 @@ function MessagesPage() {
   /* 7. SEND MESSAGE MUTATION (Text, Media, Reply, Edit) */
   const sendMutation = useMutation({
     mutationFn: async (payload: {
-      content?: string;
+      content?: string | undefined;
       mediaFile?: File | Blob;
-      messageType?: "text" | "image" | "video" | "audio" | "file";
-      replyToId?: string;
+      messageType?: "text" | "image" | "video" | "audio" | "file" | undefined;
+      replyToId?: string | undefined;
     }) => {
       if (!selectedId) throw new Error("No conversation selected.");
 

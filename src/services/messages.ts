@@ -725,8 +725,8 @@ export async function uploadChatMedia(
   conversationId: string,
   file: File | Blob,
   options: {
-    fileName?: string;
-    contentType?: string;
+    fileName?: string | undefined;
+    contentType?: string | undefined;
     onProgress?: (pct: number) => void;
   } = {},
 ): Promise<{ mediaUrl: string; mediaName: string }> {
@@ -797,11 +797,11 @@ export async function uploadChatMedia(
 export async function sendMessage(
   conversationId: string,
   options: {
-    content?: string;
-    messageType?: "text" | "image" | "video" | "audio" | "file";
-    mediaUrl?: string;
-    mediaName?: string;
-    replyToId?: string;
+    content?: string | undefined;
+    messageType?: "text" | "image" | "video" | "audio" | "file" | undefined;
+    mediaUrl?: string | undefined;
+    mediaName?: string | undefined;
+    replyToId?: string | undefined;
   },
 ): Promise<Message> {
   const user = await getCurrentUser();
