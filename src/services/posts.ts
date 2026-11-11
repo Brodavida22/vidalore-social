@@ -1,11 +1,15 @@
 import { queryOptions } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  uploadVideoResumable,
-  compressVideoFile,
-  formatBytes,
-  type VideoUploadProgress,
-} from "@/lib/videoUpload";
+import { compressVideo, uploadResumableTus } from "@/services/mediaUpload";
+
+export interface CreatePostProgress {
+  stage: "preparing" | "compressing" | "uploading" | "publishing";
+  percent: number;
+  message?: string;
+  bytesUploaded?: number;
+  bytesTotal?: number;
+  compressedSavings?: number;
+}
 
 // ---------------------------------------------------------------------------
 // Rules (mirrored by database constraints and storage policies)
@@ -511,197 +515,179 @@ export const savedPostsQuery = () =>
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------
-export async function createPost(input: {
-  content: string;
-  files: File[];
-  tags: string[];
-  mood?: string | null | undefined;
-  location?: string | null | undefined;
-  existingPostId?: string | undefined;
-  onProgress?: ((progress: VideoUploadProgress) => void) | undefined;
-}): Promise<string> {
+export async function createPost(
+  input: {
+    content: string;
+    files: File[];
+    tags: string[];
+    mood?: string | null | undefined;
+    location?: string | null | undefined;
+  },
+  onProgress?: (progress: CreatePostProgress) => void,
+): Promise<string> {
   const problem = validatePostDraft(input);
   if (problem) throw new Error(problem);
   const uid = await currentUserId();
 
-  // 1. Safe client-side video compression before uploading
-  const processedFiles: File[] = [];
-  for (const f of input.files) {
-    if (f.type.startsWith("video/")) {
-      input.onProgress?.({
-        stage: "compressing",
-        percent: 5,
-        bytesUploaded: 0,
-        bytesTotal: f.size,
-        formattedUploaded: "0 MB",
-        formattedTotal: formatBytes(f.size),
-      });
+  onProgress?.({
+    stage: "preparing",
+    percent: 10,
+    message: "Preparing post draft...",
+  });
 
-      const res = await compressVideoFile(f, (progress) => {
-        input.onProgress?.({
-          stage: "compressing",
-          percent: Math.min(95, Math.max(5, progress)),
-          bytesUploaded: 0,
-          bytesTotal: f.size,
-          formattedUploaded: "0 MB",
-          formattedTotal: formatBytes(f.size),
-        });
-      });
-      processedFiles.push(res.file);
-    } else {
-      processedFiles.push(f);
-    }
-  }
-
-  const totalBytes = processedFiles.reduce((sum, f) => sum + f.size, 0);
-
-  if (totalBytes > 0) {
-    input.onProgress?.({
-      stage: "uploading",
-      percent: 0,
-      bytesUploaded: 0,
-      bytesTotal: totalBytes,
-      formattedUploaded: "0 MB",
-      formattedTotal: formatBytes(totalBytes),
-    });
-  }
-
-  // 2. Insert or update the post record (RLS requires post record to exist for storage uploads)
-  let postId = input.existingPostId;
-  if (postId) {
-    const { error: updErr } = await supabase
-      .from("posts")
-      .update({
-        content: input.content.trim(),
-        tags: input.tags,
-        mood: input.mood || null,
-        location: input.location || null,
-      })
-      .eq("id", postId)
-      .eq("author_id", uid);
-
-    if (updErr) throw friendlyError(updErr, "Couldn't update draft post.");
-
-    // Clean up any old media rows and storage items from previous failed attempt
-    const { data: oldMedia } = await supabase
-      .from("post_media")
-      .select("storage_path")
-      .eq("post_id", postId);
-    if (oldMedia && oldMedia.length > 0) {
-      await supabase.storage.from(BUCKET).remove(oldMedia.map((m) => m.storage_path));
-      await supabase.from("post_media").delete().eq("post_id", postId);
-    }
-  } else {
-    const { data: post, error } = await supabase
-      .from("posts")
-      .insert({
-        author_id: uid,
-        content: input.content.trim(),
-        tags: input.tags,
-        mood: input.mood || null,
-        location: input.location || null,
-      })
-      .select("id")
-      .single();
-
-    if (error || !post) throw friendlyError(error, "Couldn't publish your post.");
-    postId = post.id;
-  }
+  const { data: post, error } = await supabase
+    .from("posts")
+    .insert({
+      author_id: uid,
+      content: input.content.trim(),
+      tags: input.tags,
+      mood: input.mood || null,
+      location: input.location || null,
+    })
+    .select("id")
+    .single();
+  if (error || !post) throw friendlyError(error, "Couldn't publish your post.");
 
   const uploaded: string[] = [];
-  const fileBytesUploaded: number[] = new Array(processedFiles.length).fill(0);
-
-  const reportOverallProgress = () => {
-    if (totalBytes === 0) return;
-    const currentBytes = fileBytesUploaded.reduce((a, b) => a + b, 0);
-    const percent = Math.min(99, Math.round((currentBytes / totalBytes) * 100));
-    input.onProgress?.({
-      stage: "uploading",
-      percent,
-      bytesUploaded: currentBytes,
-      bytesTotal: totalBytes,
-      formattedUploaded: formatBytes(currentBytes),
-      formattedTotal: formatBytes(totalBytes),
-    });
-  };
-
   try {
-    const rows = [];
-    for (const [index, file] of processedFiles.entries()) {
+    const processedFiles: { file: File; info: ReturnType<typeof detectMediaInfo>; originalSize: number }[] = [];
+
+    // Step 1: Pre-process & compress videos
+    for (const [index, file] of input.files.entries()) {
       const info = detectMediaInfo(file);
       if (!info) {
         throw new Error(`File "${file.name}" is not a supported format.`);
       }
 
-      const path = `${uid}/${postId}/${index}-${crypto.randomUUID()}.${info.ext}`;
-
       if (info.type === "video") {
-        await uploadVideoResumable(BUCKET, path, file, (progressInfo) => {
-          fileBytesUploaded[index] = progressInfo.bytesUploaded;
-          reportOverallProgress();
+        onProgress?.({
+          stage: "compressing",
+          percent: 0,
+          message: `Compressing video ${index + 1} of ${input.files.length} (H.264 / 720p)...`,
+          bytesTotal: file.size,
         });
-        uploaded.push(path);
-        fileBytesUploaded[index] = file.size;
-        reportOverallProgress();
+
+        const compResult = await compressVideo(
+          file,
+          { maxHeight: 720, maxFps: 30, quality: "medium" },
+          (p) => {
+            onProgress?.({
+              stage: "compressing",
+              percent: p,
+              message: `Compressing video ${index + 1} of ${input.files.length} (${p}%)...`,
+              bytesTotal: file.size,
+            });
+          },
+        );
+
+        processedFiles.push({
+          file: compResult.file,
+          info,
+          originalSize: compResult.originalSize,
+        });
+      } else {
+        processedFiles.push({
+          file,
+          info,
+          originalSize: file.size,
+        });
+      }
+    }
+
+    // Step 2: Upload files (resumable TUS for videos, standard for images)
+    const rows = [];
+    let totalBytesAll = processedFiles.reduce((acc, f) => acc + f.file.size, 0);
+    let cumulativeUploaded = 0;
+
+    for (const [index, item] of processedFiles.entries()) {
+      const { file, info } = item!;
+      const ext = info!.ext;
+      const path = `${uid}/${post.id}/${index}-${crypto.randomUUID()}.${ext}`;
+
+      if (info!.type === "video") {
+        onProgress?.({
+          stage: "uploading",
+          percent: Math.round((cumulativeUploaded / totalBytesAll) * 100),
+          message: `Uploading video ${index + 1} of ${processedFiles.length}...`,
+          bytesUploaded: cumulativeUploaded,
+          bytesTotal: totalBytesAll,
+        });
+
+        await uploadResumableTus({
+          bucket: BUCKET,
+          path,
+          file,
+          onProgress(details) {
+            const currentTotalUploaded = cumulativeUploaded + details.bytesUploaded;
+            const overallPercent = Math.min(
+              100,
+              Math.round((currentTotalUploaded / totalBytesAll) * 100),
+            );
+            onProgress?.({
+              stage: "uploading",
+              percent: overallPercent,
+              message: `Uploading media ${index + 1} of ${processedFiles.length} (${overallPercent}%)...`,
+              bytesUploaded: currentTotalUploaded,
+              bytesTotal: totalBytesAll,
+            });
+          },
+        });
+        cumulativeUploaded += file.size;
       } else {
         const { error: upErr } = await supabase.storage
           .from(BUCKET)
-          .upload(path, file, { contentType: info.mime, upsert: false });
+          .upload(path, file, { contentType: info!.mime, upsert: false });
         if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
-        uploaded.push(path);
-        fileBytesUploaded[index] = file.size;
-        reportOverallProgress();
+        cumulativeUploaded += file.size;
+        const overallPercent = Math.min(
+          100,
+          Math.round((cumulativeUploaded / totalBytesAll) * 100),
+        );
+        onProgress?.({
+          stage: "uploading",
+          percent: overallPercent,
+          message: `Uploading photo ${index + 1} of ${processedFiles.length}...`,
+          bytesUploaded: cumulativeUploaded,
+          bytesTotal: totalBytesAll,
+        });
       }
 
+      uploaded.push(path);
       rows.push({
-        post_id: postId,
+        post_id: post.id,
         owner_id: uid,
         storage_path: path,
-        media_type: info.type,
-        mime_type: info.mime,
+        media_type: info!.type,
+        mime_type: info!.mime,
         size_bytes: file.size,
         position: index,
       });
     }
 
-    if (totalBytes > 0) {
-      input.onProgress?.({
-        stage: "publishing",
-        percent: 99,
-        bytesUploaded: totalBytes,
-        bytesTotal: totalBytes,
-        formattedUploaded: formatBytes(totalBytes),
-        formattedTotal: formatBytes(totalBytes),
-      });
-    }
+    // Step 3: Insert media rows
+    onProgress?.({
+      stage: "publishing",
+      percent: 95,
+      message: "Finalizing post and attachments...",
+    });
 
     if (rows.length > 0) {
       const { error: mediaErr } = await supabase.from("post_media").insert(rows);
       if (mediaErr) throw friendlyError(mediaErr, "Couldn't attach media.");
     }
 
-    if (totalBytes > 0) {
-      input.onProgress?.({
-        stage: "success",
-        percent: 100,
-        bytesUploaded: totalBytes,
-        bytesTotal: totalBytes,
-        formattedUploaded: formatBytes(totalBytes),
-        formattedTotal: formatBytes(totalBytes),
-      });
-    }
+    onProgress?.({
+      stage: "publishing",
+      percent: 100,
+      message: "Post published successfully!",
+    });
   } catch (e) {
-    // Remove newly uploaded storage files
-    if (uploaded.length > 0) {
-      await supabase.storage.from(BUCKET).remove(uploaded);
-    }
-    // Attach postId to error so caller can retain it for duplicate-free retry
-    const err = e instanceof Error ? e : new Error(String(e));
-    (err as Error & { postId?: string }).postId = postId;
-    throw err;
+    // Roll back: remove uploaded files and the half-created post.
+    if (uploaded.length > 0) await supabase.storage.from(BUCKET).remove(uploaded);
+    await supabase.from("posts").delete().eq("id", post.id);
+    throw e;
   }
-
-  return postId;
+  return post.id;
 }
 
 export async function updatePost(

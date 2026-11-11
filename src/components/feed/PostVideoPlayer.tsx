@@ -28,6 +28,7 @@ export function PostVideoPlayer({
 }: PostVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const playerId = useRef(`vp-${Math.random().toString(36).slice(2, 9)}`);
 
   const [src, setSrc] = useState(url);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -45,6 +46,45 @@ export function PostVideoPlayer({
     setSrc(url);
     setHasError(false);
   }, [url]);
+
+  // Viewport awareness: auto-pause when scrolled out of view
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting || entry.intersectionRatio < 0.4) {
+            if (videoRef.current && !videoRef.current.paused) {
+              videoRef.current.pause();
+              setIsPlaying(false);
+            }
+          }
+        });
+      },
+      { threshold: [0, 0.4, 0.8] },
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Singleton feed player: pause if another video in the feed starts playing
+  useEffect(() => {
+    function handleOtherPlay(e: Event) {
+      const customEvent = e as CustomEvent<{ playerId: string }>;
+      if (customEvent.detail?.playerId !== playerId.current) {
+        if (videoRef.current && !videoRef.current.paused) {
+          videoRef.current.pause();
+          setIsPlaying(false);
+        }
+      }
+    }
+
+    window.addEventListener("vidalore:feed-video-play", handleOtherPlay);
+    return () => window.removeEventListener("vidalore:feed-video-play", handleOtherPlay);
+  }, []);
 
   // Handle play/pause toggle safely
   async function togglePlay() {

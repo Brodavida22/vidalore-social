@@ -1,5 +1,5 @@
 import { useState, useRef, type ChangeEvent } from "react";
-import { Video, UploadCloud, X, Play, Pause, Loader2, Music } from "lucide-react";
+import { Video, UploadCloud, X, Play, Pause, Loader2, Music, CheckCircle2, Zap } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -13,7 +13,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { addReel } from "@/services/reelsAndStories";
+import { compressVideo } from "@/services/mediaUpload";
 import type { Profile } from "@/services/profiles";
+
+type ReelUploadStage = "idle" | "compressing" | "uploading" | "publishing";
 
 export function VideoUploadModal({
   open,
@@ -32,8 +35,13 @@ export function VideoUploadModal({
   const [audioTitle, setAudioTitle] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStage, setUploadStage] = useState<ReelUploadStage>("idle");
+  const [savingsInfo, setSavingsInfo] = useState<{
+    originalMB: number;
+    compressedMB: number;
+    savedPercent: number;
+  } | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [previewError, setPreviewError] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
@@ -53,7 +61,8 @@ export function VideoUploadModal({
     }
 
     setVideoFile(file);
-    setPreviewError(false);
+    setSavingsInfo(null);
+    setUploadStage("idle");
     const objectUrl = URL.createObjectURL(file);
     setVideoUrl(objectUrl);
   }
@@ -64,8 +73,9 @@ export function VideoUploadModal({
     }
     setVideoFile(null);
     setVideoUrl("");
+    setSavingsInfo(null);
+    setUploadStage("idle");
     setIsPlaying(false);
-    setPreviewError(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -80,20 +90,55 @@ export function VideoUploadModal({
     }
 
     setIsUploading(true);
-    setUploadProgress(15);
+    setUploadProgress(0);
 
-    setUploadProgress(20);
     try {
+      let fileToUpload = videoFile;
+
+      // Stage 1: Client-side video compression
+      if (videoFile) {
+        setUploadStage("compressing");
+        const comp = await compressVideo(
+          videoFile,
+          { maxHeight: 720, maxFps: 30, quality: "medium" },
+          (p) => setUploadProgress(p),
+        );
+
+        fileToUpload = comp.file;
+
+        if (comp.compressed) {
+          const originalMB = comp.originalSize / (1024 * 1024);
+          const compressedMB = comp.compressedSize / (1024 * 1024);
+          setSavingsInfo({
+            originalMB,
+            compressedMB,
+            savedPercent: comp.savedPercent,
+          });
+          toast.success("Reel video optimized", {
+            description: `${originalMB.toFixed(1)} MB → ${compressedMB.toFixed(1)} MB (${comp.savedPercent}% saved)`,
+          });
+        }
+      }
+
+      // Stage 2: Resumable TUS upload to reels bucket
+      setUploadStage("uploading");
+      setUploadProgress(0);
+
       await addReel(me, {
         videoUrl,
-        videoFile: videoFile ?? undefined,
+        videoFile: fileToUpload ?? undefined,
         caption: caption.trim() || "Moments in the Rose Garden 🌹",
         audioTitle: audioTitle.trim() || undefined,
         tags: ["RoseGarden", "VidaloreReels"],
+        onUploadProgress: (p) => {
+          setUploadProgress(p);
+        },
       });
+
+      // Stage 3: Publishing complete
+      setUploadStage("publishing");
       setUploadProgress(100);
-      setIsUploading(false);
-      setUploadProgress(0);
+
       removeSelectedVideo();
       setCaption("");
       setAudioTitle("");
@@ -103,9 +148,11 @@ export function VideoUploadModal({
       onUploaded?.();
       onOpenChange(false);
     } catch (error) {
-      setIsUploading(false);
-      setUploadProgress(0);
       toast.error(error instanceof Error ? error.message : "Could not publish reel.");
+    } finally {
+      setIsUploading(false);
+      setUploadStage("idle");
+      setUploadProgress(0);
     }
   }
 
@@ -146,62 +193,40 @@ export function VideoUploadModal({
             <div className="space-y-3">
               {/* Active Video Preview Player */}
               <div className="relative aspect-[9/16] max-h-72 w-auto mx-auto rounded-2xl overflow-hidden bg-black shadow-lg">
-                {!previewError ? (
-                  <video
-                    ref={videoPreviewRef}
-                    src={videoUrl || undefined}
-                    className="h-full w-full object-cover"
-                    loop
-                    playsInline
-                    onError={(e) => {
-                      e.stopPropagation();
-                      setPreviewError(true);
+                <video
+                  ref={videoPreviewRef}
+                  src={videoUrl}
+                  className="h-full w-full object-cover"
+                  loop
+                  playsInline
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const v = videoPreviewRef.current;
+                    if (!v) return;
+                    if (v.paused) {
+                      v.play();
+                      setIsPlaying(true);
+                    } else {
+                      v.pause();
                       setIsPlaying(false);
-                    }}
-                  />
-                ) : (
-                  <div className="h-full w-full flex flex-col items-center justify-center p-4 text-center bg-zinc-900 text-white space-y-2">
-                    <Video className="h-8 w-8 text-muted-foreground" />
-                    <p className="text-xs font-semibold">Video preview ready</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      Codec preview not supported in browser, but ready to publish.
-                    </p>
-                  </div>
-                )}
-                {!previewError && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const v = videoPreviewRef.current;
-                      if (!v) return;
-                      if (v.paused) {
-                        const p = v.play();
-                        if (p !== undefined) {
-                          p.then(() => setIsPlaying(true)).catch((err) => {
-                            console.warn("Video preview play error:", err);
-                            setIsPlaying(false);
-                          });
-                        }
-                      } else {
-                        v.pause();
-                        setIsPlaying(false);
-                      }
-                    }}
-                    className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors"
-                  >
-                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md">
-                      {isPlaying ? (
-                        <Pause className="h-5 w-5" />
-                      ) : (
-                        <Play className="h-5 w-5 ml-0.5" />
-                      )}
-                    </span>
-                  </button>
-                )}
+                    }
+                  }}
+                  className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-colors"
+                >
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md">
+                    {isPlaying ? (
+                      <Pause className="h-5 w-5" />
+                    ) : (
+                      <Play className="h-5 w-5 ml-0.5" />
+                    )}
+                  </span>
+                </button>
                 <button
                   type="button"
                   onClick={removeSelectedVideo}
-                  className="absolute top-2 right-2 rounded-full bg-black/70 p-1.5 text-white hover:bg-destructive transition-colors z-10"
+                  className="absolute top-2 right-2 rounded-full bg-black/70 p-1.5 text-white hover:bg-destructive transition-colors"
                   aria-label="Remove video"
                 >
                   <X className="h-4 w-4" />
@@ -237,14 +262,39 @@ export function VideoUploadModal({
                 />
               </div>
 
+              {/* Compression Savings Pill if available */}
+              {savingsInfo && (
+                <div className="flex items-center justify-between rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-xs text-emerald-400">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <Zap className="h-3.5 w-3.5 text-emerald-400" />
+                    Compressed: {savingsInfo.originalMB.toFixed(1)} MB → {savingsInfo.compressedMB.toFixed(1)} MB
+                  </span>
+                  <span className="font-semibold text-emerald-300">
+                    -{savingsInfo.savedPercent}%
+                  </span>
+                </div>
+              )}
+
               {/* Upload Progress */}
               {isUploading && (
-                <div className="space-y-1.5 py-1">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Uploading & verifying media...</span>
-                    <span className="text-[#E91E63] font-semibold">{uploadProgress}%</span>
+                <div className="space-y-2 rounded-xl border border-border bg-secondary/60 p-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5 font-medium text-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[#E91E63]" />
+                      {uploadStage === "compressing"
+                        ? "Compressing video (H.264 / 720p 30fps)..."
+                        : uploadStage === "uploading"
+                          ? "Uploading via resumable TUS..."
+                          : "Finalizing and publishing..."}
+                    </span>
+                    <span className="text-[#E91E63] font-semibold tabular-nums">{uploadProgress}%</span>
                   </div>
                   <Progress value={uploadProgress} className="h-2" />
+                  <p className="text-[0.65rem] text-muted-foreground">
+                    {uploadStage === "compressing"
+                      ? "Encoding video into MP4/H.264 for fast mobile streaming."
+                      : "Resumable chunked upload protects against dropped network connections."}
+                  </p>
                 </div>
               )}
             </div>

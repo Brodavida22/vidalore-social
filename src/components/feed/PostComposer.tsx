@@ -8,15 +8,13 @@ import { UserAvatar } from "@/components/profile/UserAvatar";
 import type { Profile } from "@/services/profiles";
 import {
   createPost,
-  deletePost,
   postsKeys,
   POST_LIMITS,
   POST_MEDIA_ACCEPT,
   detectMediaInfo,
   validatePostDraft,
+  type CreatePostProgress,
 } from "@/services/posts";
-import { VideoUploadProgressCard } from "@/components/media/VideoUploadProgressCard";
-import { formatBytes, type VideoUploadProgress } from "@/lib/videoUpload";
 
 const POST_TAGS = ["Design", "Technology", "Photography", "Architecture", "Community"];
 
@@ -43,10 +41,7 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
   const [showMoods, setShowMoods] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<VideoUploadProgress | null>(null);
-
-  // Retain draft postId across retries to prevent duplicate database rows
-  const draftPostIdRef = useRef<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<CreatePostProgress | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Clean up object URLs on unmount
@@ -101,7 +96,6 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
 
     if (additions.length > 0) {
       setPendingFiles((prev) => [...prev, ...additions]);
-      setUploadProgress(null);
     }
 
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -117,18 +111,6 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
     });
   }
 
-  async function handleDiscard() {
-    if (draftPostIdRef.current) {
-      try {
-        await deletePost(draftPostIdRef.current);
-      } catch (err) {
-        console.warn("Could not delete incomplete post draft on discard:", err);
-      }
-      draftPostIdRef.current = null;
-    }
-    setUploadProgress(null);
-  }
-
   async function handleSubmit() {
     const errorMsg = validatePostDraft({
       content,
@@ -141,59 +123,36 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
     }
 
     setIsSubmitting(true);
-    const totalBytes = pendingFiles.reduce((sum, p) => sum + p.file.size, 0);
-
-    if (pendingFiles.length > 0) {
-      setUploadProgress({
-        stage: "preparing",
-        percent: 0,
-        bytesUploaded: 0,
-        bytesTotal: totalBytes,
-        formattedUploaded: "0 MB",
-        formattedTotal: formatBytes(totalBytes),
-      });
-    }
+    setUploadProgress({
+      stage: "preparing",
+      percent: 5,
+      message: "Preparing post...",
+    });
 
     try {
-      await createPost({
-        content: content.trim(),
-        files: pendingFiles.map((p) => p.file),
-        tags: selectedTags,
-        mood: selectedMood || undefined,
-        location: me.location || undefined,
-        existingPostId: draftPostIdRef.current ?? undefined,
-        onProgress: (prog) => {
-          setUploadProgress(prog);
+      await createPost(
+        {
+          content: content.trim(),
+          files: pendingFiles.map((p) => p.file),
+          tags: selectedTags,
+          mood: selectedMood || undefined,
+          location: me.location || undefined,
         },
-      });
-
-      if (pendingFiles.length > 0) {
-        // Genuine success confirmation
-        setUploadProgress({
-          stage: "success",
-          percent: 100,
-          bytesUploaded: totalBytes,
-          bytesTotal: totalBytes,
-          formattedUploaded: formatBytes(totalBytes),
-          formattedTotal: formatBytes(totalBytes),
-        });
-
-        // Brief delay for user visual confirmation
-        await new Promise((resolve) => setTimeout(resolve, 700));
-      }
+        (progress) => {
+          setUploadProgress(progress);
+        },
+      );
 
       // Cleanup preview URLs
       pendingFiles.forEach((p) => {
         if (p.previewUrl.startsWith("blob:")) URL.revokeObjectURL(p.previewUrl);
       });
 
-      draftPostIdRef.current = null;
       setContent("");
       setSelectedTags([]);
       setSelectedMood(null);
       setPendingFiles([]);
       setShowMoods(false);
-      setUploadProgress(null);
 
       toast.success("Post published successfully");
 
@@ -202,30 +161,12 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
       onPostCreated?.();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Couldn't publish your post.";
-      const postErr = err as Error & { postId?: string };
-
-      // Preserve existing postId for retry without duplicate posts
-      if (postErr.postId) {
-        draftPostIdRef.current = postErr.postId;
-      }
-
-      setUploadProgress((prev) => ({
-        stage: "error",
-        percent: prev?.percent || 0,
-        bytesUploaded: prev?.bytesUploaded || 0,
-        bytesTotal: prev?.bytesTotal || totalBytes,
-        formattedUploaded: prev?.formattedUploaded || "0 MB",
-        formattedTotal: prev?.formattedTotal || formatBytes(totalBytes),
-        errorMessage: msg,
-      }));
-
       toast.error(msg);
     } finally {
       setIsSubmitting(false);
+      setUploadProgress(null);
     }
   }
-
-  const firstVideo = pendingFiles.find((p) => p.type === "video");
 
   return (
     <section className="relative rounded-xl p-4 sm:p-5 border border-border bg-card shadow-sm">
@@ -243,7 +184,6 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
                   type="button"
                   onClick={() => setSelectedMood(null)}
                   className="hover:text-foreground ml-0.5"
-                  disabled={isSubmitting}
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -257,8 +197,7 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
             placeholder="Share your thoughts or work..."
             rows={content.length > 80 ? 3 : 2}
             maxLength={POST_LIMITS.maxContent}
-            disabled={isSubmitting}
-            className="mt-2 w-full resize-none border-none bg-transparent p-0 text-sm placeholder:text-muted-foreground focus-visible:ring-0 leading-relaxed disabled:opacity-60"
+            className="mt-2 w-full resize-none border-none bg-transparent p-0 text-sm placeholder:text-muted-foreground focus-visible:ring-0 leading-relaxed"
           />
 
           {/* Media preview grid */}
@@ -270,29 +209,18 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
                   className="relative group aspect-square rounded-lg overflow-hidden bg-secondary border border-border"
                 >
                   {m.type === "video" ? (
-                    <video
-                      src={m.previewUrl || undefined}
-                      className="h-full w-full object-cover"
-                      muted
-                      playsInline
-                      onError={(e) => {
-                        e.stopPropagation();
-                        e.currentTarget.style.display = "none";
-                      }}
-                    />
+                    <video src={m.previewUrl} className="h-full w-full object-cover" muted />
                   ) : (
                     <img src={m.previewUrl} alt="" className="h-full w-full object-cover" />
                   )}
-                  {!isSubmitting && (
-                    <button
-                      type="button"
-                      onClick={() => removeMedia(m.id)}
-                      aria-label="Remove media"
-                      className="absolute top-2 right-2 rounded-lg bg-black/70 p-1 text-white hover:bg-destructive transition-colors"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeMedia(m.id)}
+                    aria-label="Remove media"
+                    className="absolute top-2 right-2 rounded-lg bg-black/70 p-1 text-white hover:bg-destructive transition-colors"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
                   {m.type === "video" && (
                     <span className="absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[0.65rem] text-white font-medium">
                       VIDEO
@@ -303,56 +231,39 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
             </div>
           )}
 
-          {/* Accurate Progress Card for Video / Media Uploads */}
-          {uploadProgress && (
-            <div className="mt-3">
-              <VideoUploadProgressCard
-                progress={uploadProgress}
-                videoPreviewUrl={firstVideo?.previewUrl ?? pendingFiles[0]?.previewUrl}
-                videoName={firstVideo?.file.name ?? pendingFiles[0]?.file.name}
-                onRetry={handleSubmit}
-                onCancel={handleDiscard}
-              />
-            </div>
-          )}
-
           {/* Tag pills */}
-          {!uploadProgress && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {POST_TAGS.map((tag) => {
-                const active = selectedTags.includes(tag);
-                return (
-                  <button
-                    key={tag}
-                    type="button"
-                    disabled={isSubmitting}
-                    onClick={() => toggleTag(tag)}
-                    className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
-                      active
-                        ? "bg-[#E91E63] text-white"
-                        : "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
-                    }`}
-                  >
-                    #{tag}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {POST_TAGS.map((tag) => {
+              const active = selectedTags.includes(tag);
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => toggleTag(tag)}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
+                    active
+                      ? "bg-[#E91E63] text-white"
+                      : "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
+                  }`}
+                >
+                  #{tag}
+                </button>
+              );
+            })}
+          </div>
 
           {/* Mood selection tray */}
-          {showMoods && !uploadProgress && (
+          {showMoods && (
             <div className="mt-3 flex flex-wrap gap-1.5 rounded-xl bg-secondary p-2.5 border border-border">
               {POST_STATUSES.map((mood) => (
                 <button
                   key={mood}
                   type="button"
-                  disabled={isSubmitting}
                   onClick={() => {
                     setSelectedMood(mood);
                     setShowMoods(false);
                   }}
-                  className={`rounded-lg px-2.5 py-1 text-xs transition-colors disabled:opacity-50 ${
+                  className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
                     selectedMood === mood
                       ? "bg-[#E91E63] text-white font-medium"
                       : "bg-card hover:bg-background text-foreground border border-border"
@@ -361,6 +272,51 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
                   {mood}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Multi-stage Progress Status */}
+          {isSubmitting && uploadProgress && (
+            <div className="mt-3.5 space-y-2 rounded-xl border border-border bg-secondary/60 p-3 animate-fade-in">
+              <div className="flex items-center justify-between text-xs font-medium">
+                <div className="flex items-center gap-2 text-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#E91E63]" />
+                  <span>
+                    {uploadProgress.message ||
+                      (uploadProgress.stage === "compressing"
+                        ? "Compressing video (H.264 / 720p)..."
+                        : uploadProgress.stage === "uploading"
+                          ? "Uploading media..."
+                          : "Publishing...")}
+                  </span>
+                </div>
+                <span className="font-semibold text-foreground tabular-nums">
+                  {uploadProgress.percent}%
+                </span>
+              </div>
+
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-[#E91E63] transition-all duration-200"
+                  style={{ width: `${uploadProgress.percent}%` }}
+                />
+              </div>
+
+              {uploadProgress.bytesTotal ? (
+                <div className="flex justify-between text-[0.65rem] text-muted-foreground">
+                  <span>
+                    {uploadProgress.bytesUploaded
+                      ? `${(uploadProgress.bytesUploaded / (1024 * 1024)).toFixed(1)} MB`
+                      : "0 MB"}{" "}
+                    / {(uploadProgress.bytesTotal / (1024 * 1024)).toFixed(1)} MB
+                  </span>
+                  <span>
+                    {uploadProgress.stage === "compressing"
+                      ? "WebCodecs Hardware/Software Acceleration"
+                      : "Resumable TUS Stream"}
+                  </span>
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -374,13 +330,11 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
                 multiple
                 className="hidden"
                 onChange={handleFileUpload}
-                disabled={isSubmitting}
               />
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={isSubmitting}
                 onClick={() => fileInputRef.current?.click()}
                 className="h-8 rounded-lg px-2.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"
               >
@@ -392,7 +346,6 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={isSubmitting}
                 onClick={() => setShowMoods(!showMoods)}
                 className="h-8 rounded-lg px-2.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"
               >
@@ -411,25 +364,16 @@ export function PostComposer({ me, onPostCreated }: { me: Profile; onPostCreated
               <Button
                 type="button"
                 size="sm"
-                disabled={
-                  isSubmitting ||
-                  uploadProgress?.stage === "error" ||
-                  (!content.trim() && pendingFiles.length === 0)
-                }
+                disabled={isSubmitting || (!content.trim() && pendingFiles.length === 0)}
                 onClick={handleSubmit}
                 className="rounded-lg px-4 text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white shadow-sm"
               >
                 {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                    Publishing...
-                  </>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
                 ) : (
-                  <>
-                    <Send className="h-3.5 w-3.5 mr-1" />
-                    Publish
-                  </>
+                  <Send className="h-3.5 w-3.5 mr-1" />
                 )}
+                Publish
               </Button>
             </div>
           </div>

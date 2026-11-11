@@ -9,9 +9,13 @@ import {
   Mp4OutputFormat,
   Output,
   Quality,
-} from "mediabunny";
+import {
+  compressVideo,
+  uploadResumableTus,
+  uploadMediaSmart,
+  type VideoCompressionResult,
+} from "@/services/mediaUpload";
 import type { Profile } from "@/services/profiles";
-import { uploadVideoResumable, formatBytes, type VideoUploadProgress } from "@/lib/videoUpload";
 
 export interface ReelComment {
   id: string;
@@ -81,112 +85,17 @@ export interface StoryCompressionResult {
 }
 
 /**
- * Compresses a story video into MP4/H.264.
- *
- * Target:
- * - Maximum video height: 720px
- * - Frame rate: 30 FPS
- * - Video codec: H.264/AVC
- * - MP4 output
- *
- * If the browser cannot encode the video, the original file is returned.
- * The caller must still enforce the Supabase 50 MB limit.
+ * Compresses a story video into MP4/H.264 using shared Mediabunny encoder.
  */
 export async function compressStoryVideo(
   file: File,
   onProgress?: (progress: number) => void,
 ): Promise<StoryCompressionResult> {
-  if (!file.type.startsWith("video/")) {
-    return { file, compressed: false };
-  }
-
-  if (typeof VideoEncoder === "undefined" || typeof VideoDecoder === "undefined") {
-    return { file, compressed: false };
-  }
-
-  let conversion: Awaited<ReturnType<typeof Conversion.init>> | null = null;
-
-  try {
-    onProgress?.(0);
-
-    const input = new Input({
-      formats: ALL_FORMATS,
-      source: new BlobSource(file),
-    });
-
-    const output = new Output({
-      format: new Mp4OutputFormat(),
-      target: new BufferTarget(),
-    });
-
-    conversion = await Conversion.init({
-      input,
-      output,
-      tracks: "primary",
-      video: {
-        codec: "avc",
-        height: 720,
-        frameRate: 30,
-        quality: new Quality("medium"),
-        hardwareAcceleration: "no-preference",
-      },
-    });
-
-    if (!conversion.isValid) {
-      throw new Error("This device cannot convert the selected video to MP4.");
-    }
-
-    conversion.onProgress = (progress) => {
-      const safeProgress = Math.max(0, Math.min(100, Math.round(progress * 100)));
-
-      onProgress?.(safeProgress);
-    };
-
-    await conversion.execute();
-
-    const buffer = output.target.buffer;
-
-    if (!buffer || buffer.byteLength === 0) {
-      throw new Error("Video compression produced an empty file.");
-    }
-
-    const compressedBlob = new Blob([buffer], {
-      type: "video/mp4",
-    });
-
-    const compressedFile = new File(
-      [compressedBlob],
-      `${file.name.replace(/\.[^.]+$/, "")}-compressed.mp4`,
-      {
-        type: "video/mp4",
-        lastModified: Date.now(),
-      },
-    );
-
-    onProgress?.(100);
-
-    // Do not replace the original with a larger compressed file.
-    if (compressedFile.size >= file.size) {
-      return {
-        file,
-        compressed: false,
-      };
-    }
-
-    return {
-      file: compressedFile,
-      compressed: true,
-    };
-  } catch (error) {
-    console.warn("Story video compression was unavailable; using original file:", error);
-
-    onProgress?.(100);
-
-    return {
-      file,
-      compressed: false,
-    };
-  }
+  const result = await compressVideo(file, { maxHeight: 720, maxFps: 30, quality: "medium" }, onProgress);
+  return {
+    file: result.file,
+    compressed: result.compressed,
+  };
 }
 
 function notifyUpdated() {
@@ -212,21 +121,22 @@ async function currentUserId(): Promise<string> {
   return data.user.id;
 }
 
-async function signedMediaUrl(bucket: string, path: string): Promise<string> {
-  try {
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .createSignedUrl(path, SIGNED_URL_SECONDS);
+async function signedMediaUrl(
+  bucket: string,
+  path: string,
+): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(path, SIGNED_URL_SECONDS);
 
-    if (!error && data?.signedUrl) {
-      return data.signedUrl;
-    }
-  } catch (err) {
-    console.warn("createSignedUrl error, falling back to public URL:", err);
+  if (error || !data?.signedUrl) {
+    message(
+      error ?? new Error("Missing media URL"),
+      "Could not access uploaded media.",
+    );
   }
 
-  const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(path);
-  return pubData?.publicUrl || "";
+  return data.signedUrl;
 }
 
 /**
@@ -238,10 +148,12 @@ async function uploadMedia(
   userId: string,
   file: File,
   maxBytes: number,
-  onProgress?: ((progress: VideoUploadProgress | number) => void) | undefined,
+  onProgress?: (progress: number) => void,
 ): Promise<string> {
   if (file.size > maxBytes) {
-    throw new Error(`File must be ${Math.round(maxBytes / 1024 / 1024)} MB or smaller.`);
+    throw new Error(
+      `File must be ${Math.round(maxBytes / 1024 / 1024)} MB or smaller.`,
+    );
   }
 
   const ext =
@@ -249,77 +161,143 @@ async function uploadMedia(
       .split(".")
       .pop()
       ?.toLowerCase()
-      .replace(/[^a-z0-9]/g, "") || (file.type.startsWith("video/") ? "mp4" : "jpg");
+      .replace(/[^a-z0-9]/g, "") ||
+    (file.type.startsWith("video/") ? "mp4" : "jpg");
 
   const path = `${userId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
-  // Resumable upload for videos using TUS.
+  // Resumable upload for videos.
   if (file.type.startsWith("video/")) {
-    return uploadVideoResumable(bucket, path, file, (progressInfo) => {
-      onProgress?.(progressInfo);
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      message(sessionError, "Could not verify your upload session.");
+    }
+
+    if (!session?.access_token) {
+      throw new Error(
+        "Your session has expired. Please sign in again.",
+      );
+    }
+
+    return new Promise<string>((resolve, reject) => {
+      const upload = new tus.Upload(file, {
+        endpoint: `${supabase.supabaseUrl}/storage/v1/upload/resumable`,
+
+        headers: {
+          authorization: `Bearer ${session.access_token}`,
+          apikey: supabase.supabaseKey,
+          "x-upsert": "false",
+        },
+
+        metadata: {
+          bucketName: bucket,
+          objectName: path,
+          contentType: file.type || "application/octet-stream",
+          cacheControl: "3600",
+        },
+
+        chunkSize: 6 * 1024 * 1024,
+
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+
+        removeFingerprintOnSuccess: true,
+
+        onProgress(bytesUploaded, bytesTotal) {
+          if (bytesTotal > 0) {
+            onProgress?.(
+              Math.min(
+                100,
+                Math.round((bytesUploaded / bytesTotal) * 100),
+              ),
+            );
+          }
+        },
+
+        onError(error) {
+          console.error("Resumable video upload failed:", error);
+
+          reject(
+            new Error(
+              `Video upload failed: ${
+                error.message ||
+                "Please check your internet connection and try again."
+              }`,
+            ),
+          );
+        },
+
+        onSuccess() {
+          onProgress?.(100);
+          resolve(path);
+        },
+      });
+
+      upload.start();
     });
   }
 
   // Standard upload for images.
   try {
-    const totalBytes = file.size;
-    onProgress?.({
-      stage: "uploading",
-      percent: 50,
-      bytesUploaded: Math.round(totalBytes * 0.5),
-      bytesTotal: totalBytes,
-      formattedUploaded: formatBytes(Math.round(totalBytes * 0.5)),
-      formattedTotal: formatBytes(totalBytes),
-    });
-
-    const { error } = await supabase.storage.from(bucket).upload(path, file, {
-      contentType: file.type,
-      upsert: false,
-    });
+    const { error } = await supabase.storage
+      .from(bucket)
+      .upload(path, file, {
+        contentType: file.type,
+        upsert: false,
+      });
 
     if (error) {
       message(error, "Media upload failed.");
     }
 
-    onProgress?.({
-      stage: "uploading",
-      percent: 99,
-      bytesUploaded: totalBytes,
-      bytesTotal: totalBytes,
-      formattedUploaded: formatBytes(totalBytes),
-      formattedTotal: formatBytes(totalBytes),
-    });
+    onProgress?.(100);
     return path;
   } catch (error) {
-    message(error, "Media upload failed. Please check your connection.");
+    message(
+      error,
+      "Media upload failed. Please check your connection.",
+    );
   }
 }
 
-export async function uploadReelVideo(userId: string, file: File): Promise<string> {
+export async function uploadReelVideo(
+  userId: string,
+  file: File,
+  onProgress?: (progress: number) => void,
+): Promise<string> {
   if (!file.type.startsWith("video/")) {
     throw new Error("Choose a valid video file.");
   }
 
-  return uploadMedia(REEL_BUCKET, userId, file, MAX_REEL_BYTES);
+  return uploadMedia(REEL_BUCKET, userId, file, MAX_REEL_BYTES, onProgress);
 }
 
 export async function uploadStoryMedia(
   userId: string,
   file: File,
-  onProgress?: ((progress: VideoUploadProgress | number) => void) | undefined,
+  onProgress?: (progress: number) => void,
 ): Promise<string> {
-  if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+  if (
+    !file.type.startsWith("image/") &&
+    !file.type.startsWith("video/")
+  ) {
     throw new Error("Choose an image or video.");
   }
 
-  return uploadMedia(STORY_BUCKET, userId, file, MAX_STORY_BYTES, onProgress);
+  return uploadMedia(
+    STORY_BUCKET,
+    userId,
+    file,
+    MAX_STORY_BYTES,
+    onProgress,
+  );
 }
-
-const publishedReelsCache = new Map<string, ReelItem>();
 
 export async function getStoredReels(): Promise<ReelItem[]> {
   const userId = await currentUserId();
-  const cachedReels = Array.from(publishedReelsCache.values());
 
   const { data: rows, error } = await supabase
     .from("reels")
@@ -327,10 +305,7 @@ export async function getStoredReels(): Promise<ReelItem[]> {
     .order("created_at", { ascending: false })
     .limit(100);
 
-  if (error) {
-    console.warn("Could not load reels from database:", error.message || error);
-    return cachedReels;
-  }
+  if (error) message(error, "Could not load reels.");
 
   const ids = (rows ?? []).map((r) => r.creator_id);
   const reelIds = (rows ?? []).map((r) => r.id);
@@ -344,36 +319,47 @@ export async function getStoredReels(): Promise<ReelItem[]> {
       : Promise.resolve({ data: [], error: null }),
 
     reelIds.length
-      ? supabase.from("reel_likes").select("reel_id").eq("user_id", userId).in("reel_id", reelIds)
+      ? supabase
+          .from("reel_likes")
+          .select("reel_id")
+          .eq("user_id", userId)
+          .in("reel_id", reelIds)
       : Promise.resolve({ data: [], error: null }),
 
     reelIds.length
-      ? supabase.from("reel_saves").select("reel_id").eq("user_id", userId).in("reel_id", reelIds)
+      ? supabase
+          .from("reel_saves")
+          .select("reel_id")
+          .eq("user_id", userId)
+          .in("reel_id", reelIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
 
   if (profilesResult.error) {
-    console.warn(
-      "Could not load reel creators:",
-      profilesResult.error.message || profilesResult.error,
-    );
+    message(profilesResult.error, "Could not load reel creators.");
   }
 
   if (likesResult.error) {
-    console.warn("Could not load reel likes:", likesResult.error.message || likesResult.error);
+    message(likesResult.error, "Could not load reel likes.");
   }
 
   if (savesResult.error) {
-    console.warn("Could not load saved reels:", savesResult.error.message || savesResult.error);
+    message(savesResult.error, "Could not load saved reels.");
   }
 
-  const profiles = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
+  const profiles = new Map(
+    (profilesResult.data ?? []).map((p) => [p.id, p]),
+  );
 
-  const liked = new Set((likesResult.data ?? []).map((x) => x.reel_id));
+  const liked = new Set(
+    (likesResult.data ?? []).map((x) => x.reel_id),
+  );
 
-  const saved = new Set((savesResult.data ?? []).map((x) => x.reel_id));
+  const saved = new Set(
+    (savesResult.data ?? []).map((x) => x.reel_id),
+  );
 
-  const fetchedReels = await Promise.all(
+  return Promise.all(
     (rows ?? []).map(async (row) => {
       const profile = profiles.get(row.creator_id);
 
@@ -384,7 +370,10 @@ export async function getStoredReels(): Promise<ReelItem[]> {
       return {
         id: row.id,
         creatorId: row.creator_id,
-        creatorName: profile?.display_name || profile?.username || "VIDALORE Member",
+        creatorName:
+          profile?.display_name ||
+          profile?.username ||
+          "VIDALORE Member",
         creatorUsername: profile?.username || "member",
         creatorAvatarUrl: profile?.avatar_url,
         creatorVerified: false,
@@ -404,10 +393,6 @@ export async function getStoredReels(): Promise<ReelItem[]> {
       } satisfies ReelItem;
     }),
   );
-
-  const fetchedIds = new Set(fetchedReels.map((r) => r.id));
-  const missingCached = cachedReels.filter((c) => !fetchedIds.has(c.id));
-  return [...missingCached, ...fetchedReels];
 }
 
 /** Compatibility function for older callers. */
@@ -415,7 +400,9 @@ export function saveStoredReels(_reels: ReelItem[]): void {
   notifyUpdated();
 }
 
-export async function toggleReelLike(reelId: string): Promise<ReelItem | undefined> {
+export async function toggleReelLike(
+  reelId: string,
+): Promise<ReelItem | undefined> {
   const userId = await currentUserId();
 
   const { data: existing, error: readError } = await supabase
@@ -451,7 +438,9 @@ export async function toggleReelLike(reelId: string): Promise<ReelItem | undefin
   return reels.find((reel) => reel.id === reelId);
 }
 
-export async function toggleReelSave(reelId: string): Promise<boolean> {
+export async function toggleReelSave(
+  reelId: string,
+): Promise<boolean> {
   const userId = await currentUserId();
 
   const { data: existing, error: readError } = await supabase
@@ -478,7 +467,9 @@ export async function toggleReelSave(reelId: string): Promise<boolean> {
     return false;
   }
 
-  const { error } = await supabase.from("reel_saves").insert({ reel_id: reelId, user_id: userId });
+  const { error } = await supabase
+    .from("reel_saves")
+    .insert({ reel_id: reelId, user_id: userId });
 
   if (error) message(error, "Could not save reel.");
 
@@ -494,59 +485,52 @@ export async function addReel(
     caption: string;
     audioTitle?: string | undefined;
     tags?: string[] | undefined;
+    onUploadProgress?: ((progress: number) => void) | undefined;
   },
 ): Promise<ReelItem> {
   const userId = await currentUserId();
 
   if (userId !== me.id) {
-    throw new Error("Your session does not match the selected profile.");
+    throw new Error(
+      "Your session does not match the selected profile.",
+    );
   }
 
-  const videoUrl = data.videoFile ? await uploadReelVideo(userId, data.videoFile) : data.videoUrl;
+  const videoUrl = data.videoFile
+    ? await uploadReelVideo(userId, data.videoFile, data.onUploadProgress)
+    : data.videoUrl;
 
-  const reelId = crypto.randomUUID();
-
-  // Insert without selecting representation so PostgREST does not trigger the SELECT RLS policy
-  const { error } = await supabase.from("reels").insert({
-    id: reelId,
-    creator_id: userId,
-    video_url: videoUrl,
-    caption: data.caption,
-    audio_title: data.audioTitle ?? null,
-    tags: data.tags ?? [],
-  });
+  const { data: row, error } = await supabase
+    .from("reels")
+    .insert({
+      creator_id: userId,
+      video_url: videoUrl,
+      caption: data.caption,
+      audio_title: data.audioTitle ?? null,
+      tags: data.tags ?? [],
+    })
+    .select("id")
+    .single();
 
   if (error) message(error, "Could not publish reel.");
 
   notifyUpdated();
 
-  const created: ReelItem = {
-    id: reelId,
-    creatorId: userId,
-    creatorName: me.display_name || me.username,
-    creatorUsername: me.username,
-    creatorAvatarUrl: me.avatar_url,
-    creatorVerified: me.points_balance > 100,
-    videoUrl,
-    caption: data.caption,
-    audioTitle: data.audioTitle ?? undefined,
-    likesCount: 0,
-    commentsCount: 0,
-    sharesCount: 0,
-    savesCount: 0,
-    viewsCount: 0,
-    hasLiked: false,
-    hasSaved: false,
-    createdAt: new Date().toISOString(),
-    tags: data.tags ?? [],
-  };
+  const reels = await getStoredReels();
+  const created = reels.find((r) => r.id === row.id);
 
-  publishedReelsCache.set(created.id, created);
+  if (!created) {
+    throw new Error(
+      "Reel was published but could not be reloaded.",
+    );
+  }
 
   return created;
 }
 
-export async function getReelComments(reelId: string): Promise<ReelComment[]> {
+export async function getReelComments(
+  reelId: string,
+): Promise<ReelComment[]> {
   const userId = await currentUserId();
 
   const { data: rows, error } = await supabase
@@ -555,10 +539,7 @@ export async function getReelComments(reelId: string): Promise<ReelComment[]> {
     .eq("reel_id", reelId)
     .order("created_at", { ascending: true });
 
-  if (error) {
-    console.warn("Could not load comments from database:", error.message || error);
-    return [];
-  }
+  if (error) message(error, "Could not load comments.");
 
   const ids = (rows ?? []).map((r) => r.author_id);
   const commentIds = (rows ?? []).map((r) => r.id);
@@ -581,22 +562,23 @@ export async function getReelComments(reelId: string): Promise<ReelComment[]> {
   ]);
 
   if (profilesResult.error) {
-    console.warn(
-      "Could not load comment authors:",
-      profilesResult.error.message || profilesResult.error,
-    );
+    message(profilesResult.error, "Could not load comment authors.");
   }
 
   if (reactionsResult.error) {
-    console.warn(
-      "Could not load comment reactions:",
-      reactionsResult.error.message || reactionsResult.error,
+    message(
+      reactionsResult.error,
+      "Could not load comment reactions.",
     );
   }
 
-  const profiles = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
+  const profiles = new Map(
+    (profilesResult.data ?? []).map((p) => [p.id, p]),
+  );
 
-  const reacted = new Set((reactionsResult.data ?? []).map((r) => r.comment_id));
+  const reacted = new Set(
+    (reactionsResult.data ?? []).map((r) => r.comment_id),
+  );
 
   return (rows ?? []).map((row) => {
     const profile = profiles.get(row.author_id);
@@ -605,7 +587,10 @@ export async function getReelComments(reelId: string): Promise<ReelComment[]> {
       id: row.id,
       reelId: row.reel_id,
       authorId: row.author_id,
-      authorName: profile?.display_name || profile?.username || "VIDALORE Member",
+      authorName:
+        profile?.display_name ||
+        profile?.username ||
+        "VIDALORE Member",
       authorUsername: profile?.username || "member",
       authorAvatarUrl: profile?.avatar_url,
       content: row.content,
@@ -624,7 +609,9 @@ export async function addReelComment(
   const userId = await currentUserId();
 
   if (userId !== me.id) {
-    throw new Error("Your session does not match the selected profile.");
+    throw new Error(
+      "Your session does not match the selected profile.",
+    );
   }
 
   const clean = content.trim();
@@ -640,7 +627,9 @@ export async function addReelComment(
       author_id: userId,
       content: clean,
     })
-    .select("id, reel_id, author_id, content, created_at, reactions_count")
+    .select(
+      "id, reel_id, author_id, content, created_at, reactions_count",
+    )
     .single();
 
   if (error) message(error, "Could not add comment.");
@@ -661,7 +650,9 @@ export async function addReelComment(
   };
 }
 
-export async function toggleCommentReaction(commentId: string): Promise<boolean> {
+export async function toggleCommentReaction(
+  commentId: string,
+): Promise<boolean> {
   const userId = await currentUserId();
 
   const { data: existing, error: readError } = await supabase
@@ -689,10 +680,12 @@ export async function toggleCommentReaction(commentId: string): Promise<boolean>
     return false;
   }
 
-  const { error } = await supabase.from("reel_comment_likes").insert({
-    comment_id: commentId,
-    user_id: userId,
-  });
+  const { error } = await supabase
+    .from("reel_comment_likes")
+    .insert({
+      comment_id: commentId,
+      user_id: userId,
+    });
 
   if (error) {
     message(error, "Could not react to comment.");
@@ -717,7 +710,10 @@ export async function getStoredStories(): Promise<StoryItem[]> {
   const storyIds = (rows ?? []).map((r) => r.id);
 
   const { data: views, error: viewsError } = storyIds.length
-    ? await supabase.from("story_views").select("story_id, viewer_id").in("story_id", storyIds)
+    ? await supabase
+        .from("story_views")
+        .select("story_id, viewer_id")
+        .in("story_id", storyIds)
     : { data: [], error: null };
 
   if (viewsError) {
@@ -727,7 +723,10 @@ export async function getStoredStories(): Promise<StoryItem[]> {
   const viewers = new Map<string, string[]>();
 
   (views ?? []).forEach((view) => {
-    viewers.set(view.story_id, [...(viewers.get(view.story_id) ?? []), view.viewer_id]);
+    viewers.set(view.story_id, [
+      ...(viewers.get(view.story_id) ?? []),
+      view.viewer_id,
+    ]);
   });
 
   return Promise.all(
@@ -737,7 +736,10 @@ export async function getStoredStories(): Promise<StoryItem[]> {
       mediaUrl: row.media_url.startsWith("http")
         ? row.media_url
         : await signedMediaUrl(STORY_BUCKET, row.media_url),
-      mediaType: row.media_type === "video" ? ("video" as const) : ("image" as const),
+      mediaType:
+        row.media_type === "video"
+          ? ("video" as const)
+          : ("image" as const),
       caption: row.caption ?? undefined,
       sticker: row.sticker ?? undefined,
       createdAt: row.created_at,
@@ -755,35 +757,30 @@ export async function addStory(
     mediaType: "image" | "video";
     caption?: string | undefined;
     sticker?: string | undefined;
-    onUploadProgress?: ((progress: VideoUploadProgress | number) => void) | undefined;
+    onUploadProgress?: ((progress: number) => void) | undefined;
   },
 ): Promise<StoryItem> {
   const userId = await currentUserId();
 
   if (userId !== me.id) {
-    throw new Error("Your session does not match the selected profile.");
+    throw new Error(
+      "Your session does not match the selected profile.",
+    );
   }
 
   const mediaPath = data.mediaFile
-    ? await uploadStoryMedia(userId, data.mediaFile, data.onUploadProgress)
+    ? await uploadStoryMedia(
+        userId,
+        data.mediaFile,
+        data.onUploadProgress,
+      )
     : data.mediaUrl;
-
-  // Upload complete - now publishing to database
-  if (data.mediaFile && data.onUploadProgress) {
-    const total = data.mediaFile.size;
-    data.onUploadProgress({
-      stage: "publishing",
-      percent: 99,
-      bytesUploaded: total,
-      bytesTotal: total,
-      formattedUploaded: formatBytes(total),
-      formattedTotal: formatBytes(total),
-    });
-  }
 
   const createdAt = new Date();
 
-  const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(
+    createdAt.getTime() + 24 * 60 * 60 * 1000,
+  );
 
   const { data: row, error } = await supabase
     .from("stories")
@@ -803,19 +800,6 @@ export async function addStory(
 
   notifyUpdated();
 
-  // Genuine success: upload verified and database record created
-  if (data.mediaFile && data.onUploadProgress) {
-    const total = data.mediaFile.size;
-    data.onUploadProgress({
-      stage: "success",
-      percent: 100,
-      bytesUploaded: total,
-      bytesTotal: total,
-      formattedUploaded: formatBytes(total),
-      formattedTotal: formatBytes(total),
-    });
-  }
-
   const mediaUrl = mediaPath.startsWith("http")
     ? mediaPath
     : await signedMediaUrl(STORY_BUCKET, mediaPath);
@@ -833,23 +817,30 @@ export async function addStory(
   };
 }
 
-export async function markStorySeen(storyId: string, userId: string): Promise<void> {
+export async function markStorySeen(
+  storyId: string,
+  userId: string,
+): Promise<void> {
   const authenticatedUserId = await currentUserId();
 
   if (authenticatedUserId !== userId) {
-    throw new Error("Your session does not match the selected profile.");
+    throw new Error(
+      "Your session does not match the selected profile.",
+    );
   }
 
-  const { error } = await supabase.from("story_views").upsert(
-    {
-      story_id: storyId,
-      viewer_id: userId,
-    },
-    {
-      onConflict: "story_id,viewer_id",
-      ignoreDuplicates: true,
-    },
-  );
+  const { error } = await supabase
+    .from("story_views")
+    .upsert(
+      {
+        story_id: storyId,
+        viewer_id: userId,
+      },
+      {
+        onConflict: "story_id,viewer_id",
+        ignoreDuplicates: true,
+      },
+    );
 
   if (error) {
     message(error, "Could not record story view.");
@@ -863,25 +854,37 @@ export function saveStoredStories(_stories: StoryItem[]): void {
   notifyUpdated();
 }
 
-export async function getStoryGroups(currentUserId?: string): Promise<UserStoryGroup[]> {
+export async function getStoryGroups(
+  currentUserId?: string,
+): Promise<UserStoryGroup[]> {
   const stories = await getStoredStories();
 
-  const ids = [...new Set(stories.map((story) => story.userId))];
+  const ids = [
+    ...new Set(stories.map((story) => story.userId)),
+  ];
 
   const { data: profiles, error } = ids.length
-    ? await supabase.from("profiles").select("id, username, display_name, avatar_url").in("id", ids)
+    ? await supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_url")
+        .in("id", ids)
     : { data: [], error: null };
 
   if (error) {
     message(error, "Could not load story profiles.");
   }
 
-  const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+  const profileMap = new Map(
+    (profiles ?? []).map((profile) => [profile.id, profile]),
+  );
 
   const grouped = new Map<string, StoryItem[]>();
 
   stories.forEach((story) => {
-    grouped.set(story.userId, [...(grouped.get(story.userId) ?? []), story]);
+    grouped.set(story.userId, [
+      ...(grouped.get(story.userId) ?? []),
+      story,
+    ]);
   });
 
   return [...grouped.entries()].map(([userId, userStories]) => {
@@ -890,12 +893,17 @@ export async function getStoryGroups(currentUserId?: string): Promise<UserStoryG
     return {
       userId,
       username: profile?.username ?? "member",
-      displayName: profile?.display_name || profile?.username || "VIDALORE Member",
+      displayName:
+        profile?.display_name ||
+        profile?.username ||
+        "VIDALORE Member",
       avatarUrl: profile?.avatar_url,
       stories: userStories,
       hasUnseen: currentUserId
-        ? userStories.some((story) => !story.seenBy.includes(currentUserId))
+        ? userStories.some(
+            (story) => !story.seenBy.includes(currentUserId),
+          )
         : true,
     };
   });
-}
+      }
