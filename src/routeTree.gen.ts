@@ -18,6 +18,7 @@ import { Route as AuthenticatedHomeRouteImport } from './routes/_authenticated/h
 import { Route as AuthenticatedMessagesRouteImport } from './routes/_authenticated/messages'
 import { Route as AuthenticatedPointsRouteImport } from './routes/_authenticated/points'
 import { Route as AuthenticatedReelsRouteImport } from './routes/_authenticated/reels'
+import { Route as AuthenticatedAdminModerationRouteImport } from './routes/_authenticated/admin.moderation'
 import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_authenticated/settings.profile'
 import { Route as AuthenticatedUUsernameRouteImport } from './routes/_authenticated/u.$username'
 
@@ -65,6 +66,12 @@ const AuthenticatedReelsRoute = AuthenticatedReelsRouteImport.update({
   path: '/reels',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAdminModerationRoute =
+  AuthenticatedAdminModerationRouteImport.update({
+    id: '/admin/moderation',
+    path: '/admin/moderation',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedSettingsProfileRoute =
   AuthenticatedSettingsProfileRouteImport.update({
     id: '/settings/profile',
@@ -86,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/messages': typeof AuthenticatedMessagesRoute
   '/points': typeof AuthenticatedPointsRoute
   '/reels': typeof AuthenticatedReelsRoute
+  '/admin/moderation': typeof AuthenticatedAdminModerationRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/u/$username': typeof AuthenticatedUUsernameRoute
 }
@@ -98,6 +106,7 @@ export interface FileRoutesByTo {
   '/messages': typeof AuthenticatedMessagesRoute
   '/points': typeof AuthenticatedPointsRoute
   '/reels': typeof AuthenticatedReelsRoute
+  '/admin/moderation': typeof AuthenticatedAdminModerationRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/u/$username': typeof AuthenticatedUUsernameRoute
 }
@@ -112,6 +121,7 @@ export interface FileRoutesById {
   '/_authenticated/messages': typeof AuthenticatedMessagesRoute
   '/_authenticated/points': typeof AuthenticatedPointsRoute
   '/_authenticated/reels': typeof AuthenticatedReelsRoute
+  '/_authenticated/admin/moderation': typeof AuthenticatedAdminModerationRoute
   '/_authenticated/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/_authenticated/u/$username': typeof AuthenticatedUUsernameRoute
 }
@@ -126,6 +136,7 @@ export interface FileRouteTypes {
     | '/messages'
     | '/points'
     | '/reels'
+    | '/admin/moderation'
     | '/settings/profile'
     | '/u/$username'
   fileRoutesByTo: FileRoutesByTo
@@ -138,6 +149,7 @@ export interface FileRouteTypes {
     | '/messages'
     | '/points'
     | '/reels'
+    | '/admin/moderation'
     | '/settings/profile'
     | '/u/$username'
   id:
@@ -151,6 +163,7 @@ export interface FileRouteTypes {
     | '/_authenticated/messages'
     | '/_authenticated/points'
     | '/_authenticated/reels'
+    | '/_authenticated/admin/moderation'
     | '/_authenticated/settings/profile'
     | '/_authenticated/u/$username'
   fileRoutesById: FileRoutesById
@@ -226,6 +239,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedReelsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/admin/moderation': {
+      id: '/_authenticated/admin/moderation'
+      path: '/admin/moderation'
+      fullPath: '/admin/moderation'
+      preLoaderRoute: typeof AuthenticatedAdminModerationRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/settings/profile': {
       id: '/_authenticated/settings/profile'
       path: '/settings/profile'
@@ -250,6 +270,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMessagesRoute: typeof AuthenticatedMessagesRoute
   AuthenticatedPointsRoute: typeof AuthenticatedPointsRoute
   AuthenticatedReelsRoute: typeof AuthenticatedReelsRoute
+  AuthenticatedAdminModerationRoute: typeof AuthenticatedAdminModerationRoute
   AuthenticatedSettingsProfileRoute: typeof AuthenticatedSettingsProfileRoute
   AuthenticatedUUsernameRoute: typeof AuthenticatedUUsernameRoute
 }
@@ -261,6 +282,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMessagesRoute: AuthenticatedMessagesRoute,
   AuthenticatedPointsRoute: AuthenticatedPointsRoute,
   AuthenticatedReelsRoute: AuthenticatedReelsRoute,
+  AuthenticatedAdminModerationRoute: AuthenticatedAdminModerationRoute,
   AuthenticatedSettingsProfileRoute: AuthenticatedSettingsProfileRoute,
   AuthenticatedUUsernameRoute: AuthenticatedUUsernameRoute,
 }
