@@ -1,13 +1,5 @@
 import { useState, useRef, type ChangeEvent } from "react";
-import {
-  Camera,
-  Upload,
-  X,
-  Loader2,
-  Smile,
-  Type,
-  CheckCircle2,
-} from "lucide-react";
+import { Camera, Upload, X, Loader2, Smile, Type, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -18,16 +10,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  addStory,
-  compressStoryVideo,
-} from "@/services/reelsAndStories";
+import { addStory, compressStoryVideo } from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
+import { VideoUploadProgressCard } from "@/components/media/VideoUploadProgressCard";
+import { formatBytes, type VideoUploadProgress } from "@/lib/videoUpload";
 
 const STORY_STICKERS = ["✨", "🔥", "⚡", "🎯", "💡", "🙌", "🌿", "📷"];
 const MAX_STORY_BYTES = 50 * 1024 * 1024;
-
-type PublishStage = "idle" | "compressing" | "uploading" | "publishing";
 
 export function StoryComposerModal({
   open,
@@ -46,8 +35,7 @@ export function StoryComposerModal({
   const [caption, setCaption] = useState("");
   const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [publishStage, setPublishStage] = useState<PublishStage>("idle");
-  const [progress, setProgress] = useState(0);
+  const [uploadProgress, setUploadProgress] = useState<VideoUploadProgress | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -61,6 +49,7 @@ export function StoryComposerModal({
     setMediaUrl("");
     setMediaFile(null);
     setMediaType("image");
+    setUploadProgress(null);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -74,11 +63,6 @@ export function StoryComposerModal({
     const fileSizeMB = file.size / (1024 * 1024);
     const isVideo = file.type.startsWith("video/");
     const isImage = file.type.startsWith("image/");
-
-    toast.info("Selected media details", {
-      description: `Type: ${file.type || "Unknown"} | Size: ${fileSizeMB.toFixed(2)} MB`,
-      duration: 5000,
-    });
 
     if (!isVideo && !isImage) {
       toast.error("Choose an image or video file.");
@@ -101,8 +85,7 @@ export function StoryComposerModal({
     setMediaFile(file);
     setMediaType(isVideo ? "video" : "image");
     setMediaUrl(URL.createObjectURL(file));
-    setProgress(0);
-    setPublishStage("idle");
+    setUploadProgress(null);
   }
 
   async function handlePublish() {
@@ -117,50 +100,70 @@ export function StoryComposerModal({
     }
 
     setIsSubmitting(true);
-    setProgress(0);
+    const initialBytes = mediaFile.size;
+
+    setUploadProgress({
+      stage: "preparing",
+      percent: 0,
+      bytesUploaded: 0,
+      bytesTotal: initialBytes,
+      formattedUploaded: "0 MB",
+      formattedTotal: formatBytes(initialBytes),
+    });
 
     try {
       let fileToUpload = mediaFile;
 
-      // Compress videos before uploading.
+      // Safe client-side video compression before uploading.
       if (mediaType === "video") {
-        setPublishStage("compressing");
+        setUploadProgress({
+          stage: "compressing",
+          percent: 5,
+          bytesUploaded: 0,
+          bytesTotal: initialBytes,
+          formattedUploaded: "0 MB",
+          formattedTotal: formatBytes(initialBytes),
+        });
 
-        const result = await compressStoryVideo(
-          mediaFile,
-          (value) => {
-            setProgress(value);
-          },
-        );
+        const result = await compressStoryVideo(mediaFile, (value) => {
+          setUploadProgress({
+            stage: "compressing",
+            percent: Math.min(95, Math.max(5, value)),
+            bytesUploaded: 0,
+            bytesTotal: initialBytes,
+            formattedUploaded: "0 MB",
+            formattedTotal: formatBytes(initialBytes),
+          });
+        });
 
         fileToUpload = result.file;
 
         if (result.compressed) {
           const originalMB = mediaFile.size / (1024 * 1024);
           const compressedMB = fileToUpload.size / (1024 * 1024);
-          const savedPercent = Math.round(
-            (1 - fileToUpload.size / mediaFile.size) * 100,
-          );
+          const savedPercent = Math.round((1 - fileToUpload.size / mediaFile.size) * 100);
 
-          toast.success("Video compressed successfully", {
-            description: `${originalMB.toFixed(2)} MB → ${compressedMB.toFixed(2)} MB (${savedPercent}% smaller).`,
-          });
-        } else {
-          toast.info("Using original video", {
-            description:
-              "This device could not make the video smaller. The original will be uploaded.",
+          toast.success("Video optimized", {
+            description: `${originalMB.toFixed(1)} MB → ${compressedMB.toFixed(1)} MB (${savedPercent}% smaller).`,
           });
         }
       }
 
       if (fileToUpload.size > MAX_STORY_BYTES) {
         throw new Error(
-          `The video is still too large. Maximum allowed size is 50 MB. Current size: ${(fileToUpload.size / (1024 * 1024)).toFixed(2)} MB.`,
+          `The video exceeds maximum allowed 50 MB. Size: ${(fileToUpload.size / (1024 * 1024)).toFixed(1)} MB.`,
         );
       }
 
-      setPublishStage("uploading");
-      setProgress(0);
+      const uploadTotal = fileToUpload.size;
+      setUploadProgress({
+        stage: "uploading",
+        percent: 0,
+        bytesUploaded: 0,
+        bytesTotal: uploadTotal,
+        formattedUploaded: "0 MB",
+        formattedTotal: formatBytes(uploadTotal),
+      });
 
       await addStory(me, {
         mediaUrl,
@@ -168,13 +171,35 @@ export function StoryComposerModal({
         mediaType,
         caption: caption.trim() || undefined,
         sticker: selectedSticker ?? undefined,
-        onUploadProgress: (value) => {
-          setProgress(value);
+        onUploadProgress: (prog) => {
+          if (typeof prog === "number") {
+            const uploadedBytes = Math.round((prog / 100) * uploadTotal);
+            setUploadProgress({
+              stage: "uploading",
+              percent: Math.min(99, prog),
+              bytesUploaded: uploadedBytes,
+              bytesTotal: uploadTotal,
+              formattedUploaded: formatBytes(uploadedBytes),
+              formattedTotal: formatBytes(uploadTotal),
+            });
+          } else {
+            setUploadProgress(prog);
+          }
         },
       });
 
-      setPublishStage("publishing");
-      setProgress(100);
+      // Genuine completion
+      setUploadProgress({
+        stage: "success",
+        percent: 100,
+        bytesUploaded: uploadTotal,
+        bytesTotal: uploadTotal,
+        formattedUploaded: formatBytes(uploadTotal),
+        formattedTotal: formatBytes(uploadTotal),
+      });
+
+      // Brief delay so user sees confirmed success state before closing
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       if (mediaUrl.startsWith("blob:")) {
         URL.revokeObjectURL(mediaUrl);
@@ -185,8 +210,7 @@ export function StoryComposerModal({
       setMediaType("image");
       setCaption("");
       setSelectedSticker(null);
-      setProgress(0);
-      setPublishStage("idle");
+      setUploadProgress(null);
 
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
@@ -199,30 +223,32 @@ export function StoryComposerModal({
       onStoryPublished?.();
       onOpenChange(false);
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Could not publish story.",
-      );
+      const errorMsg = error instanceof Error ? error.message : "Could not publish story.";
+      toast.error(errorMsg);
+
+      // Keep user's caption, sticker, and media file so they can retry without losing their work
+      setUploadProgress((prev) => ({
+        stage: "error",
+        percent: prev?.percent || 0,
+        bytesUploaded: prev?.bytesUploaded || 0,
+        bytesTotal: prev?.bytesTotal || mediaFile.size,
+        formattedUploaded: prev?.formattedUploaded || "0 MB",
+        formattedTotal: prev?.formattedTotal || formatBytes(mediaFile.size),
+        errorMessage: errorMsg,
+      }));
     } finally {
       setIsSubmitting(false);
-      setPublishStage("idle");
-      setProgress(0);
     }
   }
-
-  const progressLabel =
-    publishStage === "compressing"
-      ? "Compressing video..."
-      : publishStage === "uploading"
-        ? "Uploading media..."
-        : publishStage === "publishing"
-          ? "Saving your story..."
-          : "Publishing...";
 
   return (
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
         if (isSubmitting && !nextOpen) return;
+        if (!nextOpen && uploadProgress?.stage === "error") {
+          clearMedia();
+        }
         onOpenChange(nextOpen);
       }}
     >
@@ -245,9 +271,7 @@ export function StoryComposerModal({
                 className="flex flex-col items-center justify-center p-8 rounded-xl border-2 border-dashed border-border hover:border-[#E91E63] bg-secondary/50 transition-colors cursor-pointer group text-center aspect-[9/14] max-h-72 w-full mx-auto"
               >
                 <Upload className="h-8 w-8 text-[#E91E63] mb-2 group-hover:scale-105 transition-transform" />
-                <p className="text-xs font-semibold text-foreground">
-                  Select photo or clip
-                </p>
+                <p className="text-xs font-semibold text-foreground">Select photo or clip</p>
                 <p className="text-[0.7rem] text-muted-foreground mt-0.5">
                   JPG, PNG, WebP or MP4 · Maximum 50 MB
                 </p>
@@ -275,11 +299,7 @@ export function StoryComposerModal({
                     playsInline
                   />
                 ) : (
-                  <img
-                    src={mediaUrl}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
+                  <img src={mediaUrl} alt="" className="h-full w-full object-cover" />
                 )}
 
                 {selectedSticker && (
@@ -294,96 +314,81 @@ export function StoryComposerModal({
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  onClick={clearMedia}
-                  disabled={isSubmitting}
-                  className="absolute top-3 left-3 rounded-lg bg-black/70 p-1.5 text-white hover:bg-destructive transition-colors disabled:opacity-50"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                {!isSubmitting && (
+                  <button
+                    type="button"
+                    onClick={clearMedia}
+                    className="absolute top-3 left-3 rounded-lg bg-black/70 p-1.5 text-white hover:bg-destructive transition-colors"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-foreground flex items-center gap-1">
-                  <Smile className="h-3.5 w-3.5 text-primary" />
-                  Add Badge / Emoji:
-                </label>
-
-                <div className="flex items-center gap-2 overflow-x-auto py-1">
-                  {STORY_STICKERS.map((sticker) => (
-                    <button
-                      key={sticker}
-                      type="button"
-                      disabled={isSubmitting}
-                      onClick={() =>
-                        setSelectedSticker(
-                          selectedSticker === sticker ? null : sticker,
-                        )
-                      }
-                      className={`flex h-8 w-8 items-center justify-center rounded-lg text-base transition-colors disabled:opacity-50 ${
-                        selectedSticker === sticker
-                          ? "bg-primary text-primary-foreground font-semibold"
-                          : "bg-secondary hover:bg-secondary/80 border border-border"
-                      }`}
-                    >
-                      {sticker}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
-                  <Type className="h-3.5 w-3.5" />
-                  Caption:
-                </label>
-
-                <Input
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value)}
-                  placeholder="Add a caption..."
-                  maxLength={100}
-                  disabled={isSubmitting}
-                  className="h-9 rounded-lg bg-secondary text-xs border-border"
+              {/* Real upload progress card with MB / MB breakdown & retry */}
+              {uploadProgress && (
+                <VideoUploadProgressCard
+                  progress={uploadProgress}
+                  videoPreviewUrl={mediaType === "video" ? mediaUrl : null}
+                  videoName={mediaFile?.name}
+                  onRetry={handlePublish}
+                  onCancel={clearMedia}
                 />
-              </div>
+              )}
 
-              {isSubmitting && (
-                <div className="space-y-2 rounded-lg border border-border bg-secondary/50 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-xs font-medium text-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin text-[#E91E63]" />
-                      {progressLabel}
+              {/* Stickers & Caption controls (disabled while submitting) */}
+              {!uploadProgress && (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-foreground flex items-center gap-1">
+                      <Smile className="h-3.5 w-3.5 text-primary" />
+                      Add Badge / Emoji:
+                    </label>
+
+                    <div className="flex items-center gap-2 overflow-x-auto py-1">
+                      {STORY_STICKERS.map((sticker) => (
+                        <button
+                          key={sticker}
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={() =>
+                            setSelectedSticker(selectedSticker === sticker ? null : sticker)
+                          }
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg text-base transition-colors disabled:opacity-50 ${
+                            selectedSticker === sticker
+                              ? "bg-primary text-primary-foreground font-semibold"
+                              : "bg-secondary hover:bg-secondary/80 border border-border"
+                          }`}
+                        >
+                          {sticker}
+                        </button>
+                      ))}
                     </div>
-
-                    <span className="text-xs font-semibold tabular-nums text-foreground">
-                      {progress}%
-                    </span>
                   </div>
 
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-[#E91E63] transition-all duration-200"
-                      style={{ width: `${progress}%` }}
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+                      <Type className="h-3.5 w-3.5" />
+                      Caption:
+                    </label>
+
+                    <Input
+                      value={caption}
+                      onChange={(e) => setCaption(e.target.value)}
+                      placeholder="Add a caption..."
+                      maxLength={100}
+                      disabled={isSubmitting}
+                      className="h-9 rounded-lg bg-secondary text-xs border-border"
                     />
                   </div>
 
-                  <p className="text-[0.7rem] text-muted-foreground">
-                    {publishStage === "compressing"
-                      ? "Preparing a smaller video for upload. Please keep this screen open."
-                      : publishStage === "uploading"
-                        ? "Sending your media securely. Please keep this screen open."
-                        : "Almost done..."}
-                  </p>
-                </div>
-              )}
-
-              {mediaType === "video" && !isSubmitting && (
-                <div className="flex items-center gap-2 rounded-lg bg-secondary/50 p-2.5 text-[0.7rem] text-muted-foreground">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
-                  Video compression will be attempted before upload.
-                </div>
+                  {mediaType === "video" && (
+                    <div className="flex items-center gap-2 rounded-lg bg-secondary/50 p-2.5 text-[0.7rem] text-muted-foreground">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
+                      Resumable TUS upload with client-side video optimization enabled.
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -404,18 +409,14 @@ export function StoryComposerModal({
           <Button
             type="button"
             size="sm"
-            disabled={!mediaUrl || isSubmitting}
+            disabled={!mediaUrl || isSubmitting || uploadProgress?.stage === "error"}
             onClick={handlePublish}
             className="rounded-lg text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white px-4 shadow-sm"
           >
             {isSubmitting ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                {publishStage === "compressing"
-                  ? "Compressing..."
-                  : publishStage === "uploading"
-                    ? "Uploading..."
-                    : "Publishing..."}
+                Processing...
               </>
             ) : (
               "Publish Story"

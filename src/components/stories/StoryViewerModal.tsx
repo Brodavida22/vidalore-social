@@ -1,15 +1,10 @@
-
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
 import { X, Send, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { Input } from "@/components/ui/input";
-import {
-  markStorySeen,
-  type UserStoryGroup,
-  type StoryItem,
-} from "@/services/reelsAndStories";
+import { markStorySeen, type UserStoryGroup, type StoryItem } from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
 
 const STORY_DURATION_MS = 5000;
@@ -37,8 +32,7 @@ export function StoryViewerModal({
   const [videoError, setVideoError] = useState(false);
 
   const currentGroup = storyGroups[groupIndex];
-  const currentStory: StoryItem | undefined =
-    currentGroup?.stories[storyIndex];
+  const currentStory: StoryItem | undefined = currentGroup?.stories[storyIndex];
 
   useEffect(() => {
     setGroupIndex(initialGroupIndex);
@@ -75,13 +69,7 @@ export function StoryViewerModal({
     } else {
       onClose();
     }
-  }, [
-    currentGroup,
-    storyIndex,
-    groupIndex,
-    storyGroups.length,
-    onClose,
-  ]);
+  }, [currentGroup, storyIndex, groupIndex, storyGroups.length, onClose]);
 
   const handlePrev = useCallback(() => {
     if (storyIndex > 0) {
@@ -98,12 +86,7 @@ export function StoryViewerModal({
   // Images advance after five seconds.
   // Videos advance only when their playback finishes.
   useEffect(() => {
-    if (
-      !open ||
-      isPaused ||
-      !currentStory ||
-      currentStory.mediaType === "video"
-    ) {
+    if (!open || isPaused || !currentStory || currentStory.mediaType === "video") {
       return;
     }
 
@@ -153,7 +136,6 @@ export function StoryViewerModal({
       onTouchEnd={() => setIsPaused(false)}
     >
       <div className="relative h-full w-full max-w-sm sm:max-h-[92vh] sm:rounded-2xl overflow-hidden bg-black flex flex-col justify-between shadow-2xl border border-white/10">
-
         {/* Media Background */}
         <div className="absolute inset-0 z-0 flex items-center justify-center bg-black">
           {currentStory.mediaType === "video" ? (
@@ -196,30 +178,23 @@ export function StoryViewerModal({
               {videoLoading && !videoError && (
                 <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/60 text-white pointer-events-none">
                   <Loader2 className="h-8 w-8 animate-spin text-[#E91E63]" />
-                  <p className="text-xs text-white/80">
-                    Loading your story video...
-                  </p>
+                  <p className="text-xs text-white/80">Loading your story video...</p>
                 </div>
               )}
 
               {videoError && (
                 <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black text-white">
                   <AlertCircle className="h-10 w-10 text-red-400" />
-                  <p className="text-sm font-semibold">
-                    Video could not be played
-                  </p>
+                  <p className="text-sm font-semibold">Video could not be played</p>
                   <p className="max-w-[240px] text-center text-xs text-white/60">
-                    Check your internet connection or try uploading the video
-                    again.
+                    Check your internet connection or try uploading the video again.
                   </p>
                   <button
                     type="button"
                     onClick={() => {
                       setVideoError(false);
                       setVideoLoading(true);
-                      const video = document.querySelector(
-                        "video",
-                      );
+                      const video = document.querySelector("video");
                       if (video) {
                         video.load();
                         void video.play().catch((error) => {
@@ -240,10 +215,7 @@ export function StoryViewerModal({
               alt="Story"
               className="h-full w-full object-contain"
               onError={() => {
-                console.error(
-                  "Story image could not be loaded:",
-                  currentStory.mediaUrl,
-                );
+                console.error("Story image could not be loaded:", currentStory.mediaUrl);
               }}
             />
           )}
@@ -276,21 +248,14 @@ export function StoryViewerModal({
               const isCurrent = idx === storyIndex;
 
               return (
-                <div
-                  key={s.id}
-                  className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden"
-                >
+                <div key={s.id} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-primary transition-all duration-75"
                     style={{
                       width: isPast
                         ? "100%"
                         : isCurrent
-                          ? `${
-                              currentStory.mediaType === "video"
-                                ? 0
-                                : progress
-                            }%`
+                          ? `${currentStory.mediaType === "video" ? 0 : progress}%`
                           : "0%",
                     }}
                   />

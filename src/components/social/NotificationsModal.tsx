@@ -1,23 +1,9 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Bell,
-  CheckCheck,
-  Heart,
-  MessageCircle,
-  UserPlus,
-  Users,
-  Repeat,
-} from "lucide-react";
+import { Bell, CheckCheck, Heart, MessageCircle, UserPlus, Users, Repeat } from "lucide-react";
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { supabase } from "@/integrations/supabase/client";
@@ -40,14 +26,9 @@ export function NotificationsModal({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [filter, setFilter] = useState<
-    "all" | "unread" | "activity" | "connections"
-  >("all");
+  const [filter, setFilter] = useState<"all" | "unread" | "activity" | "connections">("all");
 
-  const {
-    data: notifications = [],
-    isLoading,
-  } = useQuery({
+  const { data: notifications = [], isLoading } = useQuery({
     ...notificationsQuery(),
     enabled: open,
   });
@@ -59,10 +40,9 @@ export function NotificationsModal({
 
     let active = true;
 
-    const channelName =
-      `public-notifications-changes-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}`;
+    const channelName = `public-notifications-changes-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}`;
 
     const channel = supabase
       .channel(channelName)
@@ -83,16 +63,11 @@ export function NotificationsModal({
       )
       .subscribe((status, error) => {
         if (error) {
-          console.error(
-            "Notifications Realtime subscription error:",
-            error,
-          );
+          console.error("Notifications Realtime subscription error:", error);
         }
 
         if (status === "CHANNEL_ERROR") {
-          console.error(
-            "Could not connect to notifications Realtime.",
-          );
+          console.error("Could not connect to notifications Realtime.");
         }
       });
 
@@ -101,17 +76,12 @@ export function NotificationsModal({
 
       // Remove only the channel created by this effect.
       void supabase.removeChannel(channel).catch((error) => {
-        console.error(
-          "Could not remove notifications channel:",
-          error,
-        );
+        console.error("Could not remove notifications channel:", error);
       });
     };
   }, [open, queryClient]);
 
-  const unreadCount = notifications.filter(
-    (notification) => !notification.isRead,
-  ).length;
+  const unreadCount = notifications.filter((notification) => !notification.isRead).length;
 
   const filteredNotifs = notifications.filter((notification) => {
     if (filter === "unread") {
@@ -151,9 +121,7 @@ export function NotificationsModal({
     }
   }
 
-  async function handleNotificationClick(
-    notification: PersistentNotification,
-  ) {
+  async function handleNotificationClick(notification: PersistentNotification) {
     try {
       if (!notification.isRead) {
         await markNotificationRead(notification.id);
@@ -181,13 +149,10 @@ export function NotificationsModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg border border-border bg-card p-5 max-h-[85vh] flex flex-col rounded-2xl shadow-xl">
-
         <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-3 border-b border-border">
           <DialogTitle className="font-display text-xl flex items-center gap-2 text-foreground">
             <Bell className="h-5 w-5 text-[#E91E63]" />
-
             Notifications
-
             {unreadCount > 0 && (
               <span className="rounded-full bg-[#E91E63] px-2 py-0.5 text-[11px] text-white font-sans font-semibold">
                 {unreadCount} new
@@ -244,13 +209,10 @@ export function NotificationsModal({
             <div className="py-12 text-center space-y-2">
               <Bell className="h-10 w-10 text-muted-foreground/60 mx-auto" />
 
-              <p className="font-semibold text-foreground text-sm">
-                All caught up
-              </p>
+              <p className="font-semibold text-foreground text-sm">All caught up</p>
 
               <p className="text-xs text-muted-foreground max-w-xs mx-auto">
-                When members interact with your posts or profile,
-                notifications will show here.
+                When members interact with your posts or profile, notifications will show here.
               </p>
             </div>
           ) : (
@@ -265,10 +227,7 @@ export function NotificationsModal({
                   tabIndex={0}
                   onClick={() => handleNotificationClick(notification)}
                   onKeyDown={(event) => {
-                    if (
-                      event.key === "Enter" ||
-                      event.key === " "
-                    ) {
+                    if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       void handleNotificationClick(notification);
                     }
@@ -283,10 +242,8 @@ export function NotificationsModal({
                     <UserAvatar
                       profile={{
                         avatar_url: notification.actor?.avatarUrl,
-                        username:
-                          notification.actor?.username || "user",
-                        display_name:
-                          notification.actor?.displayName,
+                        username: notification.actor?.username || "user",
+                        display_name: notification.actor?.displayName,
                       }}
                       className="h-10 w-10 text-xs"
                     />
@@ -323,9 +280,7 @@ export function NotificationsModal({
   );
 }
 
-function getNotificationSummary(
-  notification: PersistentNotification,
-): string {
+function getNotificationSummary(notification: PersistentNotification): string {
   switch (notification.type) {
     case "post_like":
       return "liked your post.";
@@ -356,9 +311,7 @@ function getNotificationSummary(
   }
 }
 
-function getNotificationIcon(
-  type: PersistentNotification["type"],
-) {
+function getNotificationIcon(type: PersistentNotification["type"]) {
   switch (type) {
     case "post_like":
     case "comment_like":
@@ -390,10 +343,7 @@ function formatTime(iso: string): string {
     return "Recently";
   }
 
-  const diffSec = Math.max(
-    0,
-    Math.floor((Date.now() - date.getTime()) / 1000),
-  );
+  const diffSec = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
 
   if (diffSec < 60) return "just now";
 

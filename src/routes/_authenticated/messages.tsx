@@ -2,229 +2,65 @@ import { useEffect, useState, useRef, useMemo, type FormEvent } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft,
   MessageCircle,
-  Send,
   RefreshCw,
   Search,
   UserPlus,
+  Users,
+  Plus,
   X,
   Loader2,
-  Check,
-  CheckCheck,
+  ChevronDown,
+  Sparkles,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
-
 import {
   getMyConversations,
   getConversationMessages,
-  sendTextMessage,
-  subscribeToMessages,
-  subscribeToMessageReads,
+  sendMessage,
+  uploadChatMedia,
+  editMessage,
+  deleteMessage,
+  toggleMessageReaction,
   markMessagesAsRead,
-  createDirectConversation,
+  markConversationAsRead,
+  subscribeToConversationChannel,
+  subscribeToUserConversations,
+  getEffectiveRole,
+  type ConversationListItem,
+  type MessageWithReadsAndReactions,
+  type Profile,
+  type Conversation,
+  type GroupRole,
 } from "@/services/messages";
 
-import type {
-  ConversationListItem,
-  Message,
-  MessageWithReads,
-  MessageRead,
-  Profile,
-} from "@/services/messages";
+import { ChatHeader } from "@/components/messages/ChatHeader";
+import { ChatComposer } from "@/components/messages/ChatComposer";
+import { MessageItem } from "@/components/messages/MessageItem";
+import { NewChatModal } from "@/components/messages/NewChatModal";
+import { NewGroupModal } from "@/components/messages/NewGroupModal";
+import { GroupDetailsSheet } from "@/components/messages/GroupDetailsSheet";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/messages")({
   component: MessagesPage,
 });
 
-type SearchProfile = Pick<Profile, "id" | "username" | "display_name" | "avatar_url">;
+function formatDateSeparator(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffDays = Math.floor(
+    (now.setHours(0, 0, 0, 0) - new Date(date).setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24),
+  );
 
-async function searchProfiles(term: string): Promise<SearchProfile[]> {
-  const cleaned = term.trim();
-
-  if (cleaned.length < 2) return [];
-
-  const pattern = `%${cleaned}%`;
-
-  const [usernameResult, displayNameResult] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("id, username, display_name, avatar_url")
-      .ilike("username", pattern)
-      .limit(15),
-
-    supabase
-      .from("profiles")
-      .select("id, username, display_name, avatar_url")
-      .ilike("display_name", pattern)
-      .limit(15),
-  ]);
-
-  if (usernameResult.error) throw usernameResult.error;
-  if (displayNameResult.error) throw displayNameResult.error;
-
-  const combined = [...(usernameResult.data ?? []), ...(displayNameResult.data ?? [])];
-
-  const uniqueProfiles = new Map<string, SearchProfile>();
-
-  for (const profile of combined) {
-    uniqueProfiles.set(profile.id, profile as SearchProfile);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) {
+    return date.toLocaleDateString(undefined, { weekday: "long" });
   }
-
-  return Array.from(uniqueProfiles.values()).slice(0, 15);
-}
-
-function getOtherMember(conversation: ConversationListItem, currentUserId: string) {
-  return conversation.members.find((member) => member.user_id !== currentUserId);
-}
-
-/* DISPLAY COMPLETE ERROR DETAILS */
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-
-  if (typeof error === "object" && error !== null) {
-    const details = error as Record<string, unknown>;
-
-    const parts = [
-      details["message"],
-      details["code"] ? `Code: ${details["code"]}` : null,
-      details["details"],
-      details["hint"],
-    ].filter((item) => typeof item === "string" && item.trim().length > 0);
-
-    if (parts.length > 0) {
-      return parts.join(" | ");
-    }
-
-    try {
-      return JSON.stringify(error);
-    } catch {
-      return "An unknown error occurred. Check the browser console.";
-    }
-  }
-
-  return String(error || "Unknown error. Check the browser console.");
-}
-
-interface AuthDiagnostic {
-  sessionExists: boolean;
-  sessionUserId: string | null;
-  applicationUserId: string | null;
-  userMatches: boolean;
-  requestRole: string;
-  databaseRecognizesUser: boolean;
-  runtimeCreatedByMatchesAuthUserId: boolean;
-  diagnosticDetails?: string | undefined;
-  checkedAt?: string | undefined;
-}
-
-async function runAuthDiagnostic(currentUserId: string): Promise<AuthDiagnostic> {
-  try {
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    const { data: userData } = await supabase.auth.getUser();
-
-    const session = sessionData?.session ?? null;
-    const sessionExists = Boolean(session);
-    const sessionUserId = session?.user?.id ?? null;
-    const runtimeUser = userData?.user ?? null;
-    const runtimeCreatedBy = runtimeUser?.id ?? null;
-    const applicationUserId = currentUserId || null;
-    const userMatches = Boolean(
-      sessionUserId && applicationUserId && sessionUserId === applicationUserId,
-    );
-
-    // Verify whether runtime created_by matches the authenticated database user ID
-    const runtimeCreatedByMatchesAuthUserId = Boolean(
-      runtimeCreatedBy && sessionUserId && runtimeCreatedBy === sessionUserId,
-    );
-
-    // Determine database request role from JWT claims or user object
-    let requestRole = "anon";
-    if (session?.user?.role) {
-      requestRole = session.user.role;
-    } else if (session?.access_token) {
-      try {
-        const parts = session.access_token.split(".");
-        if (parts[1]) {
-          const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-          if (typeof payload.role === "string") {
-            requestRole = payload.role;
-          }
-        }
-      } catch {
-        requestRole = sessionExists ? "authenticated" : "anon";
-      }
-    } else if (sessionExists) {
-      requestRole = "authenticated";
-    }
-
-    // Verify whether database recognizes the authenticated user
-    let databaseRecognizesUser = false;
-    let diagnosticDetails = "";
-
-    if (sessionUserId) {
-      // 1. Check private_profiles which enforces USING (auth.uid() = id)
-      const { data: priv, error: privErr } = await supabase
-        .from("private_profiles")
-        .select("id")
-        .eq("id", sessionUserId)
-        .maybeSingle();
-
-      if (!privErr && priv) {
-        databaseRecognizesUser = true;
-        diagnosticDetails =
-          "Database recognized user via private_profiles (auth.uid() matched session user ID).";
-      } else {
-        // 2. Check profiles table which requires authenticated role
-        const { data: pub, error: pubErr } = await supabase
-          .from("profiles")
-          .select("id")
-          .eq("id", sessionUserId)
-          .maybeSingle();
-
-        if (!pubErr && pub) {
-          databaseRecognizesUser = true;
-          diagnosticDetails =
-            "Database recognized request as authenticated role via profiles table.";
-        } else {
-          diagnosticDetails =
-            privErr?.message ||
-            pubErr?.message ||
-            sessionError?.message ||
-            "Database query returned no rows or permission denied under current RLS.";
-        }
-      }
-    } else {
-      diagnosticDetails = sessionError?.message || "No active session user ID found.";
-    }
-
-    return {
-      sessionExists,
-      sessionUserId,
-      applicationUserId,
-      userMatches,
-      requestRole,
-      databaseRecognizesUser,
-      runtimeCreatedByMatchesAuthUserId,
-      diagnosticDetails,
-      checkedAt: new Date().toLocaleTimeString(),
-    };
-  } catch (err) {
-    return {
-      sessionExists: false,
-      sessionUserId: null,
-      applicationUserId: currentUserId || null,
-      userMatches: false,
-      requestRole: "unknown",
-      databaseRecognizesUser: false,
-      runtimeCreatedByMatchesAuthUserId: false,
-      diagnosticDetails: err instanceof Error ? err.message : String(err),
-      checkedAt: new Date().toLocaleTimeString(),
-    };
-  }
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
 function MessagesPage() {
@@ -233,27 +69,78 @@ function MessagesPage() {
   const [selectedConversation, setSelectedConversation] = useState<ConversationListItem | null>(
     null,
   );
-
-  const [messageText, setMessageText] = useState("");
   const [currentUserId, setCurrentUserId] = useState("");
+  const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
+
+  // Filters & Search
+  const [filterTab, setFilterTab] = useState<"all" | "direct" | "group">("all");
   const [searchText, setSearchText] = useState("");
 
-  const [startingChatUser, setStartingChatUser] = useState<string | null>(null);
-  const [authDiagnostic, setAuthDiagnostic] = useState<AuthDiagnostic | null>(null);
+  // Modals & Sheets
+  const [newChatModalOpen, setNewChatModalOpen] = useState(false);
+  const [newGroupModalOpen, setNewGroupModalOpen] = useState(false);
+  const [groupDetailsOpen, setGroupDetailsOpen] = useState(false);
 
-  /* LOAD SIGNED-IN USER */
+  // Replying & Editing
+  const [replyingTo, setReplyingTo] = useState<MessageWithReadsAndReactions | null>(null);
+  const [editingMessageState, setEditingMessageState] =
+    useState<MessageWithReadsAndReactions | null>(null);
+
+  // Realtime Presence & Typing
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [typingUsersMap, setTypingUsersMap] = useState<
+    Map<string, { username: string; timestamp: number }>
+  >(new Map());
+
+  // Scroll to bottom / Scroll detection
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+  const channelRef = useRef<{
+    sendTyping: (isTyping: boolean, username: string) => void;
+    unsubscribe: () => void;
+  } | null>(null);
+
+  /* Inactivity timeout cleaner for typing indicators (stops after 3.5s of no updates) */
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setTypingUsersMap((prev) => {
+        let expired = false;
+        for (const [, v] of prev) {
+          if (now - v.timestamp > 3500) {
+            expired = true;
+            break;
+          }
+        }
+        if (!expired) return prev;
+        const next = new Map();
+        for (const [k, v] of prev) {
+          if (now - v.timestamp <= 3500) next.set(k, v);
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  /* 1. LOAD AUTHENTICATED USER & PROFILE */
   useEffect(() => {
     let active = true;
 
-    supabase.auth.getUser().then(({ data, error }) => {
-      if (!active) return;
+    supabase.auth.getUser().then(async ({ data, error }) => {
+      if (!active || error || !data.user) return;
+      setCurrentUserId(data.user.id);
 
-      if (error) {
-        console.error("Current user error:", error);
-        return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", data.user.id)
+        .maybeSingle();
+
+      if (active && profile) {
+        setCurrentProfile(profile);
       }
-
-      setCurrentUserId(data.user?.id ?? "");
     });
 
     return () => {
@@ -261,17 +148,35 @@ function MessagesPage() {
     };
   }, []);
 
-  /* LOAD CONVERSATIONS */
+  /* 2. LOAD CONVERSATIONS */
   const conversationsQuery = useQuery({
     queryKey: ["messages", "conversations"],
     queryFn: getMyConversations,
+    refetchInterval: 15000,
   });
 
-  const conversations = conversationsQuery.data ?? [];
-
+  const rawConversations = conversationsQuery.data;
+  const conversations = useMemo(() => rawConversations ?? [], [rawConversations]);
   const selectedId = selectedConversation?.id ?? "";
 
-  /* LOAD MESSAGES */
+  // Keep selectedConversation in sync with fetched data
+  useEffect(() => {
+    if (selectedId && conversations.length > 0) {
+      const match = conversations.find((c) => c.id === selectedId);
+      if (match) setSelectedConversation(match);
+    }
+  }, [conversations, selectedId]);
+
+  /* Global real-time listener for all user conversation updates (new messages, reads across devices) */
+  useEffect(() => {
+    if (!currentUserId) return;
+    const unsub = subscribeToUserConversations(currentUserId, () => {
+      queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+    });
+    return unsub;
+  }, [currentUserId, queryClient]);
+
+  /* 3. LOAD MESSAGES FOR SELECTED CONVERSATION */
   const messagesQuery = useQuery({
     queryKey: ["messages", selectedId],
     queryFn: () => getConversationMessages(selectedId),
@@ -280,553 +185,584 @@ function MessagesPage() {
 
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
 
-  /* SEARCH USERS */
-  const searchQuery = useQuery({
-    queryKey: ["messages", "user-search", searchText.trim()],
-    queryFn: () => searchProfiles(searchText),
-    enabled: searchText.trim().length >= 2,
-    staleTime: 15000,
-  });
+  // Filter conversations
+  const filteredConversations = useMemo(() => {
+    return conversations.filter((conv) => {
+      // Tab filter
+      if (filterTab === "direct" && conv.kind !== "direct") return false;
+      if (filterTab === "group" && conv.kind !== "group") return false;
 
-  const markedReadIdsRef = useRef<Set<string>>(new Set());
-
-  // Clear marked read set when switching conversations
-  useEffect(() => {
-    markedReadIdsRef.current.clear();
-  }, [selectedId]);
-
-  /* REALTIME MESSAGE SUBSCRIPTION */
-  useEffect(() => {
-    if (!selectedId) return;
-
-    const unsubscribe = subscribeToMessages(selectedId, (newMessage) => {
-      queryClient.setQueryData<MessageWithReads[]>(["messages", selectedId], (oldMessages = []) => {
-        if (oldMessages.some((message) => message.id === newMessage.id)) {
-          return oldMessages;
+      // Search filter
+      if (searchText.trim()) {
+        const query = searchText.toLowerCase();
+        if (conv.kind === "group") {
+          return (conv.title || "").toLowerCase().includes(query);
+        } else {
+          const other = conv.members.find((m) => m.user_id !== currentUserId);
+          const name = (
+            other?.profile?.display_name ||
+            other?.profile?.username ||
+            ""
+          ).toLowerCase();
+          return name.includes(query);
         }
-
-        const messageWithReads: MessageWithReads = {
-          ...newMessage,
-          reads: [],
-        };
-
-        return [...oldMessages, messageWithReads];
-      });
-
-      // Automatically mark incoming messages as read if the conversation is actively open
-      if (currentUserId && newMessage.sender_id !== currentUserId) {
-        markedReadIdsRef.current.add(newMessage.id);
-        void markMessagesAsRead(selectedId, [newMessage.id]);
       }
 
-      queryClient.invalidateQueries({
-        queryKey: ["messages", "conversations"],
-      });
+      return true;
     });
+  }, [conversations, filterTab, searchText, currentUserId]);
 
-    return unsubscribe;
-  }, [selectedId, currentUserId, queryClient]);
-
-  /* REALTIME READ RECEIPTS SUBSCRIPTION */
+  /* 4. REALTIME CONVERSATION CHANNEL (Messages, Reads, Reactions, Typing, Presence) */
   useEffect(() => {
-    if (!selectedId) return;
+    if (!selectedId || !currentUserId) return;
 
-    const unsubscribe = subscribeToMessageReads((newRead: MessageRead) => {
-      queryClient.setQueryData<MessageWithReads[]>(["messages", selectedId], (oldMessages = []) => {
-        if (!oldMessages.some((msg) => msg.id === newRead.message_id)) {
-          return oldMessages;
+    setTypingUsersMap(new Map());
+
+    const channel = subscribeToConversationChannel(selectedId, currentUserId, {
+      onNewMessage: (newMessage) => {
+        // Clear typing indicator for sender
+        setTypingUsersMap((prev) => {
+          if (!prev.has(newMessage.sender_id)) return prev;
+          const next = new Map(prev);
+          next.delete(newMessage.sender_id);
+          return next;
+        });
+
+        queryClient.setQueryData<MessageWithReadsAndReactions[]>(
+          ["messages", selectedId],
+          (old = []) => {
+            if (old.some((m) => m.id === newMessage.id)) return old;
+            return [
+              ...old,
+              {
+                ...newMessage,
+                reads: [],
+                reactions: [],
+              },
+            ];
+          },
+        );
+
+        // If viewing this chat and message is from another, mark read immediately
+        if (newMessage.sender_id !== currentUserId) {
+          void markConversationAsRead(selectedId);
         }
 
-        return oldMessages.map((msg) => {
-          if (msg.id === newRead.message_id) {
-            const existingReads = msg.reads ?? [];
-            if (existingReads.some((r) => r.user_id === newRead.user_id)) {
+        // Optimistically update conversation list
+        queryClient.setQueryData<ConversationListItem[]>(
+          ["messages", "conversations"],
+          (old = []) =>
+            old.map((c) => {
+              if (c.id === selectedId) {
+                return {
+                  ...c,
+                  lastMessage: newMessage,
+                  last_message_at: newMessage.created_at,
+                  unreadCount: 0,
+                };
+              }
+              return c;
+            }),
+        );
+
+        scrollToBottom();
+      },
+
+      onMessageUpdate: (updatedMessage) => {
+        queryClient.setQueryData<MessageWithReadsAndReactions[]>(
+          ["messages", selectedId],
+          (old = []) =>
+            old.map((m) => (m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m)),
+        );
+        queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+      },
+
+      onMessageDelete: (deletedMessageId) => {
+        queryClient.setQueryData<MessageWithReadsAndReactions[]>(
+          ["messages", selectedId],
+          (old = []) => old.filter((m) => m.id !== deletedMessageId),
+        );
+        queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+      },
+
+      onReactionChange: () => {
+        queryClient.invalidateQueries({ queryKey: ["messages", selectedId] });
+      },
+
+      onReadReceipt: (newRead) => {
+        queryClient.setQueryData<MessageWithReadsAndReactions[]>(
+          ["messages", selectedId],
+          (old = []) =>
+            old.map((msg) => {
+              if (msg.id === newRead.message_id) {
+                const existing = msg.reads ?? [];
+                if (existing.some((r) => r.user_id === newRead.user_id)) return msg;
+                return { ...msg, reads: [...existing, newRead] };
+              }
               return msg;
-            }
-            return {
-              ...msg,
-              reads: [...existingReads, newRead],
-            };
+            }),
+        );
+      },
+
+      onTyping: ({ userId, username, isTyping }) => {
+        if (userId === currentUserId) return;
+        setTypingUsersMap((prev) => {
+          const next = new Map(prev);
+          if (isTyping) {
+            next.set(userId, { username, timestamp: Date.now() });
+          } else {
+            next.delete(userId);
           }
-          return msg;
+          return next;
         });
-      });
+      },
+
+      onPresenceSync: (onlineIds) => {
+        setOnlineUserIds(onlineIds);
+      },
     });
 
-    return unsubscribe;
-  }, [selectedId, queryClient]);
+    channelRef.current = channel;
 
-  /* AUTOMATIC READ DETECTION FOR INCOMING MESSAGES */
+    return () => {
+      // Clear typing broadcast before unhooking channel
+      if (currentProfile) {
+        channel.sendTyping(false, currentProfile.display_name || currentProfile.username);
+      }
+      channel.unsubscribe();
+      channelRef.current = null;
+    };
+  }, [selectedId, currentUserId, currentProfile, queryClient]);
+
+  /* 5. AUTO-MARK CONVERSATION AS READ WHEN DISPLAYED */
   useEffect(() => {
-    if (!selectedId || !currentUserId || !messages.length) return;
+    if (!selectedId || !currentUserId) return;
 
-    const unreadIncomingIds = messages
-      .filter((msg) => {
-        // Do not mark user's own messages as read by themselves
-        if (msg.sender_id === currentUserId) return false;
-        // Do not repeatedly insert duplicate read records
-        if (markedReadIdsRef.current.has(msg.id)) return false;
-        const alreadyReadByMe = (msg.reads ?? []).some((r) => r.user_id === currentUserId);
-        return !alreadyReadByMe;
-      })
-      .map((msg) => msg.id);
+    // Immediately clear unread badge in conversation list cache
+    queryClient.setQueryData<ConversationListItem[]>(
+      ["messages", "conversations"],
+      (old = []) =>
+        old.map((c) =>
+          c.id === selectedId
+            ? {
+                ...c,
+                unreadCount: 0,
+                members: c.members.map((m) =>
+                  m.user_id === currentUserId
+                    ? { ...m, last_read_at: new Date().toISOString() }
+                    : m,
+                ),
+              }
+            : c,
+        ),
+    );
 
-    if (unreadIncomingIds.length > 0) {
-      unreadIncomingIds.forEach((id) => markedReadIdsRef.current.add(id));
-      void markMessagesAsRead(selectedId, unreadIncomingIds).catch((err) => {
-        console.error("Failed to mark incoming messages as read:", err);
-      });
+    // Persist read state in database
+    void markConversationAsRead(selectedId);
+  }, [selectedId, currentUserId, messages.length, queryClient]);
+
+  /* 6. SCROLL TO BOTTOM LOGIC */
+  const scrollToBottom = (smooth = true) => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
     }
-  }, [selectedId, currentUserId, messages]);
+  };
 
-  /* SEND MESSAGE */
+  useEffect(() => {
+    if (messages.length > 0) {
+      scrollToBottom(false);
+    }
+  }, [selectedId, messages.length]);
+
+  const handleScroll = () => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const isUp = el.scrollHeight - el.scrollTop - el.clientHeight > 180;
+    setShowScrollBottomBtn(isUp);
+  };
+
+  // Smooth scroll and flash message when quoted reply is clicked
+  const handleLocateMessage = (targetMessageId: string) => {
+    const el = document.getElementById(`msg-${targetMessageId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("bg-[#E91E63]/20");
+      setTimeout(() => {
+        el.classList.remove("bg-[#E91E63]/20");
+      }, 1500);
+    } else {
+      toast.info("Message is further up in history.");
+    }
+  };
+
+  /* 7. SEND MESSAGE MUTATION (Text, Media, Reply, Edit) */
   const sendMutation = useMutation({
-    mutationFn: (content: string) => sendTextMessage(selectedId, content),
+    mutationFn: async (payload: {
+      content?: string;
+      mediaFile?: File | Blob;
+      messageType?: "text" | "image" | "video" | "audio" | "file";
+      replyToId?: string;
+    }) => {
+      if (!selectedId) throw new Error("No conversation selected.");
+
+      // If in edit mode:
+      if (editingMessageState) {
+        if (!payload.content?.trim()) throw new Error("Edited message cannot be empty.");
+        return await editMessage(editingMessageState.id, payload.content);
+      }
+
+      let mediaUrl: string | undefined;
+      let mediaName: string | undefined;
+
+      // Handle media upload
+      if (payload.mediaFile) {
+        const uploadResult = await uploadChatMedia(selectedId, payload.mediaFile, {
+          fileName: payload.mediaFile instanceof File ? payload.mediaFile.name : undefined,
+        });
+        mediaUrl = uploadResult.mediaUrl;
+        mediaName = uploadResult.mediaName;
+      }
+
+      return await sendMessage(selectedId, {
+        content: payload.content,
+        messageType: payload.messageType || "text",
+        mediaUrl,
+        mediaName,
+        replyToId: payload.replyToId,
+      });
+    },
 
     onSuccess: () => {
-      setMessageText("");
+      handleBroadcastTyping(false);
+      setReplyingTo(null);
+      setEditingMessageState(null);
+      queryClient.invalidateQueries({ queryKey: ["messages", selectedId] });
+      queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+      setTimeout(() => scrollToBottom(), 100);
+    },
 
-      queryClient.invalidateQueries({
-        queryKey: ["messages", selectedId],
-      });
-
-      queryClient.invalidateQueries({
-        queryKey: ["messages", "conversations"],
-      });
+    onError: (err) => {
+      console.error("SEND MESSAGE ERROR:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to send message.");
     },
   });
 
-  /* START DIRECT CHAT */
-  const startChatMutation = useMutation({
-    mutationFn: async (otherUserId: string) => {
-      if (!currentUserId) {
-        throw new Error("Your account is still loading. Try again.");
-      }
-
-      if (!otherUserId) {
-        throw new Error("The selected user's ID is missing.");
-      }
-
-      if (otherUserId === currentUserId) {
-        throw new Error("You cannot chat with yourself.");
-      }
-
-      return createDirectConversation(otherUserId);
-    },
-
-    onMutate: (otherUserId) => {
-      setStartingChatUser(otherUserId);
-    },
-
-    onSuccess: async (conversation) => {
-      const updatedConversations = await getMyConversations();
-
-      queryClient.setQueryData(["messages", "conversations"], updatedConversations);
-
-      const matchingConversation = updatedConversations.find((item) => item.id === conversation.id);
-
-      if (!matchingConversation) {
-        throw new Error(
-          "Conversation created, but membership could not be verified. Check the conversation_members permissions.",
-        );
-      }
-
-      setSelectedConversation(matchingConversation);
-      setSearchText("");
-    },
-
-    onError: (error) => {
-      console.error("START CHAT ERROR:", error);
-      console.error("ERROR DETAILS:", getErrorMessage(error));
-      void runAuthDiagnostic(currentUserId).then(setAuthDiagnostic);
-    },
-
-    onSettled: () => {
-      setStartingChatUser(null);
-    },
-  });
-
-  /* RUN DIAGNOSTIC WHEN CHAT ERROR OCCURS */
-  useEffect(() => {
-    if (startChatMutation.isError && !authDiagnostic) {
-      void runAuthDiagnostic(currentUserId).then(setAuthDiagnostic);
+  /* 8. MESSAGE ACTIONS: Reaction, Edit, Delete */
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    try {
+      await toggleMessageReaction(messageId, emoji);
+      queryClient.invalidateQueries({ queryKey: ["messages", selectedId] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to react.");
     }
-  }, [startChatMutation.isError, authDiagnostic, currentUserId]);
+  };
 
-  /* SEND FORM */
-  function handleSendMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!confirm("Are you sure you want to delete this message?")) return;
 
-    const content = messageText.trim();
-
-    if (!content || !selectedId || sendMutation.isPending) return;
-
-    sendMutation.mutate(content);
-  }
-
-  function getConversationName(conversation: ConversationListItem) {
-    if (conversation.kind === "group") {
-      return conversation.title || "Group conversation";
+    try {
+      await deleteMessage(messageId);
+      toast.success("Message deleted.");
+      queryClient.invalidateQueries({ queryKey: ["messages", selectedId] });
+      queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete message.");
     }
+  };
 
-    const otherMember = getOtherMember(conversation, currentUserId);
+  const handleBroadcastTyping = (isTyping: boolean) => {
+    if (channelRef.current && currentProfile) {
+      channelRef.current.sendTyping(
+        isTyping,
+        currentProfile.display_name || currentProfile.username,
+      );
+    }
+  };
 
-    return (
-      otherMember?.profile?.display_name || otherMember?.profile?.username || "New conversation"
+  // Grouped messages by date
+  const groupedMessages = useMemo(() => {
+    const groups: Array<{ date: string; items: MessageWithReadsAndReactions[] }> = [];
+
+    messages.forEach((msg) => {
+      const dateLabel = formatDateSeparator(msg.created_at);
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && lastGroup.date === dateLabel) {
+        lastGroup.items.push(msg);
+      } else {
+        groups.push({ date: dateLabel, items: [msg] });
+      }
+    });
+
+    return groups;
+  }, [messages]);
+
+  // Is direct conversation peer online?
+  const isDirectPeerOnline = useMemo(() => {
+    if (!selectedConversation || selectedConversation.kind === "group") return false;
+    const other = selectedConversation.members.find((m) => m.user_id !== currentUserId);
+    return Boolean(other && onlineUserIds.has(other.user_id));
+  }, [selectedConversation, currentUserId, onlineUserIds]);
+
+  const currentMemberRole: GroupRole = useMemo(() => {
+    if (!selectedConversation) return "member";
+    return getEffectiveRole(currentUserId, selectedConversation, selectedConversation.members);
+  }, [selectedConversation, currentUserId]);
+
+  const isCurrentGroupAdmin = currentMemberRole === "owner" || currentMemberRole === "admin";
+
+  const activeTypingNames = useMemo(() => {
+    return Array.from(typingUsersMap.values()).map((v) => v.username);
+  }, [typingUsersMap]);
+
+  const handleSelectConversation = (conv: ConversationListItem) => {
+    if (channelRef.current && currentProfile) {
+      channelRef.current.sendTyping(false, currentProfile.display_name || currentProfile.username);
+    }
+    setSelectedConversation(conv);
+    queryClient.setQueryData<ConversationListItem[]>(
+      ["messages", "conversations"],
+      (old = []) =>
+        old.map((c) =>
+          c.id === conv.id
+            ? {
+                ...c,
+                unreadCount: 0,
+                members: c.members.map((m) =>
+                  m.user_id === currentUserId
+                    ? { ...m, last_read_at: new Date().toISOString() }
+                    : m,
+                ),
+              }
+            : c,
+        ),
     );
-  }
-
-  function getConversationAvatar(conversation: ConversationListItem) {
-    if (conversation.kind === "group") {
-      return conversation.image_url;
-    }
-
-    return getOtherMember(conversation, currentUserId)?.profile?.avatar_url;
-  }
-
-  function getMessagePreview(conversation: ConversationListItem) {
-    const message = conversation.lastMessage;
-
-    if (!message) return "Start a conversation";
-    if (message.deleted_at) return "Message deleted";
-
-    if (message.message_type !== "text") {
-      return "Sent an attachment";
-    }
-
-    return message.content || "Message";
-  }
-
-  function isMessageReadByRecipient(message: MessageWithReads, userId: string): boolean {
-    if (!message.reads || message.reads.length === 0) return false;
-    return message.reads.some((read) => read.user_id !== userId);
-  }
-
-  function startChat(profile: SearchProfile) {
-    if (!currentUserId || startChatMutation.isPending) return;
-
-    startChatMutation.mutate(profile.id);
-  }
+    void markConversationAsRead(conv.id);
+  };
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-90px)] max-w-7xl flex-col p-3 md:h-[calc(100dvh-40px)] md:p-6">
-      {/* HEADER */}
-      <div className="mb-4">
+    <div className="mx-auto flex h-[calc(100dvh-90px)] max-w-7xl flex-col p-2 sm:p-4 md:h-[calc(100dvh-40px)] md:p-6">
+      {/* TOP BAR / HEADER */}
+      <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="rounded-xl bg-[#E91E63]/10 p-2.5 text-[#E91E63]">
             <MessageCircle size={22} />
           </div>
-
           <div>
-            <h1 className="text-xl font-bold text-foreground">Messages</h1>
-            <p className="text-xs text-muted-foreground">Private and direct conversations.</p>
+            <h1 className="text-xl font-bold font-display text-foreground">Messages</h1>
+            <p className="text-xs text-muted-foreground">
+              Real-time direct chats, groups, media & voice notes.
+            </p>
           </div>
+        </div>
+
+        {/* Action buttons: New Chat & New Group */}
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setNewGroupModalOpen(true)}
+            className="h-8 text-xs rounded-xl gap-1.5 border-border hover:bg-secondary"
+          >
+            <Users size={14} className="text-[#E91E63]" />
+            <span className="hidden sm:inline">New Group</span>
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={() => setNewChatModalOpen(true)}
+            className="h-8 text-xs rounded-xl gap-1.5 bg-[#E91E63] hover:bg-[#C2185B] text-white font-semibold shadow-sm"
+          >
+            <Plus size={15} />
+            <span>New Chat</span>
+          </Button>
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card md:grid-cols-[340px_1fr]">
-        {/* LEFT SIDEBAR */}
+      {/* MAIN CONTAINER */}
+      <div className="grid min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card md:grid-cols-[340px_1fr] shadow-sm">
+        {/* ================= LEFT SIDEBAR ================= */}
         <aside
           className={`${
             selectedConversation ? "hidden md:flex" : "flex"
-          } min-h-0 flex-col border-r border-border`}
+          } min-h-0 flex-col border-r border-border bg-card`}
         >
-          <div className="border-b border-border p-3.5">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-foreground">Conversations</h2>
-
-              <button
-                type="button"
-                onClick={() =>
-                  queryClient.invalidateQueries({
-                    queryKey: ["messages", "conversations"],
-                  })
-                }
-                className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-                aria-label="Refresh conversations"
-              >
-                <RefreshCw size={15} />
-              </button>
-            </div>
-
-            {/* SEARCH INPUT */}
+          {/* Search & Tabs */}
+          <div className="border-b border-border p-3 space-y-2.5">
+            {/* Search Input */}
             <div className="relative">
               <Search
-                size={16}
+                size={15}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
               />
-
               <input
                 value={searchText}
-                onChange={(event) => {
-                  setSearchText(event.target.value);
-                  startChatMutation.reset();
-                }}
-                placeholder="Search people..."
-                className="w-full rounded-xl border border-border bg-secondary/60 py-2 pl-9 pr-9 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-[#E91E63]"
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Search chats..."
+                className="w-full rounded-xl border border-border bg-secondary/60 py-2 pl-9 pr-8 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-[#E91E63]"
                 maxLength={50}
               />
-
               {searchText && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearchText("");
-                    startChatMutation.reset();
-                  }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  aria-label="Clear search"
+                  onClick={() => setSearchText("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  <X size={15} />
+                  <X size={14} />
                 </button>
               )}
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="grid grid-cols-3 gap-1 rounded-xl bg-secondary p-1 text-[11px] font-semibold text-center select-none">
+              <button
+                type="button"
+                onClick={() => setFilterTab("all")}
+                className={`py-1 rounded-lg transition ${
+                  filterTab === "all"
+                    ? "bg-card text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterTab("direct")}
+                className={`py-1 rounded-lg transition ${
+                  filterTab === "direct"
+                    ? "bg-card text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Direct
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterTab("group")}
+                className={`py-1 rounded-lg transition ${
+                  filterTab === "group"
+                    ? "bg-card text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Groups
+              </button>
             </div>
           </div>
 
-          {/* SEARCH RESULTS */}
-          {searchText.trim().length >= 2 && (
-            <div className="border-b border-border bg-secondary/30">
-              <div className="px-4 pb-1 pt-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-[#E91E63]">
-                  People
-                </p>
-              </div>
-
-              {searchQuery.isFetching && (
-                <div className="flex items-center justify-center gap-2 p-4 text-xs text-muted-foreground">
-                  <Loader2 size={15} className="animate-spin text-[#E91E63]" />
-                  Searching...
-                </div>
-              )}
-
-              {searchQuery.isError && (
-                <p className="break-words px-4 pb-3 text-xs text-destructive">
-                  Search error: {getErrorMessage(searchQuery.error)}
-                </p>
-              )}
-
-              {searchQuery.isSuccess && searchQuery.data.length === 0 && (
-                <p className="px-4 pb-3 text-xs text-muted-foreground">No users found.</p>
-              )}
-
-              {searchQuery.data?.map((profile) => {
-                const isStarting = startingChatUser === profile.id;
-
-                return (
-                  <button
-                    key={profile.id}
-                    type="button"
-                    onClick={() => startChat(profile)}
-                    disabled={
-                      !currentUserId || startChatMutation.isPending || profile.id === currentUserId
-                    }
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-secondary disabled:opacity-50"
-                  >
-                    {profile.avatar_url ? (
-                      <img
-                        src={profile.avatar_url}
-                        alt=""
-                        className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-border"
-                      />
-                    ) : (
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#18181B] text-foreground border border-border">
-                        <UserPlus size={16} />
-                      </div>
-                    )}
-
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-semibold text-foreground">
-                        {profile.display_name || profile.username}
-                      </p>
-
-                      <p className="truncate text-[11px] text-muted-foreground">
-                        @{profile.username}
-                      </p>
-                    </div>
-
-                    {isStarting ? (
-                      <Loader2 size={16} className="animate-spin text-[#E91E63]" />
-                    ) : (
-                      <MessageCircle size={16} className="text-[#E91E63]" />
-                    )}
-                  </button>
-                );
-              })}
-
-              {!currentUserId && (
-                <p className="px-4 pb-3 text-xs text-muted-foreground">Loading your account...</p>
-              )}
-
-              {/* FULL CHAT ERROR & AUTH DIAGNOSTIC */}
-              {startChatMutation.isError && (
-                <div className="mx-3 mb-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3 shadow-sm">
-                  <div className="flex items-center justify-between border-b border-destructive/20 pb-2">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-destructive">
-                      Chat Diagnostic
-                    </p>
-                    {authDiagnostic?.checkedAt && (
-                      <span className="text-[10px] text-muted-foreground">
-                        {authDiagnostic.checkedAt}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="mt-2 rounded-lg bg-card p-2 border border-border">
-                    <p className="text-[11px] font-semibold text-destructive">Error Details:</p>
-                    <p className="mt-1 break-words font-mono text-[11px] leading-4 text-foreground">
-                      {getErrorMessage(startChatMutation.error)}
-                    </p>
-                  </div>
-
-                  <div className="mt-2 space-y-1.5 border-t border-destructive/20 pt-2 text-xs">
-                    <div className="flex items-center justify-between rounded-md bg-secondary/60 px-2 py-1">
-                      <span className="text-muted-foreground">Session exists:</span>
-                      <span
-                        className={`font-semibold ${
-                          authDiagnostic?.sessionExists ? "text-[#22C55E]" : "text-destructive"
-                        }`}
-                      >
-                        {authDiagnostic?.sessionExists ? "Yes" : "No"}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-md bg-secondary/60 px-2 py-1">
-                      <span className="text-muted-foreground">User matches app user:</span>
-                      <span
-                        className={`font-semibold ${
-                          authDiagnostic?.userMatches ? "text-[#22C55E]" : "text-[#F59E0B]"
-                        }`}
-                      >
-                        {authDiagnostic?.userMatches ? "Yes" : "No"}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-md bg-secondary/60 px-2 py-1">
-                      <span className="text-muted-foreground">Request role:</span>
-                      <span
-                        className={`font-mono font-semibold ${
-                          authDiagnostic?.requestRole === "authenticated"
-                            ? "text-[#22C55E]"
-                            : "text-[#F59E0B]"
-                        }`}
-                      >
-                        {authDiagnostic ? authDiagnostic.requestRole : "Checking..."}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-md bg-secondary/60 px-2 py-1">
-                      <span className="text-muted-foreground">Database recognizes user:</span>
-                      <span
-                        className={`font-semibold ${
-                          authDiagnostic?.databaseRecognizesUser
-                            ? "text-[#22C55E]"
-                            : "text-destructive"
-                        }`}
-                      >
-                        {authDiagnostic?.databaseRecognizesUser ? "Yes" : "No"}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex items-center gap-2 pt-1 border-t border-destructive/20">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void runAuthDiagnostic(currentUserId).then(setAuthDiagnostic);
-                      }}
-                      className="rounded-lg bg-secondary px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-secondary/80"
-                    >
-                      Re-run
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        startChatMutation.reset();
-                        setAuthDiagnostic(null);
-                      }}
-                      className="rounded-lg bg-[#E91E63]/20 px-2.5 py-1 text-xs font-semibold text-[#E91E63] hover:bg-[#E91E63]/30"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* CONVERSATION LIST */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          {/* Conversation List */}
+          <div className="min-h-0 flex-1 overflow-y-auto divide-y divide-border/40">
             {conversationsQuery.isLoading && (
-              <div className="p-6 text-center text-xs text-muted-foreground">
-                Loading conversations...
+              <div className="py-12 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                <Loader2 size={18} className="animate-spin text-[#E91E63]" />
+                <p className="text-xs">Loading conversations...</p>
               </div>
             )}
 
-            {conversationsQuery.isError && (
-              <div className="p-5 text-center">
-                <p className="text-xs text-destructive">
-                  {getErrorMessage(conversationsQuery.error)}
-                </p>
-
-                <button
-                  type="button"
-                  onClick={() => conversationsQuery.refetch()}
-                  className="mt-2 text-xs font-medium text-[#E91E63] hover:underline"
-                >
-                  Try again
-                </button>
-              </div>
-            )}
-
-            {!conversationsQuery.isLoading &&
-              !conversationsQuery.isError &&
-              conversations.length === 0 && (
-                <div className="px-6 py-12 text-center">
-                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#E91E63]/10 text-[#E91E63]">
-                    <MessageCircle size={24} />
-                  </div>
-
-                  <h3 className="text-sm font-semibold text-foreground">No conversations yet</h3>
-
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Search for someone above to start a conversation.
-                  </p>
+            {!conversationsQuery.isLoading && filteredConversations.length === 0 && (
+              <div className="px-6 py-12 text-center space-y-2">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#E91E63]/10 text-[#E91E63]">
+                  <MessageCircle size={22} />
                 </div>
-              )}
+                <h3 className="text-xs font-semibold text-foreground">
+                  {searchText.trim() ? "No matching conversations" : "No conversations yet"}
+                </h3>
+                <p className="text-[11px] text-muted-foreground max-w-xs mx-auto">
+                  {searchText.trim()
+                    ? "Try searching with a different name or start a new chat."
+                    : "Connect with friends or start a group to begin messaging."}
+                </p>
+                <div className="pt-2 flex justify-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setNewChatModalOpen(true)}
+                    className="text-xs h-7 rounded-lg"
+                  >
+                    Start Chat
+                  </Button>
+                </div>
+              </div>
+            )}
 
-            {conversations.map((conversation) => {
-              const avatar = getConversationAvatar(conversation);
-              const name = getConversationName(conversation);
-              const active = selectedConversation?.id === conversation.id;
+            {filteredConversations.map((conv) => {
+              const isGroup = conv.kind === "group";
+              const otherMember = conv.members.find((m) => m.user_id !== currentUserId);
+              const title = isGroup
+                ? conv.title || "Group"
+                : otherMember?.profile?.display_name || otherMember?.profile?.username || "User";
+              const avatar = isGroup ? conv.image_url : otherMember?.profile?.avatar_url;
+              const active = selectedConversation?.id === conv.id;
+              const isPeerOnline =
+                !isGroup && Boolean(otherMember && onlineUserIds.has(otherMember.user_id));
+
+              // Format last message preview
+              let lastMsgSnippet = "Start a conversation";
+              if (conv.lastMessage) {
+                if (conv.lastMessage.deleted_at) {
+                  lastMsgSnippet = "Message deleted";
+                } else if (conv.lastMessage.message_type === "image") {
+                  lastMsgSnippet = "📷 Photo";
+                } else if (conv.lastMessage.message_type === "video") {
+                  lastMsgSnippet = "🎥 Video";
+                } else if (conv.lastMessage.message_type === "audio") {
+                  lastMsgSnippet = "🎤 Voice note";
+                } else {
+                  lastMsgSnippet = conv.lastMessage.content || "Message";
+                }
+              }
 
               return (
                 <button
-                  key={conversation.id}
+                  key={conv.id}
                   type="button"
-                  onClick={() => setSelectedConversation(conversation)}
-                  className={`flex w-full items-center gap-3 border-b border-border/50 p-3.5 text-left transition ${
-                    active ? "bg-[#E91E63]/10" : "hover:bg-secondary/50"
+                  onClick={() => setSelectedConversation(conv)}
+                  className={`flex w-full items-center gap-3 p-3.5 text-left transition select-none ${
+                    active ? "bg-[#E91E63]/10" : "hover:bg-secondary/60"
                   }`}
                 >
-                  {avatar ? (
-                    <img
-                      src={avatar}
-                      alt=""
-                      className="h-11 w-11 shrink-0 rounded-full object-cover ring-1 ring-border"
-                    />
-                  ) : (
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground border border-border">
-                      <MessageCircle size={18} />
-                    </div>
-                  )}
+                  {/* Avatar with status indicator */}
+                  <div className="relative shrink-0">
+                    {avatar ? (
+                      <img
+                        src={avatar}
+                        alt=""
+                        className="h-11 w-11 rounded-full object-cover ring-1 ring-border"
+                      />
+                    ) : (
+                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-foreground ring-1 ring-border">
+                        {isGroup ? (
+                          <Users size={18} className="text-[#E91E63]" />
+                        ) : (
+                          <MessageCircle size={18} />
+                        )}
+                      </div>
+                    )}
 
+                    {isPeerOnline && (
+                      <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-[#22C55E] ring-2 ring-card" />
+                    )}
+                  </div>
+
+                  {/* Text details */}
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-semibold text-foreground">{name}</p>
+                    <div className="flex items-center justify-between gap-1">
+                      <p className="truncate text-xs font-semibold text-foreground">{title}</p>
+                      {conv.last_message_at && (
+                        <span className="text-[10px] text-muted-foreground shrink-0">
+                          {formatDateSeparator(conv.last_message_at)}
+                        </span>
+                      )}
+                    </div>
 
-                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                      {getMessagePreview(conversation)}
-                    </p>
+                    <div className="mt-0.5 flex items-center justify-between gap-2">
+                      <p className="truncate text-[11px] text-muted-foreground">{lastMsgSnippet}</p>
+                      {Boolean(conv.unreadCount && conv.unreadCount > 0) && (
+                        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#E91E63] px-1 text-[10px] font-bold text-white shadow-xs">
+                          {conv.unreadCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </button>
               );
@@ -834,202 +770,205 @@ function MessagesPage() {
           </div>
         </aside>
 
-        {/* CHAT WINDOW */}
+        {/* ================= RIGHT CHAT WINDOW ================= */}
         <section
-          className={`${selectedConversation ? "flex" : "hidden md:flex"} min-h-0 flex-col bg-background/50`}
+          className={`${
+            selectedConversation ? "flex" : "hidden md:flex"
+          } min-h-0 flex-col bg-background/50 relative`}
         >
           {!selectedConversation ? (
+            /* Empty State */
             <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#E91E63]/10 text-[#E91E63]">
                 <MessageCircle size={32} />
               </div>
-
-              <h2 className="text-base font-bold text-foreground">Your Messages</h2>
-
+              <h2 className="text-base font-bold font-display text-foreground">
+                VIDALORE Messaging
+              </h2>
               <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                Select a conversation from the sidebar or search for someone to start chatting.
+                Select an existing conversation or start a new direct or group chat.
               </p>
+              <div className="mt-4 flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => setNewChatModalOpen(true)}
+                  className="rounded-xl bg-[#E91E63] text-white hover:bg-[#C2185B] text-xs h-8"
+                >
+                  New Chat
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setNewGroupModalOpen(true)}
+                  className="rounded-xl text-xs h-8"
+                >
+                  Create Group
+                </Button>
+              </div>
             </div>
           ) : (
             <>
               {/* CHAT HEADER */}
-              <div className="flex items-center gap-3 border-b border-border p-3.5 bg-card">
+              <ChatHeader
+                conversation={selectedConversation}
+                currentUserId={currentUserId}
+                isOnline={isDirectPeerOnline}
+                typingUsers={activeTypingNames}
+                onBack={() => setSelectedConversation(null)}
+                onOpenDetails={() => setGroupDetailsOpen(true)}
+              />
+
+              {/* MESSAGES SCROLL CONTAINER */}
+              <div
+                ref={messagesContainerRef}
+                onScroll={handleScroll}
+                className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4"
+              >
+                {messagesQuery.isLoading && (
+                  <div className="py-12 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                    <Loader2 size={20} className="animate-spin text-[#E91E63]" />
+                    <p className="text-xs">Loading message history...</p>
+                  </div>
+                )}
+
+                {!messagesQuery.isLoading && messages.length === 0 && (
+                  <div className="py-16 text-center space-y-2">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#E91E63]/10 text-[#E91E63]">
+                      <Sparkles size={22} />
+                    </div>
+                    <p className="text-xs font-semibold text-foreground">
+                      No messages yet in this conversation
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Say hello, share a photo, or send a voice note! 🌹
+                    </p>
+                  </div>
+                )}
+
+                {/* Render Grouped Messages by Date */}
+                {groupedMessages.map((group) => (
+                  <div key={group.date} className="space-y-3">
+                    {/* Date Separator Pill */}
+                    <div className="flex items-center justify-center my-3 select-none">
+                      <span className="rounded-full bg-secondary/80 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border border-border">
+                        {group.date}
+                      </span>
+                    </div>
+
+                    {group.items.map((msg) => (
+                      <MessageItem
+                        key={msg.id}
+                        message={msg}
+                        currentUserId={currentUserId}
+                        isGroup={selectedConversation.kind === "group"}
+                        isAdmin={isCurrentGroupAdmin}
+                        onReply={(m) => {
+                          setEditingMessageState(null);
+                          setReplyingTo(m);
+                        }}
+                        onEdit={(m) => {
+                          setReplyingTo(null);
+                          setEditingMessageState(m);
+                        }}
+                        onDelete={handleDeleteMessage}
+                        onToggleReaction={handleToggleReaction}
+                        onLocateMessage={handleLocateMessage}
+                      />
+                    ))}
+                  </div>
+                ))}
+
+                {/* Typing Indicator in message stream */}
+                {activeTypingNames.length > 0 && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground ml-2 animate-pulse">
+                    <div className="flex gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#E91E63]"></span>
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#E91E63]"></span>
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#E91E63]"></span>
+                    </div>
+                    <span className="text-[11px] font-medium">
+                      {activeTypingNames.join(", ")} {activeTypingNames.length === 1 ? "is" : "are"}{" "}
+                      typing...
+                    </span>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* FLOATING JUMP TO BOTTOM BUTTON */}
+              {showScrollBottomBtn && (
                 <button
                   type="button"
-                  onClick={() => setSelectedConversation(null)}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground md:hidden"
-                  aria-label="Back to conversations"
+                  onClick={() => scrollToBottom(true)}
+                  className="absolute bottom-20 right-6 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-[#E91E63] text-white shadow-lg hover:bg-[#C2185B] transition"
+                  title="Jump to latest"
                 >
-                  <ArrowLeft size={18} />
+                  <ChevronDown size={18} />
                 </button>
+              )}
 
-                {getConversationAvatar(selectedConversation) ? (
-                  <img
-                    src={getConversationAvatar(selectedConversation)!}
-                    alt=""
-                    className="h-9 w-9 rounded-full object-cover ring-1 ring-border"
-                  />
-                ) : (
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-foreground">
-                    <MessageCircle size={16} />
-                  </div>
-                )}
+              {/* CHAT COMPOSER */}
+              <ChatComposer
+                onSendMessage={async (data) => {
+                  await sendMutation.mutateAsync(data);
+                }}
+                onTyping={handleBroadcastTyping}
+                replyingTo={replyingTo}
+                onCancelReply={() => setReplyingTo(null)}
+                editingMessage={editingMessageState}
+                onCancelEdit={() => setEditingMessageState(null)}
+                isSending={sendMutation.isPending}
+              />
 
-                <div>
-                  <h2 className="text-xs font-semibold text-foreground">
-                    {getConversationName(selectedConversation)}
-                  </h2>
-
-                  <p className="text-[11px] text-muted-foreground">
-                    {selectedConversation.kind === "group"
-                      ? `${selectedConversation.members.length} members`
-                      : "Direct message"}
-                  </p>
-                </div>
-              </div>
-
-              {/* MESSAGE HISTORY */}
-              <div className="flex-1 space-y-3 overflow-y-auto p-4">
-                {messagesQuery.isLoading && (
-                  <p className="py-8 text-center text-xs text-muted-foreground">
-                    Loading messages...
-                  </p>
-                )}
-
-                {messagesQuery.isError && (
-                  <div className="py-8 text-center">
-                    <p className="break-words text-xs text-destructive">
-                      {getErrorMessage(messagesQuery.error)}
-                    </p>
-
-                    <button
-                      type="button"
-                      onClick={() => messagesQuery.refetch()}
-                      className="mt-2 text-xs font-medium text-[#E91E63] hover:underline"
-                    >
-                      Try again
-                    </button>
-                  </div>
-                )}
-
-                {!messagesQuery.isLoading && !messagesQuery.isError && messages.length === 0 && (
-                  <div className="flex h-full flex-col items-center justify-center text-center">
-                    <MessageCircle size={28} className="mb-2 text-[#E91E63]" />
-
-                    <p className="text-xs font-medium text-foreground">No messages yet</p>
-
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      Send the first message.
-                    </p>
-                  </div>
-                )}
-
-                {messages.map((message) => {
-                  const isMine = message.sender_id === currentUserId;
-
-                  return (
-                    <div
-                      key={message.id}
-                      className={`flex ${isMine ? "justify-end" : "justify-start"}`}
-                    >
-                      <div
-                        className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 shadow-sm ${
-                          isMine
-                            ? "rounded-br-sm bg-[#E91E63] text-white"
-                            : "rounded-bl-sm border border-border bg-card text-foreground"
-                        }`}
-                      >
-                        {message.deleted_at ? (
-                          <p className="text-xs italic opacity-70">Message deleted</p>
-                        ) : message.message_type === "text" ? (
-                          <p className="whitespace-pre-wrap break-words text-xs leading-relaxed">
-                            {message.content}
-                          </p>
-                        ) : (
-                          <p className="text-xs">
-                            Attachment: {message.media_name || message.message_type}
-                          </p>
-                        )}
-
-                        <div
-                          className={`mt-1 flex items-center justify-end gap-1.5 text-[10px] ${
-                            isMine ? "text-white/80" : "text-muted-foreground"
-                          }`}
-                        >
-                          <span>
-                            {new Date(message.created_at).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                            {message.edited_at ? " · Edited" : ""}
-                          </span>
-
-                          {/* WhatsApp-style read receipt status */}
-                          {isMine && (
-                            <span
-                              className="inline-flex items-center select-none"
-                              title={
-                                isMessageReadByRecipient(message, currentUserId)
-                                  ? "Read by recipient"
-                                  : "Saved to server"
-                              }
-                            >
-                              {isMessageReadByRecipient(message, currentUserId) ? (
-                                <CheckCheck
-                                  size={13}
-                                  className="text-white drop-shadow-sm transition-colors duration-200"
-                                />
-                              ) : (
-                                <Check
-                                  size={13}
-                                  className="text-white/60 transition-colors duration-200"
-                                />
-                              )}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* MESSAGE COMPOSER */}
-              <form onSubmit={handleSendMessage} className="border-t border-border p-3 bg-card">
-                {sendMutation.isError && (
-                  <p className="mb-2 break-words px-2 text-xs text-destructive">
-                    {getErrorMessage(sendMutation.error)}
-                  </p>
-                )}
-
-                <div className="flex items-center gap-2 rounded-xl border border-border bg-secondary/50 p-1.5">
-                  <input
-                    value={messageText}
-                    onChange={(event) => setMessageText(event.target.value)}
-                    placeholder="Write a message..."
-                    className="min-w-0 flex-1 bg-transparent px-3 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground"
-                    maxLength={5000}
-                    disabled={sendMutation.isPending}
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={!messageText.trim() || sendMutation.isPending}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#E91E63] text-white transition hover:bg-[#C2185B] disabled:cursor-not-allowed disabled:opacity-40"
-                    aria-label="Send message"
-                  >
-                    {sendMutation.isPending ? (
-                      <Loader2 size={15} className="animate-spin" />
-                    ) : (
-                      <Send size={15} />
-                    )}
-                  </button>
-                </div>
-              </form>
+              {/* GROUP DETAILS SHEET */}
+              {selectedConversation.kind === "group" && (
+                <GroupDetailsSheet
+                  open={groupDetailsOpen}
+                  onOpenChange={setGroupDetailsOpen}
+                  conversation={selectedConversation}
+                  currentUserId={currentUserId}
+                  onConversationUpdated={() => {
+                    queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+                  }}
+                  onLeftGroup={() => {
+                    setSelectedConversation(null);
+                    queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+                  }}
+                />
+              )}
             </>
           )}
         </section>
       </div>
+
+      {/* NEW CHAT MODAL */}
+      <NewChatModal
+        open={newChatModalOpen}
+        onOpenChange={setNewChatModalOpen}
+        currentUserId={currentUserId}
+        onConversationSelected={(conv) => {
+          setSelectedConversation(conv);
+          queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+        }}
+      />
+
+      {/* NEW GROUP MODAL */}
+      <NewGroupModal
+        open={newGroupModalOpen}
+        onOpenChange={setNewGroupModalOpen}
+        currentUserId={currentUserId}
+        onGroupCreated={(group) => {
+          queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+          // Open group directly
+          const fullConv: ConversationListItem = {
+            ...group,
+            members: [],
+            lastMessage: null,
+          };
+          setSelectedConversation(fullConv);
+        }}
+      />
     </div>
   );
 }

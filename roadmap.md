@@ -14,6 +14,7 @@
 - [ ] Phase 8 — Security & testing pass
 
 ## Stage 1 — Persistent social posts (approved additive DB changes)
+
 - [ ] Migration: posts, post_media, post_likes, post_comments, post_comment_likes, post_saves + RLS
 - [ ] Private post-media bucket with per-user/post folders and access policies
 - [ ] Replace localStorage post code with real backend calls (composer, card, comments, saved, share, home/explore/profile)

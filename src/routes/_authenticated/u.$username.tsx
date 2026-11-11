@@ -41,7 +41,7 @@ import {
 } from "@/services/profiles";
 import { getStoredRelationships, toggleFollow, sendFriendRequest } from "@/services/social";
 import { blockUser, unblockUser, blocksKeys, blockedIdsQuery } from "@/services/blocks";
-import { userPostsQuery, mentionPostsQuery, postsKeys } from "@/services/posts";
+import { userPostsQuery, mentionPostsQuery } from "@/services/posts";
 import { getStoredReels } from "@/services/reelsAndStories";
 
 import {

@@ -252,14 +252,7 @@ export function AdminModerationPage() {
                           params={{ username: report.reporter.username }}
                           className="font-medium text-foreground hover:text-[#E91E63] flex items-center gap-1.5"
                         >
-                          <UserAvatar
-                            profile={{
-                              username: report.reporter.username,
-                              display_name: report.reporter.displayName,
-                              avatar_url: report.reporter.avatarUrl,
-                            }}
-                            className="h-5 w-5 text-[9px]"
-                          />
+                          <UserAvatar profile={report.reporter} className="h-5 w-5 text-[9px]" />
                           <span>@{report.reporter.username}</span>
                         </Link>
                       ) : (

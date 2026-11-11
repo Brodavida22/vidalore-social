@@ -20,14 +20,12 @@ export interface ContentReport {
   resolvedAt?: string | null;
   createdAt: string;
   updatedAt: string;
-  reporter?:
-    | {
-        id: string;
-        username: string;
-        displayName: string | null;
-        avatarUrl: string | null;
-      }
-    | undefined;
+  reporter?: {
+    id: string;
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+  };
 }
 
 export const moderationKeys = {

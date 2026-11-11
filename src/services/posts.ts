@@ -1,5 +1,11 @@
 import { queryOptions } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  uploadVideoResumable,
+  compressVideoFile,
+  formatBytes,
+  type VideoUploadProgress,
+} from "@/lib/videoUpload";
 
 // ---------------------------------------------------------------------------
 // Rules (mirrored by database constraints and storage policies)
@@ -511,40 +517,144 @@ export async function createPost(input: {
   tags: string[];
   mood?: string | null | undefined;
   location?: string | null | undefined;
+  existingPostId?: string | undefined;
+  onProgress?: ((progress: VideoUploadProgress) => void) | undefined;
 }): Promise<string> {
   const problem = validatePostDraft(input);
   if (problem) throw new Error(problem);
   const uid = await currentUserId();
 
-  const { data: post, error } = await supabase
-    .from("posts")
-    .insert({
-      author_id: uid,
-      content: input.content.trim(),
-      tags: input.tags,
-      mood: input.mood || null,
-      location: input.location || null,
-    })
-    .select("id")
-    .single();
-  if (error || !post) throw friendlyError(error, "Couldn't publish your post.");
+  // 1. Safe client-side video compression before uploading
+  const processedFiles: File[] = [];
+  for (const f of input.files) {
+    if (f.type.startsWith("video/")) {
+      input.onProgress?.({
+        stage: "compressing",
+        percent: 5,
+        bytesUploaded: 0,
+        bytesTotal: f.size,
+        formattedUploaded: "0 MB",
+        formattedTotal: formatBytes(f.size),
+      });
+
+      const res = await compressVideoFile(f, (progress) => {
+        input.onProgress?.({
+          stage: "compressing",
+          percent: Math.min(95, Math.max(5, progress)),
+          bytesUploaded: 0,
+          bytesTotal: f.size,
+          formattedUploaded: "0 MB",
+          formattedTotal: formatBytes(f.size),
+        });
+      });
+      processedFiles.push(res.file);
+    } else {
+      processedFiles.push(f);
+    }
+  }
+
+  const totalBytes = processedFiles.reduce((sum, f) => sum + f.size, 0);
+
+  if (totalBytes > 0) {
+    input.onProgress?.({
+      stage: "uploading",
+      percent: 0,
+      bytesUploaded: 0,
+      bytesTotal: totalBytes,
+      formattedUploaded: "0 MB",
+      formattedTotal: formatBytes(totalBytes),
+    });
+  }
+
+  // 2. Insert or update the post record (RLS requires post record to exist for storage uploads)
+  let postId = input.existingPostId;
+  if (postId) {
+    const { error: updErr } = await supabase
+      .from("posts")
+      .update({
+        content: input.content.trim(),
+        tags: input.tags,
+        mood: input.mood || null,
+        location: input.location || null,
+      })
+      .eq("id", postId)
+      .eq("author_id", uid);
+
+    if (updErr) throw friendlyError(updErr, "Couldn't update draft post.");
+
+    // Clean up any old media rows and storage items from previous failed attempt
+    const { data: oldMedia } = await supabase
+      .from("post_media")
+      .select("storage_path")
+      .eq("post_id", postId);
+    if (oldMedia && oldMedia.length > 0) {
+      await supabase.storage.from(BUCKET).remove(oldMedia.map((m) => m.storage_path));
+      await supabase.from("post_media").delete().eq("post_id", postId);
+    }
+  } else {
+    const { data: post, error } = await supabase
+      .from("posts")
+      .insert({
+        author_id: uid,
+        content: input.content.trim(),
+        tags: input.tags,
+        mood: input.mood || null,
+        location: input.location || null,
+      })
+      .select("id")
+      .single();
+
+    if (error || !post) throw friendlyError(error, "Couldn't publish your post.");
+    postId = post.id;
+  }
 
   const uploaded: string[] = [];
+  const fileBytesUploaded: number[] = new Array(processedFiles.length).fill(0);
+
+  const reportOverallProgress = () => {
+    if (totalBytes === 0) return;
+    const currentBytes = fileBytesUploaded.reduce((a, b) => a + b, 0);
+    const percent = Math.min(99, Math.round((currentBytes / totalBytes) * 100));
+    input.onProgress?.({
+      stage: "uploading",
+      percent,
+      bytesUploaded: currentBytes,
+      bytesTotal: totalBytes,
+      formattedUploaded: formatBytes(currentBytes),
+      formattedTotal: formatBytes(totalBytes),
+    });
+  };
+
   try {
     const rows = [];
-    for (const [index, file] of input.files.entries()) {
+    for (const [index, file] of processedFiles.entries()) {
       const info = detectMediaInfo(file);
       if (!info) {
         throw new Error(`File "${file.name}" is not a supported format.`);
       }
-      const path = `${uid}/${post.id}/${index}-${crypto.randomUUID()}.${info.ext}`;
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, file, { contentType: info.mime, upsert: false });
-      if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
-      uploaded.push(path);
+
+      const path = `${uid}/${postId}/${index}-${crypto.randomUUID()}.${info.ext}`;
+
+      if (info.type === "video") {
+        await uploadVideoResumable(BUCKET, path, file, (progressInfo) => {
+          fileBytesUploaded[index] = progressInfo.bytesUploaded;
+          reportOverallProgress();
+        });
+        uploaded.push(path);
+        fileBytesUploaded[index] = file.size;
+        reportOverallProgress();
+      } else {
+        const { error: upErr } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, file, { contentType: info.mime, upsert: false });
+        if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+        uploaded.push(path);
+        fileBytesUploaded[index] = file.size;
+        reportOverallProgress();
+      }
+
       rows.push({
-        post_id: post.id,
+        post_id: postId,
         owner_id: uid,
         storage_path: path,
         media_type: info.type,
@@ -553,17 +663,45 @@ export async function createPost(input: {
         position: index,
       });
     }
+
+    if (totalBytes > 0) {
+      input.onProgress?.({
+        stage: "publishing",
+        percent: 99,
+        bytesUploaded: totalBytes,
+        bytesTotal: totalBytes,
+        formattedUploaded: formatBytes(totalBytes),
+        formattedTotal: formatBytes(totalBytes),
+      });
+    }
+
     if (rows.length > 0) {
       const { error: mediaErr } = await supabase.from("post_media").insert(rows);
       if (mediaErr) throw friendlyError(mediaErr, "Couldn't attach media.");
     }
+
+    if (totalBytes > 0) {
+      input.onProgress?.({
+        stage: "success",
+        percent: 100,
+        bytesUploaded: totalBytes,
+        bytesTotal: totalBytes,
+        formattedUploaded: formatBytes(totalBytes),
+        formattedTotal: formatBytes(totalBytes),
+      });
+    }
   } catch (e) {
-    // Roll back: remove uploaded files and the half-created post.
-    if (uploaded.length > 0) await supabase.storage.from(BUCKET).remove(uploaded);
-    await supabase.from("posts").delete().eq("id", post.id);
-    throw e;
+    // Remove newly uploaded storage files
+    if (uploaded.length > 0) {
+      await supabase.storage.from(BUCKET).remove(uploaded);
+    }
+    // Attach postId to error so caller can retain it for duplicate-free retry
+    const err = e instanceof Error ? e : new Error(String(e));
+    (err as Error & { postId?: string }).postId = postId;
+    throw err;
   }
-  return post.id;
+
+  return postId;
 }
 
 export async function updatePost(
