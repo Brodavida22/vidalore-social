@@ -57,6 +57,7 @@ export function MessageItem({
   const handleTouchStart = (e: React.TouchEvent) => {
     if (isDeleted) return;
     const touch = e.touches[0];
+    if (!touch) return;
     touchStartRef.current = { x: touch.clientX, y: touch.clientY };
     isHorizontalSwipeRef.current = null;
     setIsSwiping(true);
@@ -65,6 +66,7 @@ export function MessageItem({
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!touchStartRef.current || isDeleted) return;
     const touch = e.touches[0];
+    if (!touch) return;
     const dx = touch.clientX - touchStartRef.current.x;
     const dy = touch.clientY - touchStartRef.current.y;
 

@@ -165,8 +165,8 @@ export async function uploadVideoResumable(
   try {
     const { data: sessionData } = await supabase.auth.getSession();
     sessionToken = sessionData.session?.access_token ?? null;
-    supabaseUrl = (supabase as { supabaseUrl?: string }).supabaseUrl ?? "";
-    supabaseAnonKey = (supabase as { supabaseKey?: string }).supabaseKey ?? "";
+    supabaseUrl = String(import.meta.env["VITE_SUPABASE_URL"] ?? "");
+    supabaseAnonKey = String(import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ?? "");
   } catch (authErr) {
     console.warn("Session check error for TUS upload:", authErr);
   }

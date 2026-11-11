@@ -424,7 +424,7 @@ export async function updateGroupConversation(
     throw new Error("Only group administrators can change group settings.");
   }
 
-  const updatePayload: Record<string, unknown> = {
+  const updatePayload: { updated_at: string; title?: string; image_url?: string | null } = {
     updated_at: new Date().toISOString(),
   };
 
@@ -1167,8 +1167,8 @@ export function subscribeToConversationChannel(
     )
     // 6. Broadcast: Typing indicator
     .on("broadcast", { event: "typing" }, (event) => {
-      if (event.payload && handlers.onTyping) {
-        handlers.onTyping(event.payload as { userId: string; username: string; isTyping: boolean });
+      if (event["payload"] && handlers.onTyping) {
+        handlers.onTyping(event["payload"] as { userId: string; username: string; isTyping: boolean });
       }
     })
     // 7. Presence: Online tracking
