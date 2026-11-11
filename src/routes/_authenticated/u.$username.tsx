@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,7 +9,6 @@ import {
   UserPen,
   Award,
   Grid,
-  Image as ImageIcon,
   Clapperboard,
   Bookmark,
   Info,
@@ -20,11 +20,16 @@ import {
   UserX,
   BadgeCheck,
   MessageSquare,
-  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,13 +44,28 @@ import {
   myProfileQuery,
   profileByUsernameQuery,
 } from "@/services/profiles";
-import { getStoredRelationships, toggleFollow, sendFriendRequest } from "@/services/social";
-import { blockUser, unblockUser, blocksKeys, blockedIdsQuery } from "@/services/blocks";
-import { userPostsQuery, mentionPostsQuery, postsKeys } from "@/services/posts";
+import {
+  getStoredRelationships,
+  sendFriendRequest,
+} from "@/services/social";
+import {
+  blockUser,
+  unblockUser,
+  blocksKeys,
+  blockedIdsQuery,
+} from "@/services/blocks";
+import {
+  userPostsQuery,
+  mentionPostsQuery,
+  postsKeys,
+} from "@/services/posts";
 import { getStoredReels } from "@/services/reelsAndStories";
+import { supabase } from "@/integrations/supabase/client";
 
 import {
   getFollowCounts,
+  getFollowers,
+  getFollowing,
   isFollowing as checkIsFollowing,
   followUser,
   unfollowUser,
@@ -57,8 +77,14 @@ export const Route = createFileRoute("/_authenticated/u/$username")({
   head: ({ params }) => ({
     meta: [
       { title: `@${params.username} — VIDALORE SOCIAL` },
-      { name: "description", content: `@${params.username}'s profile on VIDALORE SOCIAL.` },
-      { property: "og:title", content: `@${params.username} — VIDALORE SOCIAL` },
+      {
+        name: "description",
+        content: `@${params.username}'s profile on VIDALORE SOCIAL.`,
+      },
+      {
+        property: "og:title",
+        content: `@${params.username} — VIDALORE SOCIAL`,
+      },
       {
         property: "og:description",
         content: `See @${params.username}'s posts on VIDALORE SOCIAL.`,
@@ -73,8 +99,17 @@ export const Route = createFileRoute("/_authenticated/u/$username")({
 function ProfilePage() {
   const { username } = Route.useParams();
   const navigate = useNavigate();
-  const { data: profile, isLoading, error, refetch } = useQuery(profileByUsernameQuery(username));
+  const queryClient = useQueryClient();
+
+  const {
+    data: profile,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery(profileByUsernameQuery(username));
+
   const { data: me } = useQuery(myProfileQuery());
+
   const { data: achievements } = useQuery({
     ...achievementsForUserQuery(profile?.id ?? ""),
     enabled: !!profile,
@@ -83,18 +118,30 @@ function ProfilePage() {
   const [activeTab, setActiveTab] = useState<
     "posts" | "reels" | "tagged" | "achievements" | "about"
   >("posts");
+
   const [reportOpen, setReportOpen] = useState(false);
-  const [relState, setRelState] = useState(() => getStoredRelationships());
+  const [followListOpen, setFollowListOpen] = useState(false);
+
+  const [followListType, setFollowListType] = useState<
+    "followers" | "following"
+  >("followers");
+
+  const [relState, setRelState] = useState(() =>
+    getStoredRelationships()
+  );
 
   const isMe = me?.id === profile?.id;
 
-  const { data: followCounts, refetch: refetchFollowCounts } = useQuery({
+  const { data: followCounts } = useQuery({
     queryKey: ["follow-counts", profile?.id],
     queryFn: () => getFollowCounts(profile!.id),
     enabled: !!profile,
   });
 
-  const { data: isFollowingUser, refetch: refetchIsFollowing } = useQuery({
+  const {
+    data: isFollowingUser,
+    isLoading: isFollowingLoading,
+  } = useQuery({
     queryKey: ["is-following", profile?.id],
     queryFn: () => checkIsFollowing(profile!.id),
     enabled: !!profile && !isMe,
@@ -106,26 +153,89 @@ function ProfilePage() {
     enabled: !!profile && !isMe,
   });
 
-  const isFollowing = profile
-    ? (isFollowingUser ?? relState.following.includes(profile.id))
-    : false;
+  const isFollowing = isFollowingUser ?? false;
+
   const isFriend =
     friendStatus?.status === "accepted" ||
     (profile ? relState.friends.includes(profile.id) : false);
+
   const hasSentFriendRequest =
     friendStatus?.status === "pending" ||
-    (profile ? relState.outgoingFriendRequests.includes(profile.id) : false);
+    (profile
+      ? relState.outgoingFriendRequests.includes(profile.id)
+      : false);
 
-  const queryClient = useQueryClient();
   const { data: blockedIds = [] } = useQuery(blockedIdsQuery());
-  const isUserBlocked = Boolean(profile && blockedIds.includes(profile.id));
+
+  const isUserBlocked = Boolean(
+    profile && blockedIds.includes(profile.id)
+  );
+
+  // Load the selected profile's followers or following list.
+  const {
+    data: followList = [],
+    isLoading: followListLoading,
+    isError: followListError,
+    refetch: refetchFollowList,
+  } = useQuery({
+    queryKey: [
+      "profile-follow-list",
+      profile?.id,
+      followListType,
+    ],
+    queryFn: () =>
+      followListType === "followers"
+        ? getFollowers(profile!.id)
+        : getFollowing(profile!.id),
+    enabled: !!profile?.id && followListOpen,
+  });
+
+  // Load the accounts followed by the currently signed-in user.
+  // This determines whether each person in the list should show
+  // Follow or Following.
+  const {
+    data: viewerFollowingIds = [],
+    isLoading: viewerFollowingLoading,
+    isError: viewerFollowingError,
+  } = useQuery({
+    queryKey: ["viewer-following-ids"],
+    queryFn: async () => {
+      const { data: auth, error: authError } =
+        await supabase.auth.getUser();
+
+      if (authError) throw authError;
+
+      if (!auth.user) return [];
+
+      const { data, error } = await supabase
+        .from("follows")
+        .select("following_id")
+        .eq("follower_id", auth.user.id);
+
+      if (error) throw error;
+
+      return (data ?? []).map((item) => item.following_id);
+    },
+    enabled: followListOpen,
+  });
 
   useEffect(() => {
     const handleUpdate = () => {
-      void queryClient.invalidateQueries({ queryKey: ["reels", "all"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["reels", "all"],
+      });
     };
-    window.addEventListener("vidalore:reels-updated", handleUpdate);
-    return () => window.removeEventListener("vidalore:reels-updated", handleUpdate);
+
+    window.addEventListener(
+      "vidalore:reels-updated",
+      handleUpdate
+    );
+
+    return () =>
+      window.removeEventListener(
+        "vidalore:reels-updated",
+        handleUpdate
+      );
   }, [queryClient]);
 
   const {
@@ -152,10 +262,13 @@ function ProfilePage() {
   });
 
   const allReels = reelsQuery.data ?? [];
-  const userReels = (Array.isArray(allReels) ? allReels : []).filter(
+
+  const userReels = (
+    Array.isArray(allReels) ? allReels : []
+  ).filter(
     (r) =>
       r.creatorUsername.toLowerCase() === username.toLowerCase() ||
-      (profile && r.creatorId === profile.id),
+      (profile && r.creatorId === profile.id)
   );
 
   if (isLoading) {
@@ -170,8 +283,15 @@ function ProfilePage() {
   if (error) {
     return (
       <div className="p-12 text-center space-y-3">
-        <p className="text-muted-foreground text-sm">Couldn't load this profile.</p>
-        <Button variant="outline" onClick={() => refetch()} className="text-xs rounded-lg">
+        <p className="text-muted-foreground text-sm">
+          Couldn't load this profile.
+        </p>
+
+        <Button
+          variant="outline"
+          onClick={() => refetch()}
+          className="text-xs rounded-lg"
+        >
           Retry
         </Button>
       </div>
@@ -181,8 +301,14 @@ function ProfilePage() {
   if (!profile) {
     return (
       <div className="p-14 text-center space-y-3">
-        <h1 className="text-2xl font-bold text-foreground">User not found</h1>
-        <p className="text-muted-foreground text-xs">@{username} doesn't exist or was removed.</p>
+        <h1 className="text-2xl font-bold text-foreground">
+          User not found
+        </h1>
+
+        <p className="text-muted-foreground text-xs">
+          @{username} doesn't exist or was removed.
+        </p>
+
         <Button
           asChild
           className="mt-2 text-xs rounded-lg bg-[#E91E63] hover:bg-[#C2185B] text-white"
@@ -193,73 +319,147 @@ function ProfilePage() {
     );
   }
 
-  const joined = new Date(profile.created_at).toLocaleDateString(undefined, {
-    month: "long",
-    year: "numeric",
-  });
+  const joined = new Date(profile.created_at).toLocaleDateString(
+    undefined,
+    {
+      month: "long",
+      year: "numeric",
+    }
+  );
 
   async function shareProfile() {
     const url = window.location.href;
+
     if (navigator.share) {
       try {
-        await navigator.share({ title: `@${profile!.username} on VIDALORE SOCIAL`, url });
+        await navigator.share({
+          title: `@${profile.username} on VIDALORE SOCIAL`,
+          url,
+        });
       } catch {
-        /* cancelled */
+        // Sharing was cancelled or unavailable.
       }
     } else {
-      await navigator.clipboard.writeText(url);
-      toast.success("Profile link copied");
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success("Profile link copied");
+      } catch {
+        toast.error("Couldn't copy profile link.");
+      }
     }
   }
 
   async function handleFollowToggle() {
-    if (!profile) return;
     try {
       if (isFollowing) {
         await unfollowUser(profile.id);
-        toast.info(`Unfollowed @${profile.username}`);
+        toast.success(`Unfollowed @${profile.username}`);
       } else {
         await followUser(profile.id);
-        toast.info(`Following @${profile.username}`);
+        toast.success(`Following @${profile.username}`);
       }
-      void refetchIsFollowing();
-      void refetchFollowCounts();
-    } catch {
-      const isNow = toggleFollow(profile.id);
-      setRelState(getStoredRelationships());
-      toast.info(isNow ? `Following @${profile.username}` : `Unfollowed @${profile.username}`);
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["is-following", profile.id],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["follow-counts"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["viewer-following-ids"],
+        }),
+      ]);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Couldn't update follow status. Please try again."
+      );
+    }
+  }
+
+  async function handleListFollowToggle(
+    person: (typeof followList)[number]
+  ) {
+    const currentlyFollowing = viewerFollowingIds.includes(
+      person.id
+    );
+
+    try {
+      if (currentlyFollowing) {
+        await unfollowUser(person.id);
+        toast.success(`Unfollowed @${person.username}`);
+      } else {
+        await followUser(person.id);
+        toast.success(`Following @${person.username}`);
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["viewer-following-ids"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["follow-counts"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["is-following"],
+        }),
+      ]);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Couldn't update follow status. Please try again."
+      );
     }
   }
 
   async function handleFriendRequest() {
-    if (!profile) return;
     try {
       await sendSupabaseFriendRequest(profile.id);
-      void refetchFriendStatus();
-      toast.success(`Friend request sent to @${profile.username}`);
+      await refetchFriendStatus();
+
+      toast.success(
+        `Friend request sent to @${profile.username}`
+      );
     } catch {
       sendFriendRequest(profile.id);
       setRelState(getStoredRelationships());
-      toast.success(`Friend request sent to @${profile.username}`);
+
+      toast.success(
+        `Friend request sent to @${profile.username}`
+      );
     }
   }
 
   async function handleBlockToggle() {
-    if (!profile) return;
     try {
       if (isUserBlocked) {
         await unblockUser(profile.id);
         toast.success(`Unblocked @${profile.username}`);
       } else {
         await blockUser(profile.id);
+
         toast.success(`Blocked @${profile.username}`, {
-          description: "Their posts and interactions are now hidden from your feeds.",
+          description:
+            "Their posts and interactions are now hidden from your feeds.",
         });
       }
-      await queryClient.invalidateQueries({ queryKey: blocksKeys.all });
-      await queryClient.invalidateQueries({ queryKey: postsKeys.all });
+
+      await queryClient.invalidateQueries({
+        queryKey: blocksKeys.all,
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: postsKeys.all,
+      });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't update block status.");
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Couldn't update block status."
+      );
     }
   }
 
@@ -268,7 +468,11 @@ function ProfilePage() {
       {/* Cover Photo */}
       <div className="relative h-40 sm:h-52 overflow-hidden bg-secondary md:mt-4 md:rounded-xl border border-border shadow-sm">
         {profile.cover_url ? (
-          <img src={profile.cover_url} alt="" className="h-full w-full object-cover" />
+          <img
+            src={profile.cover_url}
+            alt=""
+            className="h-full w-full object-cover"
+          />
         ) : (
           <div className="h-full w-full bg-[#111111] flex items-center justify-center">
             <span className="font-display text-2xl font-black tracking-widest text-white/20 select-none">
@@ -288,7 +492,7 @@ function ProfilePage() {
             />
           </div>
 
-          {/* Action buttons (Section 9: Primary action Pink, Secondary action border) */}
+          {/* Action Buttons */}
           <div className="flex items-center gap-2 pb-1">
             <Button
               variant="outline"
@@ -307,16 +511,17 @@ function ProfilePage() {
                 className="rounded-lg px-4 text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white shadow-sm"
               >
                 <Link to="/settings/profile">
-                  <UserPen className="h-3.5 w-3.5 mr-1.5" /> Edit Profile
+                  <UserPen className="h-3.5 w-3.5 mr-1.5" />
+                  Edit Profile
                 </Link>
               </Button>
             ) : (
               <>
-                {/* Follow Button: Primary pink when not following, secondary border when following */}
                 <Button
                   type="button"
                   size="sm"
                   variant={isFollowing ? "outline" : "default"}
+                  disabled={isFollowingLoading}
                   onClick={handleFollowToggle}
                   className={`rounded-lg px-4 text-xs font-semibold ${
                     isFollowing
@@ -326,16 +531,17 @@ function ProfilePage() {
                 >
                   {isFollowing ? (
                     <>
-                      <UserCheck className="h-3.5 w-3.5 mr-1.5" /> Following
+                      <UserCheck className="h-3.5 w-3.5 mr-1.5" />
+                      Following
                     </>
                   ) : (
                     <>
-                      <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Follow
+                      <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+                      Follow
                     </>
                   )}
                 </Button>
 
-                {/* Message Button (Secondary action with border) */}
                 <Button
                   type="button"
                   size="sm"
@@ -356,7 +562,9 @@ function ProfilePage() {
                     onClick={handleFriendRequest}
                     className="rounded-lg px-3 text-xs border-border hidden sm:inline-flex"
                   >
-                    {hasSentFriendRequest ? "Requested" : "+ Friend"}
+                    {hasSentFriendRequest
+                      ? "Requested"
+                      : "+ Friend"}
                   </Button>
                 )}
 
@@ -370,13 +578,19 @@ function ProfilePage() {
                       <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="bg-popover border-border">
+
+                  <DropdownMenuContent
+                    align="end"
+                    className="bg-popover border-border"
+                  >
                     <DropdownMenuItem
                       onClick={() => setReportOpen(true)}
                       className="text-xs text-destructive cursor-pointer"
                     >
-                      <Flag className="h-3.5 w-3.5 mr-2" /> Report profile
+                      <Flag className="h-3.5 w-3.5 mr-2" />
+                      Report profile
                     </DropdownMenuItem>
+
                     <DropdownMenuItem
                       onClick={handleBlockToggle}
                       className="text-xs text-destructive cursor-pointer"
@@ -393,15 +607,21 @@ function ProfilePage() {
           </div>
         </div>
 
-        {/* Name and bio */}
+        {/* Name and Bio */}
         <div className="mt-3">
           <div className="flex items-center gap-1.5">
             <h1 className="text-xl sm:text-2xl font-bold text-foreground">
               {profile.display_name || profile.username}
             </h1>
-            {profile.points_balance > 100 && <BadgeCheck className="h-4 w-4 text-[#E91E63]" />}
+
+            {profile.points_balance > 100 && (
+              <BadgeCheck className="h-4 w-4 text-[#E91E63]" />
+            )}
           </div>
-          <p className="text-xs text-muted-foreground">@{profile.username}</p>
+
+          <p className="text-xs text-muted-foreground">
+            @{profile.username}
+          </p>
 
           {profile.bio && (
             <p className="mt-2 text-xs sm:text-sm text-foreground whitespace-pre-line leading-relaxed max-w-xl">
@@ -412,15 +632,20 @@ function ProfilePage() {
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
             {profile.location && (
               <span className="flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5 text-[#E91E63]" /> {profile.location}
+                <MapPin className="h-3.5 w-3.5 text-[#E91E63]" />
+                {profile.location}
               </span>
             )}
+
             <span className="flex items-center gap-1">
-              <CalendarDays className="h-3.5 w-3.5" /> Joined {joined}
+              <CalendarDays className="h-3.5 w-3.5" />
+              Joined {joined}
             </span>
+
             {profile.is_private && (
               <span className="flex items-center gap-1 text-[#E91E63]">
-                <Shield className="h-3.5 w-3.5" /> Private Account
+                <Shield className="h-3.5 w-3.5" />
+                Private Account
               </span>
             )}
           </div>
@@ -432,9 +657,11 @@ function ProfilePage() {
             <div className="flex items-center gap-2 text-xs text-destructive font-medium">
               <UserX className="h-4 w-4 shrink-0" />
               <span>
-                You have blocked @{profile.username}. Their posts and activity are hidden.
+                You have blocked @{profile.username}. Their posts
+                and activity are hidden.
               </span>
             </div>
+
             <Button
               size="sm"
               variant="outline"
@@ -446,21 +673,39 @@ function ProfilePage() {
           </div>
         )}
 
-        {/* Social Counters (Posts, Followers, Following, Points) */}
+        {/* Social Counters */}
         <div className="mt-4 grid grid-cols-4 gap-1.5 sm:gap-2 text-center">
-          <Stat label="Posts" value={userPosts.length.toString()} />
+          <Stat
+            label="Posts"
+            value={userPosts.length.toString()}
+          />
+
           <Stat
             label="Followers"
-            value={(followCounts?.followers ?? (isMe ? relState.followers.length : 0)).toString()}
+            value={(followCounts?.followers ?? 0).toString()}
+            onClick={() => {
+              setFollowListType("followers");
+              setFollowListOpen(true);
+            }}
           />
+
           <Stat
             label="Following"
-            value={(followCounts?.following ?? (isMe ? relState.following.length : 0)).toString()}
+            value={(followCounts?.following ?? 0).toString()}
+            onClick={() => {
+              setFollowListType("following");
+              setFollowListOpen(true);
+            }}
           />
-          <Stat label="Points" value={profile.points_balance.toString()} highlight />
+
+          <Stat
+            label="Points"
+            value={profile.points_balance.toString()}
+            highlight
+          />
         </div>
 
-        {/* Profile Tabs Navigation: Posts, Reels, Tagged, Awards, About */}
+        {/* Profile Tabs */}
         <div className="mt-5 flex border-b border-border overflow-x-auto scrollbar-none">
           <TabButton
             active={activeTab === "posts"}
@@ -468,24 +713,28 @@ function ProfilePage() {
             icon={Grid}
             label={`Posts (${userPosts.length})`}
           />
+
           <TabButton
             active={activeTab === "reels"}
             onClick={() => setActiveTab("reels")}
             icon={Clapperboard}
             label={`Reels (${userReels.length})`}
           />
+
           <TabButton
             active={activeTab === "tagged"}
             onClick={() => setActiveTab("tagged")}
             icon={Bookmark}
             label={`Tagged (${taggedPosts.length})`}
           />
+
           <TabButton
             active={activeTab === "achievements"}
             onClick={() => setActiveTab("achievements")}
             icon={Award}
             label={`Awards (${achievements?.length ?? 0})`}
           />
+
           <TabButton
             active={activeTab === "about"}
             onClick={() => setActiveTab("about")}
@@ -506,7 +755,10 @@ function ProfilePage() {
                 </div>
               ) : userPosts.length === 0 ? (
                 <div className="rounded-xl p-8 text-center space-y-2 border border-border bg-card">
-                  <p className="font-semibold text-foreground text-sm">No posts shared yet</p>
+                  <p className="font-semibold text-foreground text-sm">
+                    No posts shared yet
+                  </p>
+
                   <p className="text-xs text-muted-foreground">
                     {isMe
                       ? "Publish your first post to appear here!"
@@ -533,13 +785,17 @@ function ProfilePage() {
             </div>
           )}
 
-          {/* Reels Tab (Section 9) */}
+          {/* Reels Tab */}
           {activeTab === "reels" && (
             <div>
               {userReels.length === 0 ? (
                 <div className="rounded-xl p-8 text-center space-y-2 border border-border bg-card">
                   <Clapperboard className="h-8 w-8 text-muted-foreground mx-auto" />
-                  <p className="font-semibold text-foreground text-sm">No reels uploaded</p>
+
+                  <p className="font-semibold text-foreground text-sm">
+                    No reels uploaded
+                  </p>
+
                   <p className="text-xs text-muted-foreground">
                     Vertical video reels will appear here.
                   </p>
@@ -552,7 +808,12 @@ function ProfilePage() {
                       onClick={() => navigate({ to: "/reels" })}
                       className="aspect-[9/16] rounded-xl overflow-hidden bg-black relative border border-border cursor-pointer group"
                     >
-                      <video src={reel.videoUrl} className="h-full w-full object-cover" muted />
+                      <video
+                        src={reel.videoUrl}
+                        className="h-full w-full object-cover"
+                        muted
+                      />
+
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-2.5">
                         <span className="text-[0.65rem] text-white font-medium line-clamp-1">
                           {reel.caption}
@@ -565,7 +826,7 @@ function ProfilePage() {
             </div>
           )}
 
-          {/* Tagged Tab (Section 9) */}
+          {/* Tagged Tab */}
           {activeTab === "tagged" && (
             <div className="space-y-4">
               {taggedPostsLoading ? (
@@ -575,7 +836,11 @@ function ProfilePage() {
               ) : taggedPosts.length === 0 ? (
                 <div className="rounded-xl p-8 text-center space-y-2 border border-border bg-card">
                   <Bookmark className="h-8 w-8 text-muted-foreground mx-auto" />
-                  <p className="font-semibold text-foreground text-sm">No tagged posts</p>
+
+                  <p className="font-semibold text-foreground text-sm">
+                    No tagged posts
+                  </p>
+
                   <p className="text-xs text-muted-foreground">
                     Posts mentioning @{profile.username} will show here.
                   </p>
@@ -607,6 +872,7 @@ function ProfilePage() {
                 <Award className="h-4 w-4 text-[#E91E63]" />
                 Community Achievements
               </h2>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {achievements?.length ? (
                   achievements.map((a) => (
@@ -615,10 +881,12 @@ function ProfilePage() {
                       className="flex items-center gap-3 rounded-lg bg-secondary p-3 border border-border"
                     >
                       <Award className="h-6 w-6 text-[#E91E63] shrink-0" />
+
                       <div>
                         <p className="text-xs font-semibold text-foreground">
                           {a.achievements?.name}
                         </p>
+
                         <p className="text-[0.7rem] text-muted-foreground">
                           {a.achievements?.description}
                         </p>
@@ -627,7 +895,8 @@ function ProfilePage() {
                   ))
                 ) : (
                   <p className="text-xs text-muted-foreground py-4 col-span-2 text-center">
-                    No achievements unlocked yet. Participate and post to earn badges.
+                    No achievements unlocked yet. Participate and
+                    post to earn badges.
                   </p>
                 )}
               </div>
@@ -637,22 +906,34 @@ function ProfilePage() {
           {/* About Tab */}
           {activeTab === "about" && (
             <section className="rounded-xl p-5 space-y-3 border border-border bg-card shadow-sm">
-              <h2 className="text-base font-semibold text-foreground">About @{profile.username}</h2>
+              <h2 className="text-base font-semibold text-foreground">
+                About @{profile.username}
+              </h2>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div className="rounded-lg bg-secondary p-3 border border-border">
                   <p className="text-muted-foreground">Status</p>
-                  <p className="font-semibold text-foreground mt-0.5">Active Member</p>
+                  <p className="font-semibold text-foreground mt-0.5">
+                    Active Member
+                  </p>
                 </div>
+
                 <div className="rounded-lg bg-secondary p-3 border border-border">
                   <p className="text-muted-foreground">Privacy</p>
                   <p className="font-semibold text-foreground mt-0.5">
-                    {profile.is_private ? "Private Account (Followers only)" : "Public Account"}
+                    {profile.is_private
+                      ? "Private Account (Followers only)"
+                      : "Public Account"}
                   </p>
                 </div>
+
                 <div className="rounded-lg bg-secondary p-3 border border-border">
                   <p className="text-muted-foreground">Member Since</p>
-                  <p className="font-semibold text-foreground mt-0.5">{joined}</p>
+                  <p className="font-semibold text-foreground mt-0.5">
+                    {joined}
+                  </p>
                 </div>
+
                 <div className="rounded-lg bg-secondary p-3 border border-border">
                   <p className="text-muted-foreground">VIDA Points</p>
                   <p className="font-semibold text-[#E91E63] mt-0.5">
@@ -665,6 +946,131 @@ function ProfilePage() {
         </div>
       </div>
 
+      {/* Followers and Following Dialog */}
+      <Dialog
+        open={followListOpen}
+        onOpenChange={setFollowListOpen}
+      >
+        <DialogContent className="max-w-md bg-card border-border rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">
+              {followListType === "followers"
+                ? "Followers"
+                : "Following"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">
+            {followListLoading ? (
+              <div className="space-y-3 py-4">
+                <Skeleton className="h-14 rounded-xl" />
+                <Skeleton className="h-14 rounded-xl" />
+                <Skeleton className="h-14 rounded-xl" />
+              </div>
+            ) : followListError ? (
+              <div className="py-8 text-center space-y-3">
+                <p className="text-sm text-destructive">
+                  Couldn't load this list.
+                </p>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void refetchFollowList()}
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : followList.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                {followListType === "followers"
+                  ? "Nobody follows this account yet."
+                  : "This account isn't following anyone yet."}
+              </p>
+            ) : (
+              followList.map((person) => {
+                const isViewerFollowing =
+                  viewerFollowingIds.includes(person.id);
+
+                const isSelf = person.id === me?.id;
+
+                return (
+                  <div
+                    key={person.id}
+                    className="flex items-center gap-3 rounded-xl p-3 hover:bg-secondary/40 transition-colors"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFollowListOpen(false);
+
+                        navigate({
+                          to: "/u/$username",
+                          params: {
+                            username: person.username,
+                          },
+                        });
+                      }}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    >
+                      <UserAvatar
+                        profile={person}
+                        className="h-11 w-11 shrink-0"
+                      />
+
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-foreground truncate">
+                          {person.display_name || person.username}
+                        </p>
+
+                        <p className="text-xs text-muted-foreground truncate">
+                          @{person.username}
+                        </p>
+                      </div>
+                    </button>
+
+                    {!isSelf && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={
+                          isViewerFollowing ? "outline" : "default"
+                        }
+                        disabled={
+                          viewerFollowingLoading ||
+                          viewerFollowingError
+                        }
+                        onClick={() =>
+                          void handleListFollowToggle(person)
+                        }
+                        className={`shrink-0 rounded-lg text-xs px-3 ${
+                          isViewerFollowing
+                            ? "border-border text-foreground hover:bg-secondary"
+                            : "bg-[#E91E63] hover:bg-[#C2185B] text-white"
+                        }`}
+                      >
+                        {isViewerFollowing ? (
+                          <>
+                            <UserCheck className="h-3.5 w-3.5 mr-1" />
+                            Following
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="h-3.5 w-3.5 mr-1" />
+                            Follow
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <ReportModal
         targetId={profile.id}
         targetType="profile"
@@ -676,25 +1082,55 @@ function ProfilePage() {
   );
 }
 
-function Stat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-  return (
-    <div
-      className={`rounded-lg p-2.5 transition-colors border ${
-        highlight
-          ? "bg-[#E91E63] text-white border-[#E91E63] font-semibold"
-          : "bg-card text-foreground border-border"
-      }`}
-    >
-      <p className="font-semibold text-xs sm:text-sm truncate">{value}</p>
+function Stat({
+  label,
+  value,
+  highlight,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+  onClick?: () => void;
+}) {
+  const className = `rounded-lg p-2.5 transition-colors border ${
+    highlight
+      ? "bg-[#E91E63] text-white border-[#E91E63] font-semibold"
+      : "bg-card text-foreground border-border"
+  }`;
+
+  const content = (
+    <>
+      <p className="font-semibold text-xs sm:text-sm truncate">
+        {value}
+      </p>
+
       <p
         className={`text-[0.65rem] truncate ${
-          highlight ? "text-white/90 font-medium" : "text-muted-foreground"
+          highlight
+            ? "text-white/90 font-medium"
+            : "text-muted-foreground"
         }`}
       >
         {label}
       </p>
-    </div>
+    </>
   );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={`View ${label}`}
+        className={`${className} w-full cursor-pointer hover:bg-secondary/70 active:scale-95`}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={className}>{content}</div>;
 }
 
 function TabButton({
