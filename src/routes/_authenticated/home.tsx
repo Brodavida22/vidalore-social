@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Flame, Users, Compass, RefreshCw, Search, Bell } from "lucide-react";
+import { Flame, Users, Compass, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PostComposer } from "@/components/feed/PostComposer";
 import { PostCard } from "@/components/feed/PostCard";
@@ -9,9 +9,7 @@ import { StoriesBar } from "@/components/stories/StoriesBar";
 import { RightSidebar } from "@/components/layout/RightSidebar";
 import { myProfileQuery } from "@/services/profiles";
 import { feedQuery, postsKeys, type FeedMode } from "@/services/posts";
-import { unreadNotificationsCountQuery, notificationsKeys } from "@/services/notifications";
 import { blockedIdsQuery } from "@/services/blocks";
-import { NotificationsModal } from "@/components/social/NotificationsModal";
 
 export const Route = createFileRoute("/_authenticated/home")({
   head: () => ({
@@ -30,11 +28,9 @@ export const Route = createFileRoute("/_authenticated/home")({
 function HomePage() {
   const queryClient = useQueryClient();
   const { data: me } = useQuery(myProfileQuery());
-  const { data: unreadCount = 0 } = useQuery(unreadNotificationsCountQuery());
   const { data: blockedIds = [] } = useQuery(blockedIdsQuery());
 
   const [feedFilter, setFeedFilter] = useState<FeedMode>("for-you");
-  const [notifOpen, setNotifOpen] = useState(false);
 
   const {
     data: allFeedPosts = [],
@@ -55,38 +51,6 @@ function HomePage() {
     <div className="flex justify-center mx-auto max-w-7xl px-3 sm:px-4 lg:px-6">
       {/* Central feed column */}
       <div className="w-full max-w-2xl min-w-0 space-y-4 py-3 sm:py-5">
-        {/* 1. Top Header Bar for Feed */}
-        <div className="flex items-center justify-between pb-1">
-          <div className="flex items-center gap-1.5">
-            <span className="font-display font-black text-xl sm:text-2xl tracking-tight text-foreground">
-              VIDA<span className="text-[#E91E63]">LORE</span>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <Link
-              to="/explore"
-              className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-secondary"
-              aria-label="Search"
-            >
-              <Search className="h-5 w-5" />
-            </Link>
-            <button
-              type="button"
-              onClick={() => setNotifOpen(true)}
-              className="relative p-2 text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-secondary"
-              aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
-            >
-              <Bell className="h-5 w-5" />
-              {unreadCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 min-w-[1.15rem] h-[1.15rem] px-1 flex items-center justify-center rounded-full bg-[#E91E63] text-[0.6rem] font-bold leading-none text-white ring-2 ring-background">
-                  {unreadCount > 99 ? "99+" : unreadCount}
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
-
         {/* 2. Stories Section */}
         <StoriesBar me={me} />
 
@@ -182,14 +146,6 @@ function HomePage() {
       {/* Right discovery sidebar on desktop */}
       <RightSidebar me={me} />
 
-      {/* Notifications Modal */}
-      <NotificationsModal
-        open={notifOpen}
-        onOpenChange={(v) => {
-          setNotifOpen(v);
-          void queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
-        }}
-      />
     </div>
   );
-}
+      }
