@@ -453,7 +453,7 @@ export function GroupDetailsSheet({
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <UserAvatar
-                        profile={member.profile}
+                        profile={member.profile ?? { username: "member", display_name: null, avatar_url: null }}
                         className="h-8 w-8 ring-1 ring-border"
                       />
                       <div className="min-w-0">

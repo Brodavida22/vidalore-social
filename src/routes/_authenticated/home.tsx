@@ -9,7 +9,7 @@ import { StoriesBar } from "@/components/stories/StoriesBar";
 import { RightSidebar } from "@/components/layout/RightSidebar";
 import { myProfileQuery } from "@/services/profiles";
 import { feedQuery, postsKeys, type FeedMode } from "@/services/posts";
-import { unreadNotificationsCountQuery } from "@/services/notifications";
+import { unreadNotificationsCountQuery, notificationsKeys } from "@/services/notifications";
 import { blockedIdsQuery } from "@/services/blocks";
 import { NotificationsModal } from "@/components/social/NotificationsModal";
 
@@ -185,8 +185,7 @@ function HomePage() {
         open={notifOpen}
         onOpenChange={(v) => {
           setNotifOpen(v);
-          const notifs = getStoredNotifications();
-          setUnreadCount(notifs.filter((n) => !n.isRead).length);
+          void queryClient.invalidateQueries({ queryKey: notificationsKeys.all });
         }}
       />
     </div>

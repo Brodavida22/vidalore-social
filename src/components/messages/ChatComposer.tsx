@@ -36,10 +36,10 @@ export function ChatComposer({
   isSending,
 }: {
   onSendMessage: (data: {
-    content?: string;
+    content?: string | undefined;
     mediaFile?: File | Blob;
-    messageType?: "text" | "image" | "video" | "audio" | "file";
-    replyToId?: string;
+    messageType?: "text" | "image" | "video" | "audio" | "file" | undefined;
+    replyToId?: string | undefined;
   }) => Promise<void>;
   onTyping: (isTyping: boolean) => void;
   replyingTo: MessageWithReadsAndReactions | null;

@@ -10,10 +10,10 @@ export function VideoUploadProgressCard({
   onCancel,
 }: {
   progress: VideoUploadProgress;
-  videoPreviewUrl?: string | null;
-  videoName?: string;
-  onRetry?: () => void;
-  onCancel?: () => void;
+  videoPreviewUrl?: string | null | undefined;
+  videoName?: string | undefined;
+  onRetry?: (() => void) | undefined;
+  onCancel?: (() => void) | undefined;
 }) {
   const isCompressing = progress.stage === "compressing";
   const isUploading = progress.stage === "uploading";

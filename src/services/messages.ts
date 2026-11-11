@@ -424,7 +424,7 @@ export async function updateGroupConversation(
     throw new Error("Only group administrators can change group settings.");
   }
 
-  const updatePayload: Record<string, unknown> = {
+  const updatePayload: { updated_at: string; title?: string; image_url?: string | null } = {
     updated_at: new Date().toISOString(),
   };
 
@@ -725,8 +725,8 @@ export async function uploadChatMedia(
   conversationId: string,
   file: File | Blob,
   options: {
-    fileName?: string;
-    contentType?: string;
+    fileName?: string | undefined;
+    contentType?: string | undefined;
     onProgress?: (pct: number) => void;
   } = {},
 ): Promise<{ mediaUrl: string; mediaName: string }> {
@@ -797,11 +797,11 @@ export async function uploadChatMedia(
 export async function sendMessage(
   conversationId: string,
   options: {
-    content?: string;
-    messageType?: "text" | "image" | "video" | "audio" | "file";
-    mediaUrl?: string;
-    mediaName?: string;
-    replyToId?: string;
+    content?: string | undefined;
+    messageType?: "text" | "image" | "video" | "audio" | "file" | undefined;
+    mediaUrl?: string | undefined;
+    mediaName?: string | undefined;
+    replyToId?: string | undefined;
   },
 ): Promise<Message> {
   const user = await getCurrentUser();
@@ -1167,8 +1167,8 @@ export function subscribeToConversationChannel(
     )
     // 6. Broadcast: Typing indicator
     .on("broadcast", { event: "typing" }, (event) => {
-      if (event.payload && handlers.onTyping) {
-        handlers.onTyping(event.payload as { userId: string; username: string; isTyping: boolean });
+      if (event["payload"] && handlers.onTyping) {
+        handlers.onTyping(event["payload"] as { userId: string; username: string; isTyping: boolean });
       }
     })
     // 7. Presence: Online tracking
