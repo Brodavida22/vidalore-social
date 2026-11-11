@@ -1321,9 +1321,16 @@ export type Database = {
       can_view_author_posts: { Args: { _author_id: string }; Returns: boolean }
       can_view_post: { Args: { _post_id: string }; Returns: boolean }
       can_view_post_media_object: { Args: { _name: string }; Returns: boolean }
+      can_view_reel: { Args: { _reel_id: string }; Returns: boolean }
+      can_view_reel_object: { Args: { _name: string }; Returns: boolean }
+      can_view_story_object: { Args: { _name: string }; Returns: boolean }
       grant_achievement: {
         Args: { _code: string; _user_id: string }
         Returns: undefined
+      }
+      has_blocked: {
+        Args: { _blocked: string; _blocker: string }
+        Returns: boolean
       }
       has_role: {
         Args: {
