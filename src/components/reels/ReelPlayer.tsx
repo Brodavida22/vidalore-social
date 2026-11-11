@@ -34,6 +34,7 @@ import { toggleFollow } from "@/services/social";
 import {
   toggleReelLike,
   toggleReelSave,
+  incrementReelShare,
   getFreshReelSignedUrl,
   updateReelVideo,
   transcodeExistingReel,
@@ -341,28 +342,65 @@ export function ReelPlayer({
   function handleLike() {
     setHeartBurst(true);
     setTimeout(() => setHeartBurst(false), 500);
+
+    const prevLiked = reel.hasLiked ?? false;
+    const prevCount = reel.likesCount;
+    const nextLiked = !prevLiked;
+    const nextCount = Math.max(0, prevCount + (nextLiked ? 1 : -1));
+
+    // Immediate optimistic update
+    setReel((prev) => ({
+      ...prev,
+      hasLiked: nextLiked,
+      likesCount: nextCount,
+    }));
+
     void toggleReelLike(reel.id)
-      .then((updated) => {
-        if (updated) setReel({ ...updated });
+      .then((res) => {
+        setReel((prev) => ({
+          ...prev,
+          hasLiked: res.hasLiked,
+          likesCount: res.likesCount,
+        }));
       })
-      .catch((error) =>
-        toast.error(error instanceof Error ? error.message : "Could not update like."),
-      );
+      .catch((error) => {
+        setReel((prev) => ({
+          ...prev,
+          hasLiked: prevLiked,
+          likesCount: prevCount,
+        }));
+        toast.error(error instanceof Error ? error.message : "Could not update like.");
+      });
   }
 
   function handleSave() {
+    const prevSaved = reel.hasSaved ?? false;
+    const prevCount = reel.savesCount;
+    const nextSaved = !prevSaved;
+    const nextCount = Math.max(0, prevCount + (nextSaved ? 1 : -1));
+
+    setReel((prev) => ({
+      ...prev,
+      hasSaved: nextSaved,
+      savesCount: nextCount,
+    }));
+    toast.info(nextSaved ? "Saved to your bookmarks 🌹" : "Removed from saved");
+
     void toggleReelSave(reel.id)
       .then((saved) => {
         setReel((prev) => ({
           ...prev,
           hasSaved: saved,
-          savesCount: Math.max(0, prev.savesCount + (saved ? 1 : -1)),
         }));
-        toast.info(saved ? "Saved to your bookmarks" : "Removed from saved");
       })
-      .catch((error) =>
-        toast.error(error instanceof Error ? error.message : "Could not update saved reel."),
-      );
+      .catch((error) => {
+        setReel((prev) => ({
+          ...prev,
+          hasSaved: prevSaved,
+          savesCount: prevCount,
+        }));
+        toast.error(error instanceof Error ? error.message : "Could not update saved reel.");
+      });
   }
 
   function handleFollowToggle() {
@@ -372,21 +410,48 @@ export function ReelPlayer({
   }
 
   async function handleShare() {
-    const url = `${window.location.origin}/reels`;
+    const shareUrl = `${window.location.origin}/reels?reelId=${encodeURIComponent(reel.id)}`;
+    let shareConfirmed = false;
+
     if (navigator.share) {
       try {
         await navigator.share({
           title: `@${reel.creatorUsername} on VIDALORE Reels`,
-          text: reel.caption.slice(0, 80),
-          url,
+          text: reel.caption ? reel.caption.slice(0, 80) : "Watch this Reel on VIDALORE SOCIAL",
+          url: shareUrl,
         });
-        toast.success("Reel shared");
-      } catch {
-        // cancelled
+        shareConfirmed = true;
+        toast.success("Reel shared successfully 🌹");
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
+          // Explicitly cancelled by user - do NOT count or toast
+          return;
+        }
+        // Fallback to clipboard if share failed for non-abort reasons
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          shareConfirmed = true;
+          toast.success("Reel link copied to clipboard 🌹");
+        } catch {
+          toast.error("Could not share or copy link.");
+        }
       }
     } else {
-      await navigator.clipboard.writeText(url);
-      toast.success("Reel link copied to clipboard");
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        shareConfirmed = true;
+        toast.success("Reel link copied to clipboard 🌹");
+      } catch {
+        toast.error("Could not copy reel link.");
+      }
+    }
+
+    if (shareConfirmed) {
+      setReel((prev) => ({
+        ...prev,
+        sharesCount: prev.sharesCount + 1,
+      }));
+      void incrementReelShare(reel.id).catch(() => {});
     }
   }
 

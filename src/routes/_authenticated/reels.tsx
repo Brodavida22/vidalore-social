@@ -8,7 +8,16 @@ import { VideoUploadModal } from "@/components/reels/VideoUploadModal";
 import { myProfileQuery } from "@/services/profiles";
 import { getStoredReels, type ReelItem } from "@/services/reelsAndStories";
 
+interface ReelsSearch {
+  reelId?: string | undefined;
+  id?: string | undefined;
+}
+
 export const Route = createFileRoute("/_authenticated/reels")({
+  validateSearch: (search: Record<string, unknown>): ReelsSearch => ({
+    reelId: typeof search["reelId"] === "string" ? search["reelId"] : undefined,
+    id: typeof search["id"] === "string" ? search["id"] : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Reels — VIDALORE SOCIAL" },
@@ -26,6 +35,8 @@ export const Route = createFileRoute("/_authenticated/reels")({
 });
 
 function ReelsPage() {
+  const search = Route.useSearch();
+  const targetReelId = search.reelId || search.id;
   const { data: me } = useQuery(myProfileQuery());
   const [reels, setReels] = useState<ReelItem[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -38,12 +49,20 @@ function ReelsPage() {
   const reloadReels = useCallback(async () => {
     try {
       const items = await getStoredReels();
-      setReels(Array.isArray(items) ? items : []);
+      const list = Array.isArray(items) ? items : [];
+      setReels(list);
+      if (targetReelId) {
+        const foundIdx = list.findIndex((r) => r.id === targetReelId);
+        if (foundIdx >= 0) {
+          setActiveIndex(foundIdx);
+          setTab("stream");
+        }
+      }
     } catch (error) {
       console.warn("Could not load reels:", error);
       setReels([]);
     }
-  }, []);
+  }, [targetReelId]);
 
   useEffect(() => {
     void reloadReels();

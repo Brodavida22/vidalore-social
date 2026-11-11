@@ -97,10 +97,13 @@ export async function compressVideo(
       target: new BufferTarget(),
     });
 
+    const aTracks = await input.getAudioTracks().catch(() => []);
+    const hasAudio = aTracks.length > 0;
+
     const conversion = await Conversion.init({
       input,
       output,
-      tracks: "primary",
+      tracks: "all",
       video: {
         codec: "avc",
         height: maxHeight,
@@ -108,6 +111,11 @@ export async function compressVideo(
         quality: new Quality(quality),
         hardwareAcceleration: "no-preference",
       },
+      audio: hasAudio
+        ? {
+            codec: "aac",
+          }
+        : undefined,
     });
 
     if (!conversion.isValid) {

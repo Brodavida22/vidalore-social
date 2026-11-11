@@ -1,5 +1,5 @@
 import { useState, useRef, type ChangeEvent } from "react";
-import { Camera, Upload, X, Loader2, Smile, Type, CheckCircle2 } from "lucide-react";
+import { Camera, Upload, X, Loader2, Smile, Type, CheckCircle2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -37,6 +37,10 @@ export function StoryComposerModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<VideoUploadProgress | null>(null);
 
+  // Persistent attempt state across retries
+  const [draftStoryId, setDraftStoryId] = useState<string>(() => crypto.randomUUID());
+  const [uploadedStoragePath, setUploadedStoragePath] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function clearMedia() {
@@ -50,6 +54,8 @@ export function StoryComposerModal({
     setMediaFile(null);
     setMediaType("image");
     setUploadProgress(null);
+    setUploadedStoragePath(null);
+    setDraftStoryId(crypto.randomUUID());
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -86,6 +92,8 @@ export function StoryComposerModal({
     setMediaType(isVideo ? "video" : "image");
     setMediaUrl(URL.createObjectURL(file));
     setUploadProgress(null);
+    setUploadedStoragePath(null);
+    setDraftStoryId(crypto.randomUUID());
   }
 
   async function handlePublish() {
@@ -103,22 +111,22 @@ export function StoryComposerModal({
     const initialBytes = mediaFile.size;
 
     setUploadProgress({
-      stage: "preparing",
-      percent: 0,
-      bytesUploaded: 0,
+      stage: uploadedStoragePath ? "publishing" : "preparing",
+      percent: uploadedStoragePath ? 90 : 0,
+      bytesUploaded: uploadedStoragePath ? initialBytes : 0,
       bytesTotal: initialBytes,
-      formattedUploaded: "0 MB",
+      formattedUploaded: uploadedStoragePath ? formatBytes(initialBytes) : "0 MB",
       formattedTotal: formatBytes(initialBytes),
     });
 
     try {
       let fileToUpload = mediaFile;
 
-      // Safe client-side video compression before uploading.
-      if (mediaType === "video") {
+      // 1. Client-side video optimization with audio preservation (if not yet uploaded)
+      if (mediaType === "video" && !uploadedStoragePath) {
         setUploadProgress({
           stage: "compressing",
-          percent: 5,
+          percent: 10,
           bytesUploaded: 0,
           bytesTotal: initialBytes,
           formattedUploaded: "0 MB",
@@ -128,7 +136,7 @@ export function StoryComposerModal({
         const result = await compressStoryVideo(mediaFile, (value) => {
           setUploadProgress({
             stage: "compressing",
-            percent: Math.min(95, Math.max(5, value)),
+            percent: Math.min(90, Math.max(10, value)),
             bytesUploaded: 0,
             bytesTotal: initialBytes,
             formattedUploaded: "0 MB",
@@ -137,37 +145,25 @@ export function StoryComposerModal({
         });
 
         fileToUpload = result.file;
-
-        if (result.compressed) {
-          const originalMB = mediaFile.size / (1024 * 1024);
-          const compressedMB = fileToUpload.size / (1024 * 1024);
-          const savedPercent = Math.round((1 - fileToUpload.size / mediaFile.size) * 100);
-
-          toast.success("Video optimized", {
-            description: `${originalMB.toFixed(1)} MB → ${compressedMB.toFixed(1)} MB (${savedPercent}% smaller).`,
-          });
-        }
-      }
-
-      if (fileToUpload.size > MAX_STORY_BYTES) {
-        throw new Error(
-          `The video exceeds maximum allowed 50 MB. Size: ${(fileToUpload.size / (1024 * 1024)).toFixed(1)} MB.`,
-        );
       }
 
       const uploadTotal = fileToUpload.size;
+
+      // 2. Publish story (reuses uploadedStoragePath if already uploaded)
       setUploadProgress({
         stage: "uploading",
-        percent: 0,
-        bytesUploaded: 0,
+        percent: uploadedStoragePath ? 95 : 10,
+        bytesUploaded: uploadedStoragePath ? uploadTotal : 0,
         bytesTotal: uploadTotal,
-        formattedUploaded: "0 MB",
+        formattedUploaded: uploadedStoragePath ? formatBytes(uploadTotal) : "0 MB",
         formattedTotal: formatBytes(uploadTotal),
       });
 
-      await addStory(me, {
+      const published = await addStory(me, {
+        storyId: draftStoryId,
         mediaUrl,
-        mediaFile: fileToUpload,
+        mediaPath: uploadedStoragePath || undefined,
+        mediaFile: uploadedStoragePath ? undefined : fileToUpload,
         mediaType,
         caption: caption.trim() || undefined,
         sticker: selectedSticker ?? undefined,
@@ -175,20 +171,18 @@ export function StoryComposerModal({
           if (typeof prog === "number") {
             const uploadedBytes = Math.round((prog / 100) * uploadTotal);
             setUploadProgress({
-              stage: "uploading",
+              stage: prog >= 100 ? "publishing" : "uploading",
               percent: Math.min(99, prog),
               bytesUploaded: uploadedBytes,
               bytesTotal: uploadTotal,
               formattedUploaded: formatBytes(uploadedBytes),
               formattedTotal: formatBytes(uploadTotal),
             });
-          } else {
-            setUploadProgress(prog);
           }
         },
       });
 
-      // Genuine completion
+      // Genuine verified completion
       setUploadProgress({
         stage: "success",
         percent: 100,
@@ -198,8 +192,8 @@ export function StoryComposerModal({
         formattedTotal: formatBytes(uploadTotal),
       });
 
-      // Brief delay so user sees confirmed success state before closing
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      // Brief delay so user sees confirmed completion before closing
+      await new Promise((resolve) => setTimeout(resolve, 600));
 
       if (mediaUrl.startsWith("blob:")) {
         URL.revokeObjectURL(mediaUrl);
@@ -211,22 +205,24 @@ export function StoryComposerModal({
       setCaption("");
       setSelectedSticker(null);
       setUploadProgress(null);
+      setUploadedStoragePath(null);
+      setDraftStoryId(crypto.randomUUID());
 
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
 
-      toast.success("Story posted successfully", {
-        description: "Visible for the next 24 hours to your followers.",
+      toast.success("Story posted successfully 🌹", {
+        description: "Your story is live and visible to followers for 24 hours.",
       });
 
       onStoryPublished?.();
       onOpenChange(false);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : "Could not publish story.";
+      console.warn("Story publish error:", error);
       toast.error(errorMsg);
 
-      // Keep user's caption, sticker, and media file so they can retry without losing their work
       setUploadProgress((prev) => ({
         stage: "error",
         percent: prev?.percent || 0,
@@ -295,11 +291,10 @@ export function StoryComposerModal({
                     className="h-full w-full object-cover"
                     autoPlay
                     loop
-                    muted
                     playsInline
                     onError={(e) => {
                       e.stopPropagation();
-                      console.warn("Story composer video playback error");
+                      console.warn("Story composer video preview error");
                     }}
                   />
                 ) : (
@@ -329,7 +324,7 @@ export function StoryComposerModal({
                 )}
               </div>
 
-              {/* Real upload progress card with MB / MB breakdown & retry */}
+              {/* Upload progress card with MB breakdown & retry */}
               {uploadProgress && (
                 <VideoUploadProgressCard
                   progress={uploadProgress}
@@ -341,7 +336,7 @@ export function StoryComposerModal({
               )}
 
               {/* Stickers & Caption controls (disabled while submitting) */}
-              {!uploadProgress && (
+              {(!uploadProgress || uploadProgress.stage === "error") && (
                 <>
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-foreground flex items-center gap-1">
@@ -389,7 +384,7 @@ export function StoryComposerModal({
                   {mediaType === "video" && (
                     <div className="flex items-center gap-2 rounded-lg bg-secondary/50 p-2.5 text-[0.7rem] text-muted-foreground">
                       <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
-                      Resumable TUS upload with client-side video optimization enabled.
+                      Audio preserved with H.264 MP4 and AAC encoding.
                     </div>
                   )}
                 </>
@@ -413,7 +408,7 @@ export function StoryComposerModal({
           <Button
             type="button"
             size="sm"
-            disabled={!mediaUrl || isSubmitting || uploadProgress?.stage === "error"}
+            disabled={!mediaUrl || isSubmitting}
             onClick={handlePublish}
             className="rounded-lg text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white px-4 shadow-sm"
           >
@@ -421,6 +416,11 @@ export function StoryComposerModal({
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
                 Processing...
+              </>
+            ) : uploadProgress?.stage === "error" ? (
+              <>
+                <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                Retry Publishing
               </>
             ) : (
               "Publish Story"

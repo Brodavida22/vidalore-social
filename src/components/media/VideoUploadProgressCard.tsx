@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Loader2, RefreshCw, X, CheckCircle2, AlertCircle, Film, Sparkles } from "lucide-react";
 import type { VideoUploadProgress } from "@/lib/videoUpload";
 import { Button } from "@/components/ui/button";

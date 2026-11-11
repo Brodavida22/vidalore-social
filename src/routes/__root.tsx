@@ -159,7 +159,8 @@ export const Route = createRootRouteWithContext<{
       },
       {
         property: "og:description",
-        content: "Connect, share and explore.",
+        content:
+          "VIDALORE SOCIAL: A premium social network for posts, reels, stories and messaging.",
       },
       {
         property: "og:type",

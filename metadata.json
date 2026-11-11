@@ -1,0 +1,6 @@
+{
+  "name": "VIDALORE SOCIAL",
+  "description": "VIDALORE SOCIAL: A premium social network for posts, reels, stories and messaging.",
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "@tanstack/react-router";
-import { X, Send, Loader2, AlertCircle } from "lucide-react";
+import { X, Send, Loader2, AlertCircle, Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,11 @@ export function StoryViewerModal({
   const [replyText, setReplyText] = useState("");
   const [videoLoading, setVideoLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
+
+  // Audio preference state: remembered across stories
+  const [isMuted, setIsMuted] = useState(false);
+  const [isAutoplaySoundBlocked, setIsAutoplaySoundBlocked] = useState(false);
+
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const currentGroup = storyGroups[groupIndex];
@@ -46,19 +51,29 @@ export function StoryViewerModal({
     }
   }, [isPaused, videoLoading, videoError]);
 
+  // Synchronize muted attribute whenever isMuted changes
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) {
+      video.muted = isMuted;
+    }
+  }, [isMuted]);
+
   useEffect(() => {
     setGroupIndex(initialGroupIndex);
     setStoryIndex(0);
     setProgress(0);
     setVideoLoading(true);
     setVideoError(false);
+    setIsAutoplaySoundBlocked(false);
   }, [initialGroupIndex, open]);
 
   useEffect(() => {
     setProgress(0);
     setVideoLoading(currentStory?.mediaType === "video");
     setVideoError(false);
-  }, [currentStory?.id]);
+    setIsAutoplaySoundBlocked(false);
+  }, [currentStory?.id, currentStory?.mediaType]);
 
   useEffect(() => {
     if (currentStory && me && open) {
@@ -95,8 +110,70 @@ export function StoryViewerModal({
     }
   }, [storyIndex, groupIndex, storyGroups]);
 
+  // Autoplay handler with audio policy recovery
+  const attemptVideoPlay = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !currentStory || currentStory.mediaType !== "video") return;
+
+    video.muted = isMuted;
+    const playPromise = video.play();
+
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          setVideoLoading(false);
+          setVideoError(false);
+          setIsAutoplaySoundBlocked(false);
+        })
+        .catch((err) => {
+          console.warn("Video playback attempt:", err);
+          // If browser policy blocked unmuted autoplay, play muted & show tap-for-sound banner
+          if (!video.muted) {
+            video.muted = true;
+            setIsAutoplaySoundBlocked(true);
+            video
+              .play()
+              .then(() => {
+                setVideoLoading(false);
+                setVideoError(false);
+              })
+              .catch(() => {
+                setVideoLoading(false);
+                setVideoError(true);
+              });
+          } else {
+            setVideoLoading(false);
+            setVideoError(true);
+          }
+        });
+    }
+  }, [currentStory, isMuted]);
+
+  function handleEnableSound(e: React.MouseEvent) {
+    e.stopPropagation();
+    setIsMuted(false);
+    setIsAutoplaySoundBlocked(false);
+    const video = videoRef.current;
+    if (video) {
+      video.muted = false;
+      video.play().catch(() => {});
+    }
+    toast.success("Sound enabled 🔊");
+  }
+
+  function handleToggleMute(e: React.MouseEvent) {
+    e.stopPropagation();
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    setIsAutoplaySoundBlocked(false);
+    const video = videoRef.current;
+    if (video) {
+      video.muted = nextMuted;
+    }
+  }
+
   // Images advance after five seconds.
-  // Videos advance only when their playback finishes.
+  // Videos advance only when playback finishes.
   useEffect(() => {
     if (!open || isPaused || !currentStory || currentStory.mediaType === "video") {
       return;
@@ -120,7 +197,7 @@ export function StoryViewerModal({
     }, interval);
 
     return () => clearInterval(timer);
-  }, [open, isPaused, currentStory?.id, handleNext]);
+  }, [open, isPaused, currentStory?.id, currentStory?.mediaType, handleNext]);
 
   function handleSendReply() {
     if (!replyText.trim()) return;
@@ -157,8 +234,6 @@ export function StoryViewerModal({
                 key={currentStory.id}
                 src={currentStory.mediaUrl}
                 autoPlay
-                muted
-                loop={false}
                 playsInline
                 preload="auto"
                 controls={false}
@@ -168,8 +243,7 @@ export function StoryViewerModal({
                   setVideoError(false);
                 }}
                 onCanPlay={() => {
-                  setVideoLoading(false);
-                  setVideoError(false);
+                  attemptVideoPlay();
                 }}
                 onPlaying={() => {
                   setVideoLoading(false);
@@ -203,30 +277,40 @@ export function StoryViewerModal({
               )}
 
               {videoError && (
-                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black text-white">
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black text-white p-4">
                   <AlertCircle className="h-10 w-10 text-red-400" />
                   <p className="text-sm font-semibold">Video could not be played</p>
                   <p className="max-w-[240px] text-center text-xs text-white/60">
-                    Check your internet connection or try uploading the video again.
+                    Check your internet connection or reload the story.
                   </p>
                   <button
                     type="button"
                     onClick={() => {
                       setVideoError(false);
                       setVideoLoading(true);
-                      const video = document.querySelector("video");
+                      const video = videoRef.current;
                       if (video) {
                         video.load();
-                        void video.play().catch((error) => {
-                          console.error("Video retry failed:", error);
-                        });
+                        attemptVideoPlay();
                       }
                     }}
-                    className="rounded-lg bg-[#E91E63] px-4 py-2 text-xs font-semibold text-white"
+                    className="rounded-lg bg-[#E91E63] px-4 py-2 text-xs font-semibold text-white shadow"
                   >
                     Retry video
                   </button>
                 </div>
+              )}
+
+              {/* Tap to enable sound banner if browser blocked audio autoplay */}
+              {isAutoplaySoundBlocked && !videoError && (
+                <button
+                  type="button"
+                  onClick={handleEnableSound}
+                  className="absolute bottom-28 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-black/75 text-white backdrop-blur-md text-xs font-semibold shadow-xl border border-white/20 hover:scale-105 active:scale-95 transition-all cursor-pointer pointer-events-auto animate-bounce"
+                >
+                  <VolumeX className="h-3.5 w-3.5 text-[#E91E63]" />
+                  <span>Tap for sound 🔊</span>
+                </button>
               )}
             </>
           ) : (
@@ -306,14 +390,33 @@ export function StoryViewerModal({
               </div>
             </Link>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
-              aria-label="Close stories"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Sound toggle button for video stories */}
+              {currentStory.mediaType === "video" && (
+                <button
+                  type="button"
+                  onClick={handleToggleMute}
+                  className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+                  aria-label={isMuted ? "Unmute video" : "Mute video"}
+                  title={isMuted ? "Unmute" : "Mute"}
+                >
+                  {isMuted ? (
+                    <VolumeX className="h-4 w-4 text-white/80" />
+                  ) : (
+                    <Volume2 className="h-4 w-4 text-[#E91E63]" />
+                  )}
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+                aria-label="Close stories"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
 
