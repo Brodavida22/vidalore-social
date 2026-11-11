@@ -210,7 +210,14 @@ function ProfilePage() {
 
   const reelsQuery = useQuery({
     queryKey: ["reels", "all"],
-    queryFn: getStoredReels,
+    queryFn: async () => {
+      try {
+        const res = await getStoredReels();
+        return Array.isArray(res) ? res : [];
+      } catch {
+        return [];
+      }
+    },
   });
 
   const allReels = reelsQuery.data ?? [];

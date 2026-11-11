@@ -32,12 +32,32 @@ export interface VideoCompressionResult {
   compressed: boolean;
   originalBytes: number;
   compressedBytes: number;
+  detectedCodec?: string;
+  convertedToH264: boolean;
 }
 
 /**
- * Safely compress MP4/H.264 video on client using native WebCodecs via mediabunny.
- * Preserves MP4 container, H.264 video, audio tracks, orientation, and aspect ratio.
- * Falls back to original file without error if WebCodecs or conversion is unavailable.
+ * Checks if the browser environment supports WebCodecs hardware/software encoding and decoding.
+ */
+export function isWebCodecsSupported(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof VideoEncoder !== "undefined" &&
+    typeof VideoDecoder !== "undefined"
+  );
+}
+
+/**
+ * Ensures uploaded Reels and Stories videos are converted to standard MP4 with H.264/AVC
+ * video encoding and AAC-compatible audio.
+ *
+ * Rules:
+ * - Detects container and video track codec (e.g. HEVC/H.265, AVC/H.264, VP9, QuickTime/MOV).
+ * - If video is encoded in HEVC/H.265, MOV or non-AVC, conversion to H.264 MP4 is REQUIRED for playback.
+ * - Never silently upload an unsupported HEVC/MOV file if conversion is required.
+ * - If conversion is unavailable or fails on this device, throws a clear user-facing error.
+ * - Preserves audio tracks (transcoded to AAC), orientation and aspect ratio.
+ * - Resulting file has type "video/mp4" and ".mp4" file extension.
  */
 export async function compressVideoFile(
   file: File,
@@ -46,20 +66,86 @@ export async function compressVideoFile(
   const originalBytes = file.size;
 
   if (!file.type.startsWith("video/")) {
-    return { file, compressed: false, originalBytes, compressedBytes: originalBytes };
+    return {
+      file,
+      compressed: false,
+      originalBytes,
+      compressedBytes: originalBytes,
+      convertedToH264: false,
+    };
   }
 
-  // Check if browser environment supports WebCodecs
-  if (
-    typeof window === "undefined" ||
-    typeof VideoEncoder === "undefined" ||
-    typeof VideoDecoder === "undefined"
-  ) {
-    return { file, compressed: false, originalBytes, compressedBytes: originalBytes };
+  // 1. Probe input to determine codec and tracks
+  let requiresConversion = false;
+  let detectedCodec = "unknown";
+  let hasAudioTrack = false;
+  let isAlreadyH264 = false;
+
+  try {
+    const probeInput = new Input({
+      formats: ALL_FORMATS,
+      source: new BlobSource(file),
+    });
+
+    const vTrack = await probeInput.getPrimaryVideoTrack();
+    const aTracks = await probeInput.getAudioTracks().catch(() => []);
+    hasAudioTrack = aTracks.length > 0;
+
+    if (vTrack) {
+      const codec = (await vTrack.getCodec()) || "";
+      const internalId = (await vTrack.getInternalCodecId()) || "";
+      const internalStr = typeof internalId === "string" ? internalId.toLowerCase() : "";
+      detectedCodec = codec || internalStr || "video";
+
+      // Check if already standard H.264/AVC
+      isAlreadyH264 = codec === "avc" || internalStr.startsWith("avc1");
+
+      const isHevc =
+        codec === "hevc" || internalStr.startsWith("hev1") || internalStr.startsWith("hvc1");
+      const isMov = file.type.includes("quicktime") || file.name.toLowerCase().endsWith(".mov");
+
+      // HEVC, QuickTime, or non-AVC formats REQUIRE conversion to guarantee browser playback
+      if (isHevc || isMov || !isAlreadyH264) {
+        requiresConversion = true;
+      }
+    } else {
+      // No video track detected or unusual container
+      requiresConversion = true;
+    }
+  } catch (probeErr) {
+    console.warn("Could not probe video format with Mediabunny; checking filename/mime:", probeErr);
+    const lowerName = file.name.toLowerCase();
+    if (
+      file.type.includes("quicktime") ||
+      lowerName.endsWith(".mov") ||
+      lowerName.endsWith(".m4v")
+    ) {
+      requiresConversion = true;
+    }
   }
 
-  let conversion: Awaited<ReturnType<typeof Conversion.init>> | null = null;
+  // 2. Verify WebCodecs support
+  const webCodecsAvailable = isWebCodecsSupported();
 
+  if (!webCodecsAvailable) {
+    if (requiresConversion) {
+      throw new Error(
+        `This video is encoded in ${detectedCodec.toUpperCase()} / QuickTime format, which requires conversion to H.264 MP4 to play in mobile browsers. Your current device or browser does not support in-browser video conversion. Please convert the video to standard H.264 MP4 before uploading.`,
+      );
+    }
+
+    // Video is already verified H.264/AVC, so it can be uploaded as-is if encoder is unavailable
+    return {
+      file,
+      compressed: false,
+      originalBytes,
+      compressedBytes: originalBytes,
+      detectedCodec: "avc",
+      convertedToH264: false,
+    };
+  }
+
+  // 3. Perform conversion to standard H.264/AVC 720p 30fps with AAC audio
   try {
     onProgress?.(0);
 
@@ -73,10 +159,10 @@ export async function compressVideoFile(
       target: new BufferTarget(),
     });
 
-    conversion = await Conversion.init({
+    const conversion = await Conversion.init({
       input,
       output,
-      tracks: "primary",
+      tracks: "all",
       video: {
         codec: "avc",
         height: 720,
@@ -84,14 +170,31 @@ export async function compressVideoFile(
         quality: new Quality("medium"),
         hardwareAcceleration: "no-preference",
       },
+      audio: hasAudioTrack
+        ? {
+            codec: "aac",
+          }
+        : undefined,
     });
 
     if (!conversion.isValid) {
-      return { file, compressed: false, originalBytes, compressedBytes: originalBytes };
+      if (requiresConversion) {
+        throw new Error(
+          `This device cannot convert the selected ${detectedCodec.toUpperCase()} video to H.264 MP4. Please convert the video to standard H.264 MP4 before publishing.`,
+        );
+      }
+      return {
+        file,
+        compressed: false,
+        originalBytes,
+        compressedBytes: originalBytes,
+        detectedCodec: "avc",
+        convertedToH264: false,
+      };
     }
 
-    conversion.onProgress = (progress) => {
-      const safeProgress = Math.max(0, Math.min(100, Math.round(progress * 100)));
+    conversion.onProgress = (progressFraction) => {
+      const safeProgress = Math.max(0, Math.min(100, Math.round(progressFraction * 100)));
       onProgress?.(safeProgress);
     };
 
@@ -99,39 +202,70 @@ export async function compressVideoFile(
 
     const buffer = output.target.buffer;
     if (!buffer || buffer.byteLength === 0) {
-      return { file, compressed: false, originalBytes, compressedBytes: originalBytes };
-    }
-
-    const compressedBlob = new Blob([buffer], { type: "video/mp4" });
-    const compressedFile = new File(
-      [compressedBlob],
-      `${file.name.replace(/\.[^.]+$/, "")}-opt.mp4`,
-      {
-        type: "video/mp4",
-        lastModified: Date.now(),
-      },
-    );
-
-    onProgress?.(100);
-
-    // Only use compressed file if it's genuinely smaller
-    if (compressedFile.size < file.size) {
+      if (requiresConversion) {
+        throw new Error("Video conversion produced an empty file. Please choose another video.");
+      }
       return {
-        file: compressedFile,
-        compressed: true,
+        file,
+        compressed: false,
         originalBytes,
-        compressedBytes: compressedFile.size,
+        compressedBytes: originalBytes,
+        detectedCodec: "avc",
+        convertedToH264: false,
       };
     }
 
-    return { file, compressed: false, originalBytes, compressedBytes: originalBytes };
-  } catch (err) {
-    console.warn(
-      "Client video compression not available on this device; proceeding with original:",
-      err,
-    );
+    const compressedBlob = new Blob([buffer], { type: "video/mp4" });
+    const cleanName = file.name.replace(/\.[^.]+$/, "");
+    const convertedFile = new File([compressedBlob], `${cleanName}.mp4`, {
+      type: "video/mp4",
+      lastModified: Date.now(),
+    });
+
     onProgress?.(100);
-    return { file, compressed: false, originalBytes, compressedBytes: originalBytes };
+
+    // If conversion was required (e.g. HEVC or MOV), ALWAYS use convertedFile
+    // even if it is slightly larger, because unconverted HEVC/MOV fails in browsers!
+    if (requiresConversion || convertedFile.size < file.size) {
+      return {
+        file: convertedFile,
+        compressed: convertedFile.size < file.size,
+        originalBytes,
+        compressedBytes: convertedFile.size,
+        detectedCodec: "avc",
+        convertedToH264: true,
+      };
+    }
+
+    // Video was already H.264 and original is smaller than 720p re-encode
+    return {
+      file,
+      compressed: false,
+      originalBytes,
+      compressedBytes: originalBytes,
+      detectedCodec: "avc",
+      convertedToH264: false,
+    };
+  } catch (err) {
+    if (requiresConversion) {
+      // Re-throw user-facing error when conversion is mandatory for playback
+      const message =
+        err instanceof Error ? err.message : "Video conversion failed on this device.";
+      throw new Error(
+        `Could not convert ${detectedCodec.toUpperCase()} video: ${message}. An H.264 MP4 video is required.`,
+      );
+    }
+
+    console.warn("Optional compression failed on already-compatible video; using original:", err);
+    onProgress?.(100);
+    return {
+      file,
+      compressed: false,
+      originalBytes,
+      compressedBytes: originalBytes,
+      detectedCodec: "avc",
+      convertedToH264: false,
+    };
   }
 }
 
@@ -159,23 +293,12 @@ export async function uploadVideoResumable(
 
   // 1. Verify session token for Supabase Storage TUS authentication
   let sessionToken: string | null = null;
-  let supabaseUrl = "";
-  let supabaseAnonKey = "";
+  const supabaseUrl = supabase.supabaseUrl;
+  const supabaseAnonKey = supabase.supabaseKey;
 
   try {
     const { data: sessionData } = await supabase.auth.getSession();
     sessionToken = sessionData.session?.access_token ?? null;
-    let envUrl = String(import.meta.env["VITE_SUPABASE_URL"] ?? "");
-    if (!envUrl || envUrl.includes("placeholder.supabase.co")) {
-      envUrl = "https://mwfognruqmatlhrirxlb.supabase.co";
-    }
-    supabaseUrl = envUrl;
-
-    let envKey = String(import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ?? "");
-    if (!envKey || envKey.includes("placeholder")) {
-      envKey = "sb_publishable_jJHTE8XdJJiAfdT8C9WINg_zcgZip4V";
-    }
-    supabaseAnonKey = envKey;
   } catch (authErr) {
     console.warn("Session check error for TUS upload:", authErr);
   }
@@ -187,8 +310,6 @@ export async function uploadVideoResumable(
       const tusEndpoint = `${cleanUrl}/storage/v1/upload/resumable`;
 
       return await new Promise<string>((resolve, reject) => {
-        let lastReportedPercent = 0;
-
         const upload = new tus.Upload(file, {
           endpoint: tusEndpoint,
           headers: {
@@ -208,9 +329,7 @@ export async function uploadVideoResumable(
 
           onProgress(bytesUploaded, bytesTotal) {
             const actualTotal = bytesTotal > 0 ? bytesTotal : totalBytes;
-            // Cap at 99% until server verifies publication
             const percent = Math.min(99, Math.round((bytesUploaded / actualTotal) * 100));
-            lastReportedPercent = percent;
 
             onProgress?.({
               stage: "uploading",
@@ -230,7 +349,7 @@ export async function uploadVideoResumable(
           onSuccess() {
             onProgress?.({
               stage: "uploading",
-              percent: 99,
+              percent: 100,
               bytesUploaded: totalBytes,
               bytesTotal: totalBytes,
               formattedUploaded: formatBytes(totalBytes),
@@ -268,7 +387,7 @@ export async function uploadVideoResumable(
 
   onProgress?.({
     stage: "uploading",
-    percent: 99,
+    percent: 100,
     bytesUploaded: totalBytes,
     bytesTotal: totalBytes,
     formattedUploaded: formatBytes(totalBytes),

@@ -1,4 +1,11 @@
-import { useState, useRef, useEffect } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  type SyntheticEvent,
+  type ChangeEvent,
+} from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Heart,
@@ -15,12 +22,23 @@ import {
   Eye,
   BadgeCheck,
   AlertCircle,
+  RotateCcw,
+  Loader2,
+  Wrench,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { ReelCommentsDrawer } from "@/components/reels/ReelCommentsDrawer";
 import { toggleFollow } from "@/services/social";
-import { toggleReelLike, toggleReelSave, type ReelItem } from "@/services/reelsAndStories";
+import {
+  toggleReelLike,
+  toggleReelSave,
+  getFreshReelSignedUrl,
+  updateReelVideo,
+  transcodeExistingReel,
+  type ReelItem,
+} from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
 
 export function ReelPlayer({
@@ -37,57 +55,130 @@ export function ReelPlayer({
   me?: Profile | null | undefined;
 }) {
   const [reel, setReel] = useState<ReelItem>(initialReel);
+  const [videoSrc, setVideoSrc] = useState<string>(initialReel.videoUrl || "");
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
+  const [videoError, setVideoError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const [showPlayIcon, setShowPlayIcon] = useState(false);
   const [heartBurst, setHeartBurst] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [isFollowing, setIsFollowing] = useState(reel.isFollowing ?? false);
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [videoError, setVideoError] = useState(false);
+
+  // Video repair state
+  const [isRepairing, setIsRepairing] = useState(false);
+  const [repairProgress, setRepairProgress] = useState(0);
+  const repairFileInputRef = useRef<HTMLInputElement>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  // Sync internal reel & videoSrc when initialReel changes
+  useEffect(() => {
+    setReel(initialReel);
+    setVideoSrc(initialReel.videoUrl || "");
+    setVideoError(false);
+    setErrorMessage("");
+    setIsLoading(true);
+    setIsBuffering(false);
+  }, [initialReel]);
+
+  // Handle active / inactive playback lifecycle
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    if (isActive && !videoError) {
-      video.currentTime = 0;
+    if (isActive && !videoError && !isRepairing) {
       const playPromise = video.play();
       if (playPromise !== undefined) {
         playPromise
-          .then(() => setIsPlaying(true))
-          .catch(() => {
-            setIsPlaying(false);
+          .then(() => {
+            setIsPlaying(true);
+            setIsAutoplayBlocked(false);
+          })
+          .catch((err) => {
+            console.warn("Autoplay rejected or blocked by browser:", err);
+            // If blocked due to unmuted audio policy, try muted autoplay
+            if (!video.muted) {
+              video.muted = true;
+              video
+                .play()
+                .then(() => {
+                  setIsPlaying(true);
+                  setIsAutoplayBlocked(false);
+                })
+                .catch(() => {
+                  setIsPlaying(false);
+                  setIsAutoplayBlocked(true);
+                });
+            } else {
+              setIsPlaying(false);
+              setIsAutoplayBlocked(true);
+            }
           });
       }
     } else {
-      video.pause();
+      if (!video.paused) {
+        video.pause();
+      }
       setIsPlaying(false);
     }
-  }, [isActive, videoError]);
+  }, [isActive, videoError, isRepairing]);
 
+  // Synchronize mute attribute
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.muted = isMuted;
     }
   }, [isMuted]);
 
+  // Retry playback with fresh signed URL
+  const handleRetry = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    setVideoError(false);
+    setIsLoading(true);
+    setErrorMessage("");
+
+    try {
+      if (reel.storagePath) {
+        const freshUrl = await getFreshReelSignedUrl(reel.storagePath);
+        if (freshUrl) {
+          setVideoSrc(freshUrl);
+        }
+      }
+
+      video.load();
+      if (isActive) {
+        await video.play();
+        setIsPlaying(true);
+        setIsAutoplayBlocked(false);
+      }
+    } catch (err) {
+      console.warn("Retry failed:", err);
+      // Let onError handle UI if reload fails
+    }
+  }, [isActive, reel.storagePath]);
+
   function handleVideoClick() {
     const video = videoRef.current;
     if (!video || videoError) return;
 
     if (video.paused) {
-      const playPromise = video.play();
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => setIsPlaying(true))
-          .catch((err) => {
-            console.warn("Reel video play failed:", err);
-            setIsPlaying(false);
-          });
-      }
+      video
+        .play()
+        .then(() => {
+          setIsPlaying(true);
+          setIsAutoplayBlocked(false);
+        })
+        .catch((err) => {
+          console.warn("Play click error:", err);
+          setIsPlaying(false);
+        });
       setShowPlayIcon(true);
       setTimeout(() => setShowPlayIcon(false), 500);
     } else {
@@ -110,8 +201,140 @@ export function ReelPlayer({
 
   function handleTimeUpdate() {
     const video = videoRef.current;
-    if (video && video.duration) {
+    if (video && video.duration > 0) {
       setProgress((video.currentTime / video.duration) * 100);
+    }
+  }
+
+  function handleLoadedMetadata() {
+    setIsLoading(false);
+  }
+
+  function handleCanPlay() {
+    setIsLoading(false);
+    setIsBuffering(false);
+  }
+
+  function handlePlaying() {
+    setIsPlaying(true);
+    setIsLoading(false);
+    setIsBuffering(false);
+    setIsAutoplayBlocked(false);
+  }
+
+  function handleWaiting() {
+    setIsBuffering(true);
+  }
+
+  function handleStalled() {
+    setIsBuffering(true);
+  }
+
+  function handleEnded() {
+    const video = videoRef.current;
+    if (video) {
+      video.currentTime = 0;
+      video.play().catch(() => {});
+    }
+  }
+
+  function handleVideoError(e: SyntheticEvent<HTMLVideoElement, Event>) {
+    e.stopPropagation();
+    const video = videoRef.current;
+    const mediaErr = video?.error;
+
+    let msg = "Video playback failed.";
+    if (mediaErr) {
+      switch (mediaErr.code) {
+        case MediaError.MEDIA_ERR_ABORTED:
+          msg = "Video playback was aborted.";
+          break;
+        case MediaError.MEDIA_ERR_NETWORK:
+          msg = "A network error caused the video download to fail.";
+          break;
+        case MediaError.MEDIA_ERR_DECODE:
+          msg = "Video decoding failed. The format may be unsupported on this device.";
+          break;
+        case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+          msg =
+            "The video format or codec (such as unconverted HEVC/H.265) is not supported by this browser.";
+          break;
+      }
+    }
+
+    setVideoError(true);
+    setErrorMessage(msg);
+    setIsLoading(false);
+    setIsBuffering(false);
+    setIsPlaying(false);
+  }
+
+  // Handle re-upload / transcode for existing unsupported reel video
+  async function handleRepairFileSelect(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsRepairing(true);
+    setRepairProgress(0);
+
+    try {
+      const updated = await updateReelVideo(reel.id, file, (p) => {
+        setRepairProgress(p);
+      });
+
+      setReel(updated);
+      setVideoSrc(updated.videoUrl);
+      setVideoError(false);
+      setErrorMessage("");
+      setIsLoading(true);
+
+      toast.success("Reel video updated successfully", {
+        description: "The video has been converted to H.264 MP4 and is now ready for playback.",
+      });
+
+      setTimeout(() => {
+        handleRetry();
+      }, 200);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not update reel video.");
+    } finally {
+      setIsRepairing(false);
+      setRepairProgress(0);
+      if (repairFileInputRef.current) repairFileInputRef.current.value = "";
+    }
+  }
+
+  async function handleAutoTranscode() {
+    setIsRepairing(true);
+    setRepairProgress(0);
+
+    try {
+      const updated = await transcodeExistingReel(reel.id, (p) => {
+        setRepairProgress(p);
+      });
+
+      setReel(updated);
+      setVideoSrc(updated.videoUrl);
+      setVideoError(false);
+      setErrorMessage("");
+      setIsLoading(true);
+
+      toast.success("Reel video auto-repaired successfully", {
+        description: "Re-encoded to H.264 MP4 with AAC audio.",
+      });
+
+      setTimeout(() => {
+        handleRetry();
+      }, 200);
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Auto-repair could not decode this video. Please use 'Upload Converted Video'.",
+      );
+    } finally {
+      setIsRepairing(false);
+      setRepairProgress(0);
     }
   }
 
@@ -167,47 +390,136 @@ export function ReelPlayer({
     }
   }
 
+  const isOwner = Boolean(me && me.id === reel.creatorId);
+
   return (
     <div className="relative h-full w-full max-w-md mx-auto aspect-[9/16] rounded-2xl overflow-hidden bg-black select-none shadow-xl border border-white/10 group">
+      {/* Hidden File Input for Reel Video Repair */}
+      <input
+        ref={repairFileInputRef}
+        type="file"
+        accept="video/mp4,video/webm,video/quicktime"
+        className="hidden"
+        onChange={handleRepairFileSelect}
+      />
+
       {/* Video Element */}
       <video
         ref={videoRef}
-        src={reel.videoUrl || undefined}
+        src={videoSrc || undefined}
         className="h-full w-full object-cover cursor-pointer"
         loop
         playsInline
+        preload="auto"
         muted={isMuted}
         onClick={handleVideoClick}
         onDoubleClick={handleDoubleTap}
         onTimeUpdate={handleTimeUpdate}
-        onError={(e) => {
-          e.stopPropagation();
-          setVideoError(true);
-          setIsPlaying(false);
-        }}
+        onLoadedMetadata={handleLoadedMetadata}
+        onCanPlay={handleCanPlay}
+        onPlaying={handlePlaying}
+        onWaiting={handleWaiting}
+        onStalled={handleStalled}
+        onEnded={handleEnded}
+        onError={handleVideoError}
       />
 
-      {/* Video Playback Error Fallback */}
-      {videoError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 text-white p-6 text-center space-y-2 z-10">
-          <AlertCircle className="h-10 w-10 text-destructive mb-1 animate-pulse" />
-          <p className="text-sm font-semibold">Video preview unavailable</p>
-          <p className="text-xs text-muted-foreground max-w-xs">
-            The media source is currently processing or unsupported by your device.
+      {/* Loading / Buffering Spinner */}
+      {(isLoading || isBuffering) && !videoError && !isRepairing && (
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/40 z-10 animate-fade-in">
+          <Loader2 className="h-10 w-10 text-[#E91E63] animate-spin mb-2" />
+          <span className="text-xs font-medium text-white/90 drop-shadow">
+            {isLoading ? "Loading Reel..." : "Buffering..."}
+          </span>
+        </div>
+      )}
+
+      {/* Autoplay Blocked Tap-to-Play Overlay */}
+      {isAutoplayBlocked && !isPlaying && !videoError && !isLoading && !isRepairing && (
+        <div
+          onClick={handleVideoClick}
+          className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 cursor-pointer z-10 animate-fade-in"
+        >
+          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/70 text-white shadow-xl backdrop-blur-md hover:scale-105 active:scale-95 transition-all">
+            <Play className="h-8 w-8 ml-1 fill-current" />
+          </span>
+          <p className="mt-3 text-xs font-semibold text-white drop-shadow">Tap to play video</p>
+        </div>
+      )}
+
+      {/* Video Playback Error Fallback with Retry & Creator Repair Tools */}
+      {videoError && !isRepairing && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 text-white p-6 text-center space-y-3 z-30 animate-fade-in">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/20 text-destructive">
+            <AlertCircle className="h-7 w-7" />
+          </div>
+          <p className="text-sm font-semibold">Video Playback Error</p>
+          <p className="text-xs text-white/80 max-w-xs leading-relaxed">
+            {errorMessage || "The media source is currently unsupported or could not be loaded."}
           </p>
+
+          <div className="flex flex-col gap-2 w-full max-w-xs pt-1">
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="flex items-center justify-center gap-1.5 rounded-lg bg-[#E91E63] hover:bg-[#C2185B] px-4 py-2 text-xs font-semibold text-white shadow-sm transition-colors"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Retry Playback
+            </button>
+
+            {isOwner && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => repairFileInputRef.current?.click()}
+                  className="flex items-center justify-center gap-1.5 rounded-lg bg-secondary hover:bg-secondary/80 border border-border px-4 py-2 text-xs font-semibold text-foreground transition-colors"
+                >
+                  <Upload className="h-3.5 w-3.5 text-[#E91E63]" /> Re-upload / Transcode Video
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleAutoTranscode}
+                  className="flex items-center justify-center gap-1.5 rounded-lg bg-card/60 hover:bg-card border border-border/70 px-3 py-1.5 text-[0.7rem] text-muted-foreground transition-colors"
+                >
+                  <Wrench className="h-3 w-3" /> Attempt In-Browser Auto-Repair
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* In-Progress Repair Overlay */}
+      {isRepairing && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 text-white p-6 text-center space-y-3 z-30 animate-fade-in">
+          <Loader2 className="h-10 w-10 text-[#E91E63] animate-spin" />
+          <p className="text-sm font-semibold">Repairing Reel Video...</p>
+          <p className="text-xs text-muted-foreground max-w-xs">
+            Converting video into web-compatible H.264 MP4 with AAC audio.
+          </p>
+          <div className="w-full max-w-xs space-y-1">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+              <div
+                className="h-full rounded-full bg-[#E91E63] transition-all duration-200"
+                style={{ width: `${repairProgress}%` }}
+              />
+            </div>
+            <p className="text-[0.65rem] text-muted-foreground text-right">{repairProgress}%</p>
+          </div>
         </div>
       )}
 
       {/* Floating double-tap heart animation */}
       {heartBurst && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center animate-ping">
-          <Heart className="h-20 w-20 fill-primary text-primary" />
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center animate-ping z-20">
+          <Heart className="h-20 w-20 fill-[#E91E63] text-[#E91E63]" />
         </div>
       )}
 
       {/* Play/Pause center overlay indicator */}
       {showPlayIcon && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center animate-fade-in">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center animate-fade-in z-20">
           <span className="flex h-14 w-14 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm">
             {isPlaying ? <Play className="h-7 w-7 ml-0.5" /> : <Pause className="h-7 w-7" />}
           </span>
@@ -227,7 +539,11 @@ export function ReelPlayer({
           className="flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm hover:bg-black/80 transition-colors"
           aria-label={isMuted ? "Unmute audio" : "Mute audio"}
         >
-          {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4 text-primary" />}
+          {isMuted ? (
+            <VolumeX className="h-4 w-4" />
+          ) : (
+            <Volume2 className="h-4 w-4 text-[#E91E63]" />
+          )}
         </button>
       </div>
 
@@ -242,7 +558,7 @@ export function ReelPlayer({
                 username: reel.creatorUsername,
                 display_name: reel.creatorName,
               }}
-              className="h-10 w-10 ring-2 ring-primary"
+              className="h-10 w-10 ring-2 ring-[#E91E63]"
             />
           </Link>
           {me?.id !== reel.creatorId && (
@@ -250,7 +566,7 @@ export function ReelPlayer({
               type="button"
               onClick={handleFollowToggle}
               className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full border border-background shadow transition-transform active:scale-90 ${
-                isFollowing ? "bg-card text-foreground" : "bg-primary text-primary-foreground"
+                isFollowing ? "bg-card text-foreground" : "bg-[#E91E63] text-white"
               }`}
               title={isFollowing ? "Following" : "Follow"}
             >
@@ -272,10 +588,10 @@ export function ReelPlayer({
         >
           <span
             className={`flex h-10 w-10 items-center justify-center rounded-full bg-black/60 backdrop-blur-sm transition-transform active:scale-125 ${
-              reel.hasLiked ? "text-primary" : "text-white"
+              reel.hasLiked ? "text-[#E91E63]" : "text-white"
             }`}
           >
-            <Heart className={`h-5 w-5 ${reel.hasLiked ? "fill-primary text-primary" : ""}`} />
+            <Heart className={`h-5 w-5 ${reel.hasLiked ? "fill-[#E91E63] text-[#E91E63]" : ""}`} />
           </span>
           <span className="text-[0.65rem] font-semibold text-white drop-shadow">
             {reel.likesCount}
@@ -321,10 +637,10 @@ export function ReelPlayer({
         >
           <span
             className={`flex h-10 w-10 items-center justify-center rounded-full bg-black/60 backdrop-blur-sm transition-transform active:scale-110 ${
-              reel.hasSaved ? "text-primary" : "text-white hover:bg-black/80"
+              reel.hasSaved ? "text-[#E91E63]" : "text-white hover:bg-black/80"
             }`}
           >
-            <Bookmark className={`h-5 w-5 ${reel.hasSaved ? "fill-primary" : ""}`} />
+            <Bookmark className={`h-5 w-5 ${reel.hasSaved ? "fill-[#E91E63]" : ""}`} />
           </span>
           <span className="text-[0.65rem] font-semibold text-white drop-shadow">
             {reel.savesCount}
@@ -340,10 +656,10 @@ export function ReelPlayer({
             params={{ username: reel.creatorUsername }}
             className="inline-flex items-center gap-1.5 group/user"
           >
-            <span className="text-sm font-bold text-white group-hover/user:text-primary transition-colors">
+            <span className="text-sm font-bold text-white group-hover/user:text-[#E91E63] transition-colors">
               @{reel.creatorUsername}
             </span>
-            {reel.creatorVerified && <BadgeCheck className="h-4 w-4 text-primary" />}
+            {reel.creatorVerified && <BadgeCheck className="h-4 w-4 text-[#E91E63]" />}
           </Link>
 
           {/* Caption with expander */}
@@ -359,7 +675,7 @@ export function ReelPlayer({
           {/* Audio Title */}
           {reel.audioTitle && (
             <div className="flex items-center gap-1.5 text-[0.7rem] text-white/80 pt-1">
-              <Music className="h-3 w-3 shrink-0 text-primary" />
+              <Music className="h-3 w-3 shrink-0 text-[#E91E63]" />
               <span className="truncate">{reel.audioTitle}</span>
             </div>
           )}
@@ -368,7 +684,7 @@ export function ReelPlayer({
         {/* Playback Progress Bar */}
         <div className="mt-3 h-1 w-full bg-white/20 rounded-full overflow-hidden">
           <div
-            className="h-full bg-primary transition-all duration-100 ease-linear"
+            className="h-full bg-[#E91E63] transition-all duration-100 ease-linear"
             style={{ width: `${progress}%` }}
           />
         </div>

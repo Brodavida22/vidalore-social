@@ -550,7 +550,11 @@ export async function createPost(
 
   const uploaded: string[] = [];
   try {
-    const processedFiles: { file: File; info: ReturnType<typeof detectMediaInfo>; originalSize: number }[] = [];
+    const processedFiles: {
+      file: File;
+      info: ReturnType<typeof detectMediaInfo>;
+      originalSize: number;
+    }[] = [];
 
     // Step 1: Pre-process & compress videos
     for (const [index, file] of input.files.entries()) {
@@ -596,7 +600,7 @@ export async function createPost(
 
     // Step 2: Upload files (resumable TUS for videos, standard for images)
     const rows = [];
-    let totalBytesAll = processedFiles.reduce((acc, f) => acc + f.file.size, 0);
+    const totalBytesAll = processedFiles.reduce((acc, f) => acc + f.file.size, 0);
     let cumulativeUploaded = 0;
 
     for (const [index, item] of processedFiles.entries()) {

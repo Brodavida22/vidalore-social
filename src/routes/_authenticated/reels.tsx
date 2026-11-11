@@ -37,9 +37,11 @@ function ReelsPage() {
 
   const reloadReels = useCallback(async () => {
     try {
-      setReels(await getStoredReels());
+      const items = await getStoredReels();
+      setReels(Array.isArray(items) ? items : []);
     } catch (error) {
-      console.error("Failed to load reels", error);
+      console.warn("Could not load reels:", error);
+      setReels([]);
     }
   }, []);
 

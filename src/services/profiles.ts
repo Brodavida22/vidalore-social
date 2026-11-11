@@ -55,13 +55,21 @@ export const achievementsForUserQuery = (userId: string) =>
   queryOptions({
     queryKey: ["achievements", userId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("user_achievements")
-        .select("earned_at, achievements(code, name, description, icon)")
-        .eq("user_id", userId)
-        .order("earned_at", { ascending: true });
-      if (error) throw error;
-      return data;
+      try {
+        const { data, error } = await supabase
+          .from("user_achievements")
+          .select("earned_at, achievements(code, name, description, icon)")
+          .eq("user_id", userId)
+          .order("earned_at", { ascending: true });
+        if (error) {
+          console.warn("Could not load achievements:", error.message);
+          return [];
+        }
+        return data ?? [];
+      } catch (err) {
+        console.warn("Achievements query exception:", err);
+        return [];
+      }
     },
   });
 
