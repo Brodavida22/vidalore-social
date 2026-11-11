@@ -283,11 +283,11 @@ async function uploadMedia(
 
     return new Promise<string>((resolve, reject) => {
       const upload = new tus.Upload(file, {
-        endpoint: `${String(import.meta.env.VITE_SUPABASE_URL ?? "").replace(/\/+$/, "")}/storage/v1/upload/resumable`,
+        endpoint: `${String(import.meta.env["VITE_SUPABASE_URL"] ?? "").replace(/\/+$/, "")}/storage/v1/upload/resumable`,
 
         headers: {
           authorization: `Bearer ${session.access_token}`,
-          apikey: String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? ""),
+          apikey: String(import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ?? ""),
           "x-upsert": "false",
         },
 
