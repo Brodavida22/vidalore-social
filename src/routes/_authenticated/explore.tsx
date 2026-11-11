@@ -77,10 +77,7 @@ function ExplorePage() {
       const { data: auth, error: authError } = await supabase.auth.getUser();
 
       if (authError) throw authError;
-
-      if (!auth.user) {
-        throw new Error("Please sign in to view following status.");
-      }
+      if (!auth.user) throw new Error("Please sign in to view following status.");
 
       const { data, error } = await supabase
         .from("follows")
@@ -88,7 +85,6 @@ function ExplorePage() {
         .eq("follower_id", auth.user.id);
 
       if (error) throw error;
-
       return (data ?? []).map((item) => item.following_id);
     },
     enabled: !!me?.id,
