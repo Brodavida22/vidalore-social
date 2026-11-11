@@ -30,7 +30,7 @@ import {
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { ReelCommentsDrawer } from "@/components/reels/ReelCommentsDrawer";
-import { toggleFollow } from "@/services/social";
+import { followUser, unfollowUser, isFollowing as checkFollowing } from "@/services/relationships";
 import {
   toggleReelLike,
   toggleReelSave,
@@ -66,7 +66,7 @@ export function ReelPlayer({
   const [showPlayIcon, setShowPlayIcon] = useState(false);
   const [heartBurst, setHeartBurst] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [isFollowing, setIsFollowing] = useState(reel.isFollowing ?? false);
+  const [isFollowing, setIsFollowing] = useState(reel.isFollowing ?? false);\n  const [isFollowPending, setIsFollowPending] = useState(false);
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const [progress, setProgress] = useState(0);
 
@@ -403,10 +403,27 @@ export function ReelPlayer({
       });
   }
 
-  function handleFollowToggle() {
-    const next = toggleFollow(reel.creatorId);
+  async function handleFollowToggle() {
+    if (!me?.id || me.id === reel.creatorId || isFollowPending) return;
+
+    const previous = isFollowing;
+    const next = !previous;
     setIsFollowing(next);
-    toast.info(next ? `Following @${reel.creatorUsername}` : `Unfollowed @${reel.creatorUsername}`);
+    setIsFollowPending(true);
+
+    try {
+      if (next) {
+        await followUser(reel.creatorId);
+      } else {
+        await unfollowUser(reel.creatorId);
+      }
+      toast.success(next ? `Following @${reel.creatorUsername}` : `Unfollowed @${reel.creatorUsername}`);
+    } catch (error) {
+      setIsFollowing(previous);
+      toast.error(error instanceof Error ? error.message : "Could not update follow status.");
+    } finally {
+      setIsFollowPending(false);
+    }
   }
 
   async function handleShare() {
@@ -630,6 +647,7 @@ export function ReelPlayer({
             <button
               type="button"
               onClick={handleFollowToggle}
+              disabled={isFollowPending}
               className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full border border-background shadow transition-transform active:scale-90 ${
                 isFollowing ? "bg-card text-foreground" : "bg-[#E91E63] text-white"
               }`}
