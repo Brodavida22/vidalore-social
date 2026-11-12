@@ -796,7 +796,12 @@ export async function toggleReelSave(reelId: string): Promise<boolean> {
 
 export async function incrementReelShare(reelId: string): Promise<number> {
   try {
-    const { error: rpcErr } = await supabase.rpc("increment_reel_shares", {
+    // This function is not part of the generated database types yet.
+    const rpc = supabase.rpc as unknown as (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ error: unknown }>;
+    const { error: rpcErr } = await rpc("increment_reel_shares", {
       target_reel_id: reelId,
     });
     if (rpcErr) {
@@ -915,7 +920,7 @@ export async function getSavedReels(): Promise<ReelItem[]> {
         saves_count: cached.savesCount,
         views_count: cached.viewsCount,
         created_at: cached.createdAt,
-        tags: cached.tags,
+        tags: cached.tags ?? null,
       });
       existingIds.add(id);
     }

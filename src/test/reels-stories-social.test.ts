@@ -81,11 +81,12 @@ describe("Reels & Stories Social Systems", () => {
     display_name: "Vidalore User",
     avatar_url: "https://example.com/avatar.jpg",
     bio: "Hello",
+    location: null,
+    cover_url: null,
+    is_private: false,
+    points_balance: 100,
     created_at: new Date().toISOString(),
-    points: 100,
-    followers_count: 5,
-    following_count: 10,
-    friends_count: 3,
+    updated_at: new Date().toISOString(),
   };
 
   beforeEach(() => {

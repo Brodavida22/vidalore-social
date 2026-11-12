@@ -84,7 +84,7 @@ describe("Video Upload and Playback Utilities", () => {
   it("ensures addReel inserts without select() to prevent PostgREST is_blocked RLS failure", async () => {
     const origFetch = globalThis.fetch;
     let postRequestUrl = "";
-    let postRequestBody: Record<string, unknown> | null = null;
+    let postRequestBody = null as Record<string, unknown> | null;
 
     globalThis.fetch = vi
       .fn()
@@ -128,6 +128,8 @@ describe("Video Upload and Playback Utilities", () => {
         username: "testuser",
         display_name: "Test User",
         avatar_url: null,
+        cover_url: null,
+        is_private: false,
         bio: null,
         location: null,
         website: null,
