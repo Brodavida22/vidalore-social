@@ -90,7 +90,7 @@ describe("Video Upload and Playback Utilities", () => {
       .fn()
       .mockImplementation(async (url: RequestInfo | URL, init?: RequestInit) => {
         const urlStr = String(url);
-        if (urlStr.includes("/rest/v1/reels")) {
+        if (urlStr.includes("/rest/v1/reels") && init?.method === "POST") {
           postRequestUrl = urlStr;
           if (init?.body) {
             try {
