@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Check,
   CheckCheck,
@@ -7,7 +7,12 @@ import {
   Trash2,
   MoreVertical,
   CornerDownRight,
-  Sparkles,
+  Copy,
+  Share2,
+  Crown,
+  ShieldCheck,
+  Shield,
+  Smile,
 } from "lucide-react";
 import type { MessageWithReadsAndReactions } from "@/services/messages";
 import { UserAvatar } from "@/components/profile/UserAvatar";
@@ -17,18 +22,25 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { toast } from "sonner";
+
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 export function MessageItem({
   message,
   currentUserId,
   isGroup,
   isAdmin,
+  senderRole,
   onReply,
   onEdit,
   onDelete,
+  onForward,
   onToggleReaction,
   onLocateMessage,
 }: {
@@ -36,30 +48,60 @@ export function MessageItem({
   currentUserId: string;
   isGroup: boolean;
   isAdmin: boolean;
+  senderRole?: "owner" | "admin" | "moderator" | "member";
   onReply: (message: MessageWithReadsAndReactions) => void;
   onEdit: (message: MessageWithReadsAndReactions) => void;
-  onDelete: (messageId: string) => void;
+  onDelete: (message: MessageWithReadsAndReactions) => void;
+  onForward?: (message: MessageWithReadsAndReactions) => void;
   onToggleReaction: (messageId: string, emoji: string) => void;
   onLocateMessage?: (messageId: string) => void;
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const isHorizontalSwipeRef = useRef<boolean | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPressRef = useRef(false);
 
   const isMine = message.sender_id === currentUserId;
   const isDeleted = Boolean(message.deleted_at);
-
   const isReadByRecipient = (message.reads ?? []).some((r) => r.user_id !== currentUserId);
 
-  // Touch gesture handlers for mobile swipe-to-reply
+  // Clear timer on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    };
+  }, []);
+
+  // Long press & Swipe gesture handlers
   const handleTouchStart = (e: React.TouchEvent) => {
     if (isDeleted) return;
     const touch = e.touches[0];
     if (!touch) return;
+
     touchStartRef.current = { x: touch.clientX, y: touch.clientY };
     isHorizontalSwipeRef.current = null;
+    isLongPressRef.current = false;
+
+    // Start 450ms long-press timer
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressRef.current = true;
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        try {
+          navigator.vibrate(25);
+        } catch {
+          // Ignore
+        }
+      }
+      setMenuOpen(true);
+      setSwipeOffset(0);
+      setIsSwiping(false);
+    }, 450);
+
     setIsSwiping(true);
   };
 
@@ -67,8 +109,19 @@ export function MessageItem({
     if (!touchStartRef.current || isDeleted) return;
     const touch = e.touches[0];
     if (!touch) return;
+
     const dx = touch.clientX - touchStartRef.current.x;
     const dy = touch.clientY - touchStartRef.current.y;
+
+    // If moved more than 8px, cancel long-press
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }
+
+    if (isLongPressRef.current) return;
 
     // Check if intentional horizontal swipe vs normal vertical scroll
     if (isHorizontalSwipeRef.current === null) {
@@ -84,6 +137,17 @@ export function MessageItem({
   };
 
   const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    if (isLongPressRef.current) {
+      setIsSwiping(false);
+      setSwipeOffset(0);
+      return;
+    }
+
     if (swipeOffset >= 42 && !isDeleted) {
       if (typeof navigator !== "undefined" && navigator.vibrate) {
         try {
@@ -94,10 +158,25 @@ export function MessageItem({
       }
       onReply(message);
     }
+
     setIsSwiping(false);
     setSwipeOffset(0);
     touchStartRef.current = null;
     isHorizontalSwipeRef.current = null;
+  };
+
+  // Right-click context menu handler for desktop
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (isDeleted) return;
+    e.preventDefault();
+    setMenuOpen(true);
+  };
+
+  const handleCopy = () => {
+    if (!message.content) return;
+    navigator.clipboard.writeText(message.content);
+    toast.success("Message copied to clipboard.");
+    setMenuOpen(false);
   };
 
   // Group reactions by emoji
@@ -132,6 +211,7 @@ export function MessageItem({
       }`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onContextMenu={handleContextMenu}
     >
       {/* Swipe to reply reveal icon */}
       {swipeOffset > 4 && (
@@ -168,18 +248,38 @@ export function MessageItem({
         className={`relative max-w-[85%] sm:max-w-[75%] flex flex-col z-10 ${isMine ? "items-end" : "items-start"}`}
         style={{
           transform: `translateX(${swipeOffset}px)`,
-          transition: isSwiping ? "none" : "transform 0.2s cubic-bezier(0.2, 0, 0, 1)",
+          transition: isSwiping ? "none" : "transform 0.2s cubic-bezier(0.2, 0, 1)",
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
       >
-        {/* SENDER NAME IN GROUP */}
+        {/* SENDER NAME & ROLE BADGE IN GROUP */}
         {!isMine && isGroup && (
-          <span className="text-[11px] font-semibold text-muted-foreground ml-1 mb-0.5">
-            {message.sender?.display_name || message.sender?.username || "Member"}
-          </span>
+          <div className="flex items-center gap-1.5 ml-1 mb-0.5">
+            <span className="text-[11px] font-semibold text-muted-foreground">
+              {message.sender?.display_name || message.sender?.username || "Member"}
+            </span>
+            {senderRole === "owner" && (
+              <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-500">
+                <Crown size={9} />
+                Owner
+              </span>
+            )}
+            {senderRole === "admin" && (
+              <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-bold bg-[#E91E63]/20 text-[#E91E63]">
+                <ShieldCheck size={9} />
+                Admin
+              </span>
+            )}
+            {senderRole === "moderator" && (
+              <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-bold bg-blue-500/20 text-blue-500">
+                <Shield size={9} />
+                Mod
+              </span>
+            )}
+          </div>
         )}
 
         {/* QUOTED REPLY PREVIEW */}
@@ -204,14 +304,17 @@ export function MessageItem({
 
         {/* MAIN BUBBLE */}
         <div
-          className={`relative rounded-2xl px-3.5 py-2.5 shadow-sm transition-all ${
+          className={`relative rounded-2xl px-3.5 py-2.5 shadow-sm transition-all cursor-pointer ${
             isMine
               ? "rounded-br-xs bg-[#E91E63] text-white"
               : "rounded-bl-xs border border-border bg-card text-foreground"
           }`}
+          onClick={() => {
+            // Optional: short click on mobile can open action menu if desired
+          }}
         >
           {isDeleted ? (
-            <p className="text-xs italic opacity-70 flex items-center gap-1.5">
+            <p className="text-xs italic opacity-70 flex items-center gap-1.5 select-none">
               <span>This message was deleted</span>
             </p>
           ) : (
@@ -296,7 +399,7 @@ export function MessageItem({
         )}
       </div>
 
-      {/* FLOATING ACTION TOOLBAR ON HOVER / TOUCH */}
+      {/* FLOATING ACTION TOOLBAR ON DESKTOP HOVER */}
       {!isDeleted && (
         <div
           className={`absolute top-0 -translate-y-1/2 flex items-center gap-0.5 p-1 rounded-full bg-card border border-border shadow-md z-10 transition-opacity ${
@@ -316,40 +419,130 @@ export function MessageItem({
             <Reply size={14} />
           </button>
 
-          {/* Actions Dropdown: Edit & Delete */}
-          {(isMine || isAdmin) && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition"
-                  title="More actions"
-                >
-                  <MoreVertical size={14} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align={isMine ? "end" : "start"} className="w-36 text-xs">
-                {isMine && message.message_type === "text" && (
-                  <DropdownMenuItem
-                    onClick={() => onEdit(message)}
-                    className="gap-2 cursor-pointer"
-                  >
-                    <Edit2 size={13} />
-                    <span>Edit message</span>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  onClick={() => onDelete(message.id)}
-                  className="gap-2 text-destructive focus:text-destructive cursor-pointer"
-                >
-                  <Trash2 size={13} />
-                  <span>Delete message</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          {/* Forward */}
+          {onForward && (
+            <button
+              type="button"
+              onClick={() => onForward(message)}
+              className="p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition"
+              title="Forward"
+            >
+              <Share2 size={14} />
+            </button>
           )}
+
+          {/* More actions trigger */}
+          <button
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            className="p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition"
+            title="More actions"
+          >
+            <MoreVertical size={14} />
+          </button>
         </div>
       )}
+
+      {/* WHATSAPP-STYLE ACTION MODAL / BOTTOM SHEET ON LONG-PRESS OR RIGHT-CLICK */}
+      <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
+        <DialogContent className="sm:max-w-xs p-3 rounded-2xl bg-card border-border shadow-2xl">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Message Actions</DialogTitle>
+          </DialogHeader>
+
+          {/* Quick Reaction Bar on top */}
+          <div className="flex items-center justify-between gap-1 p-2 bg-secondary/60 rounded-xl mb-2">
+            {QUICK_REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => {
+                  onToggleReaction(message.id, emoji);
+                  setMenuOpen(false);
+                }}
+                className="text-xl p-1.5 hover:scale-125 transition-transform"
+              >
+                {emoji}
+              </button>
+            ))}
+            <div className="border-l border-border pl-1">
+              <ReactionPicker
+                onSelectEmoji={(emoji) => {
+                  onToggleReaction(message.id, emoji);
+                  setMenuOpen(false);
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Action List Items */}
+          <div className="flex flex-col gap-1 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                onReply(message);
+              }}
+              className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-secondary text-foreground text-left transition"
+            >
+              <Reply size={15} className="text-muted-foreground" />
+              <span>Reply</span>
+            </button>
+
+            {message.content && (
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-secondary text-foreground text-left transition"
+              >
+                <Copy size={15} className="text-muted-foreground" />
+                <span>Copy message</span>
+              </button>
+            )}
+
+            {onForward && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onForward(message);
+                }}
+                className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-secondary text-foreground text-left transition"
+              >
+                <Share2 size={15} className="text-muted-foreground" />
+                <span>Forward message</span>
+              </button>
+            )}
+
+            {isMine && message.message_type === "text" && !isDeleted && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onEdit(message);
+                }}
+                className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-secondary text-foreground text-left transition"
+              >
+                <Edit2 size={15} className="text-muted-foreground" />
+                <span>Edit message</span>
+              </button>
+            )}
+
+            {/* Delete option */}
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                onDelete(message);
+              }}
+              className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-destructive/10 text-destructive text-left transition"
+            >
+              <Trash2 size={15} />
+              <span>Delete message</span>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -12,6 +12,9 @@ import {
   Loader2,
   ChevronDown,
   Sparkles,
+  Eraser,
+  Trash2,
+  MoreVertical,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -22,6 +25,12 @@ import {
   uploadChatMedia,
   editMessage,
   deleteMessage,
+  deleteMessageForMe,
+  deleteMessageForEveryone,
+  clearConversationHistory,
+  hideConversationForUser,
+  forwardMessage,
+  deleteGroupConversation,
   toggleMessageReaction,
   markMessagesAsRead,
   markConversationAsRead,
@@ -41,6 +50,25 @@ import { MessageItem } from "@/components/messages/MessageItem";
 import { NewChatModal } from "@/components/messages/NewChatModal";
 import { NewGroupModal } from "@/components/messages/NewGroupModal";
 import { GroupDetailsSheet } from "@/components/messages/GroupDetailsSheet";
+import { DeleteMessageDialog } from "@/components/messages/DeleteMessageDialog";
+import { ForwardMessageModal } from "@/components/messages/ForwardMessageModal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -80,6 +108,20 @@ function MessagesPage() {
   const [newChatModalOpen, setNewChatModalOpen] = useState(false);
   const [newGroupModalOpen, setNewGroupModalOpen] = useState(false);
   const [groupDetailsOpen, setGroupDetailsOpen] = useState(false);
+
+  // WhatsApp-Style Message Actions: Forward & Delete Modals
+  const [forwardModalOpen, setForwardModalOpen] = useState(false);
+  const [forwardingMessage, setForwardingMessage] = useState<MessageWithReadsAndReactions | null>(
+    null,
+  );
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deletingMessage, setDeletingMessage] = useState<MessageWithReadsAndReactions | null>(null);
+
+  // Sidebar Chat Management Modals
+  const [sidebarTargetConv, setSidebarTargetConv] = useState<ConversationListItem | null>(null);
+  const [sidebarClearChatOpen, setSidebarClearChatOpen] = useState(false);
+  const [sidebarDeleteConvOpen, setSidebarDeleteConvOpen] = useState(false);
 
   // Replying & Editing
   const [replyingTo, setReplyingTo] = useState<MessageWithReadsAndReactions | null>(null);
@@ -443,7 +485,7 @@ function MessagesPage() {
     },
   });
 
-  /* 8. MESSAGE ACTIONS: Reaction, Edit, Delete */
+  /* 8. MESSAGE ACTIONS: Reaction, Delete For Me/Everyone, Forward, Clear Chat */
   const handleToggleReaction = async (messageId: string, emoji: string) => {
     try {
       await toggleMessageReaction(messageId, emoji);
@@ -453,16 +495,85 @@ function MessagesPage() {
     }
   };
 
-  const handleDeleteMessage = async (messageId: string) => {
-    if (!confirm("Are you sure you want to delete this message?")) return;
-
+  const handleDeleteForMe = async (messageId: string) => {
     try {
-      await deleteMessage(messageId);
-      toast.success("Message deleted.");
-      queryClient.invalidateQueries({ queryKey: ["messages", selectedId] });
+      await deleteMessageForMe(messageId);
+      toast.success("Message deleted for you.");
+      queryClient.setQueryData<MessageWithReadsAndReactions[]>(
+        ["messages", selectedId],
+        (old = []) => old.filter((m) => m.id !== messageId),
+      );
       queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete message.");
+    }
+  };
+
+  const handleDeleteForEveryone = async (messageId: string) => {
+    try {
+      await deleteMessageForEveryone(messageId);
+      toast.success("Message deleted for everyone.");
+      queryClient.invalidateQueries({ queryKey: ["messages", selectedId] });
+      queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete message for everyone.");
+    }
+  };
+
+  const handleClearChat = async (targetConvId?: string) => {
+    const convId = targetConvId || selectedId;
+    if (!convId) return;
+    try {
+      await clearConversationHistory(convId);
+      toast.success("Chat history cleared.");
+      if (convId === selectedId) {
+        queryClient.setQueryData<MessageWithReadsAndReactions[]>(["messages", selectedId], []);
+      }
+      queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to clear chat history.");
+    }
+  };
+
+  const handleDeleteConversation = async (targetConvId?: string) => {
+    const convId = targetConvId || selectedId;
+    if (!convId) return;
+    try {
+      await hideConversationForUser(convId);
+      toast.success("Conversation deleted.");
+      if (convId === selectedId) {
+        setSelectedConversation(null);
+      }
+      queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete conversation.");
+    }
+  };
+
+  const handleDeleteGroup = async (targetConvId?: string) => {
+    const convId = targetConvId || selectedId;
+    if (!convId) return;
+    try {
+      await deleteGroupConversation(convId);
+      toast.success("Group deleted for everyone.");
+      if (convId === selectedId) {
+        setSelectedConversation(null);
+      }
+      queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete group.");
+    }
+  };
+
+  const handleForwardMessage = async (targetConversationId: string) => {
+    if (!forwardingMessage) return;
+    try {
+      await forwardMessage(targetConversationId, forwardingMessage);
+      toast.success("Message forwarded!");
+      queryClient.invalidateQueries({ queryKey: ["messages", targetConversationId] });
+      queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to forward message.");
     }
   };
 
@@ -705,58 +816,116 @@ function MessagesPage() {
               }
 
               return (
-                <button
+                <div
                   key={conv.id}
-                  type="button"
-                  onClick={() => handleSelectConversation(conv)}
-                  className={`flex w-full items-center gap-3 p-3.5 text-left transition select-none ${
+                  className={`group flex w-full items-center justify-between p-3 text-left transition select-none ${
                     active ? "bg-[#E91E63]/10" : "hover:bg-secondary/60"
                   }`}
                 >
-                  {/* Avatar with status indicator */}
-                  <div className="relative shrink-0">
-                    {avatar ? (
-                      <img
-                        src={avatar}
-                        alt=""
-                        className="h-11 w-11 rounded-full object-cover ring-1 ring-border"
-                      />
-                    ) : (
-                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-foreground ring-1 ring-border">
-                        {isGroup ? (
-                          <Users size={18} className="text-[#E91E63]" />
-                        ) : (
-                          <MessageCircle size={18} />
+                  <button
+                    type="button"
+                    onClick={() => handleSelectConversation(conv)}
+                    className="flex items-center gap-3 min-w-0 flex-1 text-left"
+                  >
+                    {/* Avatar with status indicator */}
+                    <div className="relative shrink-0">
+                      {avatar ? (
+                        <img
+                          src={avatar}
+                          alt=""
+                          className="h-11 w-11 rounded-full object-cover ring-1 ring-border"
+                        />
+                      ) : (
+                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-foreground ring-1 ring-border">
+                          {isGroup ? (
+                            <Users size={18} className="text-[#E91E63]" />
+                          ) : (
+                            <MessageCircle size={18} />
+                          )}
+                        </div>
+                      )}
+
+                      {isPeerOnline && (
+                        <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-[#22C55E] ring-2 ring-card" />
+                      )}
+                    </div>
+
+                    {/* Text details */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="truncate text-xs font-semibold text-foreground">{title}</p>
+                        {conv.last_message_at && (
+                          <span className="text-[10px] text-muted-foreground shrink-0">
+                            {formatDateSeparator(conv.last_message_at)}
+                          </span>
                         )}
                       </div>
-                    )}
 
-                    {isPeerOnline && (
-                      <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-[#22C55E] ring-2 ring-card" />
-                    )}
-                  </div>
-
-                  {/* Text details */}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <p className="truncate text-xs font-semibold text-foreground">{title}</p>
-                      {conv.last_message_at && (
-                        <span className="text-[10px] text-muted-foreground shrink-0">
-                          {formatDateSeparator(conv.last_message_at)}
-                        </span>
-                      )}
+                      <div className="mt-0.5 flex items-center justify-between gap-2">
+                        <p className="truncate text-[11px] text-muted-foreground">
+                          {lastMsgSnippet}
+                        </p>
+                        {Boolean(conv.unreadCount && conv.unreadCount > 0) && (
+                          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#E91E63] px-1 text-[10px] font-bold text-white shadow-xs">
+                            {conv.unreadCount}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                  </button>
 
-                    <div className="mt-0.5 flex items-center justify-between gap-2">
-                      <p className="truncate text-[11px] text-muted-foreground">{lastMsgSnippet}</p>
-                      {Boolean(conv.unreadCount && conv.unreadCount > 0) && (
-                        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#E91E63] px-1 text-[10px] font-bold text-white shadow-xs">
-                          {conv.unreadCount}
-                        </span>
+                  {/* 3-dots menu for sidebar conversation */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={(e) => e.stopPropagation()}
+                        className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary opacity-0 group-hover:opacity-100 transition shrink-0 ml-1"
+                        title="Chat options"
+                      >
+                        <MoreVertical size={14} />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44 text-xs">
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSidebarTargetConv(conv);
+                          setSidebarClearChatOpen(true);
+                        }}
+                        className="gap-2 cursor-pointer"
+                      >
+                        <Eraser size={13} className="text-muted-foreground" />
+                        <span>Clear chat history</span>
+                      </DropdownMenuItem>
+                      {!isGroup ? (
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSidebarTargetConv(conv);
+                            setSidebarDeleteConvOpen(true);
+                          }}
+                          className="gap-2 text-destructive focus:text-destructive cursor-pointer"
+                        >
+                          <Trash2 size={13} />
+                          <span>Delete conversation</span>
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedConversation(conv);
+                            setGroupDetailsOpen(true);
+                          }}
+                          className="gap-2 cursor-pointer"
+                        >
+                          <Users size={13} className="text-muted-foreground" />
+                          <span>Group details</span>
+                        </DropdownMenuItem>
                       )}
-                    </div>
-                  </div>
-                </button>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               );
             })}
           </div>
@@ -806,8 +975,13 @@ function MessagesPage() {
                 currentUserId={currentUserId}
                 isOnline={isDirectPeerOnline}
                 typingUsers={activeTypingNames}
+                isOwner={currentMemberRole === "owner"}
                 onBack={() => setSelectedConversation(null)}
                 onOpenDetails={() => setGroupDetailsOpen(true)}
+                onClearChat={handleClearChat}
+                onDeleteConversation={handleDeleteConversation}
+                onLeaveGroup={() => setGroupDetailsOpen(true)}
+                onDeleteGroup={handleDeleteGroup}
               />
 
               {/* MESSAGES SCROLL CONTAINER */}
@@ -854,6 +1028,15 @@ function MessagesPage() {
                         currentUserId={currentUserId}
                         isGroup={selectedConversation.kind === "group"}
                         isAdmin={isCurrentGroupAdmin}
+                        senderRole={
+                          selectedConversation.kind === "group"
+                            ? getEffectiveRole(
+                                msg.sender_id,
+                                selectedConversation,
+                                selectedConversation.members,
+                              )
+                            : undefined
+                        }
                         onReply={(m) => {
                           setEditingMessageState(null);
                           setReplyingTo(m);
@@ -862,7 +1045,14 @@ function MessagesPage() {
                           setReplyingTo(null);
                           setEditingMessageState(m);
                         }}
-                        onDelete={handleDeleteMessage}
+                        onDelete={(m) => {
+                          setDeletingMessage(m);
+                          setDeleteModalOpen(true);
+                        }}
+                        onForward={(m) => {
+                          setForwardingMessage(m);
+                          setForwardModalOpen(true);
+                        }}
                         onToggleReaction={handleToggleReaction}
                         onLocateMessage={handleLocateMessage}
                       />
@@ -930,6 +1120,10 @@ function MessagesPage() {
                     setSelectedConversation(null);
                     queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
                   }}
+                  onGroupDeleted={() => {
+                    setSelectedConversation(null);
+                    queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+                  }}
                 />
               )}
             </>
@@ -964,6 +1158,82 @@ function MessagesPage() {
           setSelectedConversation(fullConv);
         }}
       />
+
+      {/* FORWARD MESSAGE MODAL */}
+      <ForwardMessageModal
+        open={forwardModalOpen}
+        onOpenChange={setForwardModalOpen}
+        message={forwardingMessage}
+        conversations={conversations}
+        currentUserId={currentUserId}
+        onForward={handleForwardMessage}
+      />
+
+      {/* DELETE MESSAGE DIALOG (Delete for me vs Delete for everyone) */}
+      <DeleteMessageDialog
+        open={deleteModalOpen}
+        onOpenChange={setDeleteModalOpen}
+        message={deletingMessage}
+        currentUserId={currentUserId}
+        isGroupAdmin={isCurrentGroupAdmin}
+        onDeleteForMe={handleDeleteForMe}
+        onDeleteForEveryone={handleDeleteForEveryone}
+      />
+
+      {/* SIDEBAR CONFIRMATION: Clear Chat */}
+      <AlertDialog open={sidebarClearChatOpen} onOpenChange={setSidebarClearChatOpen}>
+        <AlertDialogContent className="sm:max-w-md rounded-2xl bg-card border-border p-5">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 font-display text-base text-foreground">
+              <Eraser size={18} className="text-[#E91E63]" />
+              Clear chat history?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-muted-foreground leading-relaxed">
+              Messages will be cleared for you. Other participants will not lose their history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="pt-2">
+            <AlertDialogCancel className="text-xs rounded-xl h-8">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (sidebarTargetConv) handleClearChat(sidebarTargetConv.id);
+                setSidebarClearChatOpen(false);
+              }}
+              className="text-xs rounded-xl h-8 bg-[#E91E63] hover:bg-[#C2185B] text-white"
+            >
+              Clear Messages
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* SIDEBAR CONFIRMATION: Delete Conversation */}
+      <AlertDialog open={sidebarDeleteConvOpen} onOpenChange={setSidebarDeleteConvOpen}>
+        <AlertDialogContent className="sm:max-w-md rounded-2xl bg-card border-border p-5">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 font-display text-base text-foreground">
+              <Trash2 size={18} className="text-destructive" />
+              Delete conversation?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-muted-foreground leading-relaxed">
+              This conversation will be hidden from your chat list. It will reappear if a new
+              message arrives.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="pt-2">
+            <AlertDialogCancel className="text-xs rounded-xl h-8">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (sidebarTargetConv) handleDeleteConversation(sidebarTargetConv.id);
+                setSidebarDeleteConvOpen(false);
+              }}
+              className="text-xs rounded-xl h-8 bg-destructive hover:bg-destructive/90 text-white"
+            >
+              Delete Conversation
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

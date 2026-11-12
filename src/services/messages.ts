@@ -39,6 +39,88 @@ export async function getCurrentUser() {
   return data.user;
 }
 
+export function getPerUserClearedTimestamp(userId: string, conversationId: string): number {
+  if (typeof window === "undefined" || !userId || !conversationId) return 0;
+  try {
+    const val = localStorage.getItem(`vidalore_cleared_at_${userId}_${conversationId}`);
+    return val ? parseInt(val, 10) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function setPerUserClearedTimestamp(
+  userId: string,
+  conversationId: string,
+  timestamp: number,
+): void {
+  if (typeof window === "undefined" || !userId || !conversationId) return;
+  try {
+    localStorage.setItem(`vidalore_cleared_at_${userId}_${conversationId}`, String(timestamp));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function getPerUserDeletedMessageIds(userId: string): Set<string> {
+  if (typeof window === "undefined" || !userId) return new Set();
+  try {
+    const raw = localStorage.getItem(`vidalore_deleted_for_me_${userId}`);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function addPerUserDeletedMessageId(userId: string, messageId: string): void {
+  if (typeof window === "undefined" || !userId || !messageId) return;
+  try {
+    const set = getPerUserDeletedMessageIds(userId);
+    set.add(messageId);
+    localStorage.setItem(`vidalore_deleted_for_me_${userId}`, JSON.stringify([...set]));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function getPerUserHiddenConversations(userId: string): Record<string, number> {
+  if (typeof window === "undefined" || !userId) return {};
+  try {
+    const raw = localStorage.getItem(`vidalore_hidden_conversations_${userId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function setPerUserHiddenConversation(
+  userId: string,
+  conversationId: string,
+  hiddenAt: number,
+): void {
+  if (typeof window === "undefined" || !userId || !conversationId) return;
+  try {
+    const map = getPerUserHiddenConversations(userId);
+    map[conversationId] = hiddenAt;
+    localStorage.setItem(`vidalore_hidden_conversations_${userId}`, JSON.stringify(map));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function unhideConversationForUser(userId: string, conversationId: string): void {
+  if (typeof window === "undefined" || !userId || !conversationId) return;
+  try {
+    const map = getPerUserHiddenConversations(userId);
+    delete map[conversationId];
+    localStorage.setItem(`vidalore_hidden_conversations_${userId}`, JSON.stringify(map));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 /**
  * Load all conversations belonging to the signed-in user with member details,
  * last message, and unread counts.
@@ -68,10 +150,22 @@ export async function getMyConversations(): Promise<ConversationListItem[]> {
 
   if (conversationsError) throw conversationsError;
 
+  // Filter out conversations hidden by user unless a newer message arrived
+  const hiddenConvs = getPerUserHiddenConversations(user.id);
+  const activeConversations = (conversations ?? []).filter((conv) => {
+    const hiddenAt = hiddenConvs[conv.id];
+    if (!hiddenAt) return true;
+    if (!conv.last_message_at) return false;
+    return new Date(conv.last_message_at).getTime() > hiddenAt;
+  });
+
+  const activeConvIds = activeConversations.map((c) => c.id);
+  if (activeConvIds.length === 0) return [];
+
   const { data: members, error: membersError } = await supabase
     .from("conversation_members")
     .select("*")
-    .in("conversation_id", conversationIds);
+    .in("conversation_id", activeConvIds);
 
   if (membersError) throw membersError;
 
@@ -89,7 +183,7 @@ export async function getMyConversations(): Promise<ConversationListItem[]> {
   const { data: recentMessages, error: messagesError } = await supabase
     .from("messages")
     .select("*")
-    .in("conversation_id", conversationIds)
+    .in("conversation_id", activeConvIds)
     .order("created_at", { ascending: false })
     .limit(500);
 
@@ -99,10 +193,17 @@ export async function getMyConversations(): Promise<ConversationListItem[]> {
   const lastMessageMap = new Map<string, Message>();
   const membershipMap = new Map(memberships?.map((m) => [m.conversation_id, m]) ?? []);
 
-  // Compute unread counts for each conversation
+  const deletedForMe = getPerUserDeletedMessageIds(user.id);
+
+  // Compute unread counts and last message for each conversation
   const unreadCountMap = new Map<string, number>();
 
   for (const message of recentMessages ?? []) {
+    if (deletedForMe.has(message.id)) continue;
+
+    const clearedAt = getPerUserClearedTimestamp(user.id, message.conversation_id);
+    if (clearedAt > 0 && new Date(message.created_at).getTime() <= clearedAt) continue;
+
     if (!lastMessageMap.has(message.conversation_id)) {
       lastMessageMap.set(message.conversation_id, message);
     }
@@ -122,7 +223,7 @@ export async function getMyConversations(): Promise<ConversationListItem[]> {
     }
   }
 
-  return (conversations ?? []).map((conversation) => ({
+  return activeConversations.map((conversation) => ({
     ...conversation,
     members: (members ?? [])
       .filter((member) => member.conversation_id === conversation.id)
@@ -143,6 +244,8 @@ export async function getConversationMessages(
   limit = 100,
   beforeCreatedAt?: string,
 ): Promise<MessageWithReadsAndReactions[]> {
+  const user = await getCurrentUser().catch(() => null);
+
   let query = supabase
     .from("messages")
     .select("*")
@@ -154,10 +257,22 @@ export async function getConversationMessages(
     query = query.lt("created_at", beforeCreatedAt);
   }
 
-  const { data: messages, error } = await query;
+  const { data: rawMessages, error } = await query;
 
   if (error) throw error;
-  if (!messages || messages.length === 0) return [];
+  if (!rawMessages || rawMessages.length === 0) return [];
+
+  // Filter messages for current user based on Delete For Me & Clear Chat History
+  const deletedForMe = user ? getPerUserDeletedMessageIds(user.id) : new Set<string>();
+  const clearedAt = user ? getPerUserClearedTimestamp(user.id, conversationId) : 0;
+
+  const messages = rawMessages.filter((m) => {
+    if (deletedForMe.has(m.id)) return false;
+    if (clearedAt > 0 && new Date(m.created_at).getTime() <= clearedAt) return false;
+    return true;
+  });
+
+  if (messages.length === 0) return [];
 
   const messageIds = messages.map((item) => item.id);
   const senderIds = [...new Set(messages.map((m) => m.sender_id))];
@@ -908,6 +1023,151 @@ export async function deleteMessage(messageId: string): Promise<Message> {
 
   if (error) throw error;
   return data;
+}
+
+/**
+ * Delete message for current user only (persisted in user's browser storage).
+ */
+export async function deleteMessageForMe(messageId: string): Promise<void> {
+  const user = await getCurrentUser();
+  addPerUserDeletedMessageId(user.id, messageId);
+}
+
+/**
+ * Delete message for everyone in the conversation (author or group admin/owner).
+ */
+export async function deleteMessageForEveryone(messageId: string): Promise<Message> {
+  const user = await getCurrentUser();
+
+  const { data: msg, error: msgErr } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("id", messageId)
+    .single();
+
+  if (msgErr || !msg) throw new Error("Message not found.");
+
+  const isSender = msg.sender_id === user.id;
+  let canDelete = isSender;
+
+  if (!canDelete && msg.conversation_id) {
+    const { data: conv } = await supabase
+      .from("conversations")
+      .select("created_by, kind")
+      .eq("id", msg.conversation_id)
+      .maybeSingle();
+
+    if (conv && conv.kind === "group") {
+      const { data: members } = await supabase
+        .from("conversation_members")
+        .select("user_id, role")
+        .eq("conversation_id", msg.conversation_id);
+      const role = getEffectiveRole(user.id, conv, members ?? []);
+      if (canManageGroup(role)) {
+        canDelete = true;
+      }
+    }
+  }
+
+  if (!canDelete) {
+    throw new Error("You do not have permission to delete this message for everyone.");
+  }
+
+  const { data, error } = await supabase
+    .from("messages")
+    .update({
+      deleted_at: new Date().toISOString(),
+      content: null,
+      media_url: null,
+      media_name: null,
+    })
+    .eq("id", messageId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Clear chat history for the current user.
+ * Messages sent prior to clearing will no longer show for this user,
+ * but remain untouched for all other conversation participants.
+ */
+export async function clearConversationHistory(conversationId: string): Promise<void> {
+  const user = await getCurrentUser();
+  setPerUserClearedTimestamp(user.id, conversationId, Date.now());
+}
+
+/**
+ * Delete / hide a conversation for the current user from their chat list.
+ * Unhides automatically if a new message arrives.
+ */
+export async function hideConversationForUser(conversationId: string): Promise<void> {
+  const user = await getCurrentUser();
+  setPerUserHiddenConversation(user.id, conversationId, Date.now());
+}
+
+/**
+ * Forward an existing message to another direct chat or group conversation.
+ */
+export async function forwardMessage(
+  targetConversationId: string,
+  message: MessageWithReadsAndReactions,
+): Promise<Message> {
+  return sendMessage(targetConversationId, {
+    content: message.content ?? undefined,
+    messageType: (message.message_type as "text" | "image" | "video" | "audio" | "file") || "text",
+    mediaUrl: message.media_url ?? undefined,
+    mediaName: message.media_name ?? undefined,
+  });
+}
+
+/**
+ * Delete a group conversation entirely (restricted strictly to group owner/creator).
+ */
+export async function deleteGroupConversation(conversationId: string): Promise<void> {
+  const user = await getCurrentUser();
+  const { data: conv, error: convErr } = await supabase
+    .from("conversations")
+    .select("created_by, kind")
+    .eq("id", conversationId)
+    .single();
+
+  if (convErr || !conv) throw new Error("Conversation not found.");
+  if (conv.created_by !== user.id) {
+    throw new Error("Only the group creator can delete this group.");
+  }
+
+  // Delete dependencies first
+  try {
+    const { data: msgs } = await supabase
+      .from("messages")
+      .select("id")
+      .eq("conversation_id", conversationId);
+    const msgIds = (msgs ?? []).map((m) => m.id);
+    if (msgIds.length > 0) {
+      await supabase.from("message_reads").delete().in("message_id", msgIds);
+      await supabase.from("message_reactions").delete().in("message_id", msgIds);
+    }
+  } catch (err) {
+    console.warn("Could not delete message reads/reactions:", err);
+  }
+
+  try {
+    await supabase.from("messages").delete().eq("conversation_id", conversationId);
+  } catch (err) {
+    console.warn("Could not delete messages:", err);
+  }
+
+  try {
+    await supabase.from("conversation_members").delete().eq("conversation_id", conversationId);
+  } catch (err) {
+    console.warn("Could not delete members:", err);
+  }
+
+  const { error } = await supabase.from("conversations").delete().eq("id", conversationId);
+  if (error) throw error;
 }
 
 /**

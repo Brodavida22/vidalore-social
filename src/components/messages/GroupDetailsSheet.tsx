@@ -57,9 +57,11 @@ import {
   addGroupMembers,
   removeGroupMember,
   leaveGroupConversation,
+  deleteGroupConversation,
   searchProfiles,
 } from "@/services/messages";
 import { uploadProfileImage } from "@/services/profiles";
+import { Trash2 } from "lucide-react";
 
 export function GroupDetailsSheet({
   open,
@@ -68,6 +70,7 @@ export function GroupDetailsSheet({
   currentUserId,
   onConversationUpdated,
   onLeftGroup,
+  onGroupDeleted,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -75,6 +78,7 @@ export function GroupDetailsSheet({
   currentUserId: string;
   onConversationUpdated: () => void;
   onLeftGroup: () => void;
+  onGroupDeleted?: () => void;
 }) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [newTitle, setNewTitle] = useState(conversation.title || "");
@@ -85,6 +89,10 @@ export function GroupDetailsSheet({
   const [searchResults, setSearchResults] = useState<Profile[]>([]);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+
+  // Group deletion modal for Owner
+  const [deleteGroupModalOpen, setDeleteGroupModalOpen] = useState(false);
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
 
   // Successor selection modal for last admin leaving
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
@@ -242,6 +250,21 @@ export function GroupDetailsSheet({
       toast.error(err instanceof Error ? err.message : "Failed to leave group.");
     } finally {
       setIsLeaving(false);
+    }
+  };
+
+  const handleDeleteGroup = async () => {
+    setIsDeletingGroup(true);
+    try {
+      await deleteGroupConversation(conversation.id);
+      toast.success("Group deleted.");
+      setDeleteGroupModalOpen(false);
+      onOpenChange(false);
+      onGroupDeleted?.();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete group.");
+    } finally {
+      setIsDeletingGroup(false);
     }
   };
 
@@ -603,8 +626,8 @@ export function GroupDetailsSheet({
             </div>
           </div>
 
-          {/* Leave Group Button */}
-          <div className="border-t border-border pt-4">
+          {/* Action Buttons: Leave Group and Owner Delete Group */}
+          <div className="border-t border-border pt-4 space-y-2">
             <Button
               variant="destructive"
               onClick={handleOpenLeaveModal}
@@ -613,6 +636,17 @@ export function GroupDetailsSheet({
               <LogOut size={15} />
               Leave Group
             </Button>
+
+            {myRole === "owner" && (
+              <Button
+                variant="outline"
+                onClick={() => setDeleteGroupModalOpen(true)}
+                className="w-full text-xs rounded-xl h-10 gap-2 font-semibold border-destructive/40 text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 size={15} />
+                Delete Group for Everyone
+              </Button>
+            )}
           </div>
         </SheetContent>
       </Sheet>
@@ -715,6 +749,49 @@ export function GroupDetailsSheet({
                 <Crown size={13} />
               )}
               Transfer Ownership
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Modal: Delete Group (Owner only) */}
+      <Dialog open={deleteGroupModalOpen} onOpenChange={setDeleteGroupModalOpen}>
+        <DialogContent className="sm:max-w-md bg-card border-border p-5">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive font-display text-base">
+              <Trash2 className="h-5 w-5" />
+              Delete Group Permanently
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Are you sure you want to permanently delete{" "}
+              <strong>"{conversation.title || "this group"}"</strong> for all members? All messages
+              and media will be erased. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="flex justify-end gap-2 pt-3 border-t border-border">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDeleteGroupModalOpen(false)}
+              disabled={isDeletingGroup}
+              className="text-xs rounded-lg"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteGroup}
+              disabled={isDeletingGroup}
+              className="text-xs rounded-lg font-semibold gap-1.5"
+            >
+              {isDeletingGroup ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Trash2 size={13} />
+              )}
+              Confirm Delete Group
             </Button>
           </DialogFooter>
         </DialogContent>
