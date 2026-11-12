@@ -59,6 +59,7 @@ export function isWebCodecsSupported(): boolean {
  * - Preserves audio tracks (transcoded to AAC), orientation and aspect ratio.
  * - Resulting file has type "video/mp4" and ".mp4" file extension.
  */
+
 export async function compressVideoFile(
   file: File,
   onProgress?: (progress: number) => void,
@@ -66,14 +67,233 @@ export async function compressVideoFile(
   const originalBytes = file.size;
 
   if (!file.type.startsWith("video/")) {
-    return {
-      file,
-      compressed: false,
-      originalBytes,
-      compressedBytes: originalBytes,
-      convertedToH264: false,
-    };
+    throw new Error("Please select a valid video file.");
   }
+
+  let detectedCodec = "unknown";
+  let hasAudioTrack = false;
+  let isAlreadyH264 = false;
+  let isAlreadyAac = false;
+  let isMp4 = false;
+
+  // 1. Inspect the original video.
+  try {
+    const probeInput = new Input({
+      formats: ALL_FORMATS,
+      source: new BlobSource(file),
+    });
+
+    const videoTrack = await probeInput.getPrimaryVideoTrack();
+
+    if (!videoTrack) {
+      throw new Error("No video track was found in this file.");
+    }
+
+    const audioTracks = await probeInput.getAudioTracks();
+
+    hasAudioTrack = audioTracks.length > 0;
+
+    const codec = await videoTrack.getCodec();
+    const internalId = await videoTrack.getInternalCodecId();
+
+    const internalCodec =
+      typeof internalId === "string"
+        ? internalId.toLowerCase()
+        : "";
+
+    detectedCodec = codec || internalCodec || "unknown";
+
+    isAlreadyH264 =
+      codec === "avc" || internalCodec.startsWith("avc1");
+
+    isMp4 =
+      file.type.toLowerCase().includes("mp4") ||
+      file.name.toLowerCase().endsWith(".mp4");
+
+    isAlreadyAac =
+      !hasAudioTrack ||
+      (await Promise.all(
+        audioTracks.map(async (track) => {
+          return (await track.getCodec()) === "aac";
+        }),
+      )).every(Boolean);
+
+    // Only skip conversion when the file is already a compatible
+    // MP4 containing decodable H.264 and AAC tracks.
+    if (isAlreadyH264 && isAlreadyAac && isMp4) {
+      const videoCanDecode = await videoTrack.canDecode();
+
+      const audioCanDecode = await Promise.all(
+        audioTracks.map((track) => track.canDecode()),
+      );
+
+      if (videoCanDecode && audioCanDecode.every(Boolean)) {
+        onProgress?.(100);
+
+        return {
+          file,
+          compressed: false,
+          originalBytes,
+          compressedBytes: originalBytes,
+          detectedCodec: "avc",
+          convertedToH264: false,
+        };
+      }
+    }
+  } catch (error) {
+    console.warn("Original video inspection failed:", error);
+
+    // Unknown or unreadable formats must not silently bypass conversion.
+    throw new Error(
+      "We could not inspect this video. Please try another video or convert it to H.264 MP4 before uploading.",
+    );
+  }
+
+  // 2. Convert to MP4 using H.264 video and AAC audio.
+  let conversion: Conversion | undefined;
+
+  try {
+    onProgress?.(0);
+
+    const input = new Input({
+      formats: ALL_FORMATS,
+      source: new BlobSource(file),
+    });
+
+    const output = new Output({
+      format: new Mp4OutputFormat(),
+      target: new BufferTarget(),
+    });
+
+    conversion = await Conversion.init({
+      input,
+      output,
+      tracks: "primary",
+      video: {
+        codec: "avc",
+        height: 720,
+        frameRate: 30,
+        quality: new Quality("medium"),
+        hardwareAcceleration: "no-preference",
+      },
+      ...(hasAudioTrack
+        ? { audio: { codec: "aac" as const } }
+        : {}),
+    });
+
+    // Check that the required tracks can actually be converted.
+    const usableVideo = conversion.utilizedTracks.some(
+      (track) => track.type === "video",
+    );
+
+    const usableAudio =
+      !hasAudioTrack ||
+      conversion.utilizedTracks.some(
+        (track) => track.type === "audio",
+      );
+
+    if (!conversion.isValid || !usableVideo || !usableAudio) {
+      const reasons = conversion.discardedTracks
+        .map((item) => `${item.track.type}: ${item.reason}`)
+        .join(", ");
+
+      throw new Error(
+        `This device cannot convert the video into the required format. ${reasons}`,
+      );
+    }
+
+    conversion.onProgress = (progress) => {
+      onProgress?.(
+        Math.max(0, Math.min(99, Math.round(progress * 100))),
+      );
+    };
+
+    await conversion.execute();
+
+    const buffer = output.target.buffer;
+
+    if (!buffer || buffer.byteLength === 0) {
+      throw new Error("The converted video is empty.");
+    }
+
+    const convertedBlob = new Blob([buffer], {
+      type: "video/mp4",
+    });
+
+    const cleanName = file.name.replace(/\.[^.]+$/, "");
+
+    const convertedFile = new File(
+      [convertedBlob],
+      `${cleanName}.mp4`,
+      {
+        type: "video/mp4",
+        lastModified: Date.now(),
+      },
+    );
+
+    // 3. Verify the resulting MP4 before allowing it to upload.
+    const verifyInput = new Input({
+      formats: ALL_FORMATS,
+      source: new BlobSource(convertedFile),
+    });
+
+    const verifiedVideo =
+      await verifyInput.getPrimaryVideoTrack();
+
+    if (!verifiedVideo) {
+      throw new Error("The converted MP4 has no video track.");
+    }
+
+    const verifiedVideoCodec =
+      await verifiedVideo.getCodec();
+
+    if (verifiedVideoCodec !== "avc") {
+      throw new Error(
+        `Expected H.264 video, but received ${verifiedVideoCodec || "unknown"}.`,
+      );
+    }
+
+    const verifiedAudio = await verifyInput.getAudioTracks();
+
+    if (hasAudioTrack) {
+      if (verifiedAudio.length === 0) {
+        throw new Error(
+          "The converted video lost its original audio track.",
+        );
+      }
+
+      const audioCodec = await verifiedAudio[0].getCodec();
+
+      if (audioCodec !== "aac") {
+        throw new Error(
+          `Expected AAC audio, but received ${audioCodec || "unknown"}.`,
+        );
+      }
+    }
+
+    onProgress?.(100);
+
+    return {
+      file: convertedFile,
+      compressed: convertedFile.size < originalBytes,
+      originalBytes,
+      compressedBytes: convertedFile.size,
+      detectedCodec: "avc",
+      convertedToH264: true,
+    };
+  } catch (error) {
+    console.error("Required video conversion failed:", error);
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unknown conversion error.";
+
+    throw new Error(
+      `Video conversion failed: ${message}. Please try another video or upload a standard H.264 MP4.`,
+    );
+  }
+}
 
   // 1. Probe input to determine codec and tracks
   let requiresConversion = false;
