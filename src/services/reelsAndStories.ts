@@ -875,6 +875,40 @@ export async function incrementReelShare(reelId: string): Promise<number> {
   return cached?.sharesCount ?? 1;
 }
 
+export async function recordReelView(reelId: string): Promise<number> {
+  await currentUserId();
+
+  const rpc = supabase.rpc as unknown as (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: unknown }>;
+
+  const { data, error } = await rpc("record_reel_view", {
+    _reel_id: reelId,
+  });
+
+  if (error) {
+    message(error, "Could not record reel view.");
+  }
+
+  const viewsCount = Number(data ?? 0);
+
+  if (!Number.isFinite(viewsCount)) {
+    throw new Error("The Reel view count returned an invalid value.");
+  }
+
+  const cached = sessionReelsCache.get(reelId);
+
+  if (cached) {
+    const updatedReel = { ...cached, viewsCount };
+    sessionReelsCache.set(reelId, updatedReel);
+    upsertPersistentReel(updatedReel);
+  }
+
+  notifyUpdated();
+  return viewsCount;
+}
+
 export async function getSavedReels(): Promise<ReelItem[]> {
   const userId = await currentUserId();
 
