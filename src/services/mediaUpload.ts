@@ -111,11 +111,7 @@ export async function compressVideo(
         quality: new Quality(quality),
         hardwareAcceleration: "no-preference",
       },
-      audio: hasAudio
-        ? {
-            codec: "aac",
-          }
-        : undefined,
+      ...(hasAudio ? { audio: { codec: "aac" as const } } : {}),
     });
 
     if (!conversion.isValid) {
@@ -208,10 +204,10 @@ export async function uploadResumableTus(params: {
     let lastLoaded = 0;
 
     const upload = new tus.Upload(file, {
-      endpoint: `${supabase.supabaseUrl}/storage/v1/upload/resumable`,
+      endpoint: `${import.meta.env["VITE_SUPABASE_URL"]}/storage/v1/upload/resumable`,
       headers: {
         authorization: `Bearer ${session.access_token}`,
-        apikey: supabase.supabaseKey,
+        apikey: import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"],
         "x-upsert": "false",
       },
       metadata: {
@@ -239,7 +235,7 @@ export async function uploadResumableTus(params: {
             bytesUploaded,
             bytesTotal,
             percent,
-            speedBytesPerSec,
+            ...(speedBytesPerSec !== undefined ? { speedBytesPerSec } : {}),
           });
         }
       },
@@ -281,7 +277,7 @@ export async function uploadMediaSmart(params: {
   const { bucket, path, file, onProgress } = params;
 
   if (file.type.startsWith("video/")) {
-    return uploadResumableTus({ bucket, path, file, onProgress });
+    return uploadResumableTus({ bucket, path, file, ...(onProgress ? { onProgress } : {}) });
   }
 
   // Standard upload for images

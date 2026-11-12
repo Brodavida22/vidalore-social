@@ -84,13 +84,13 @@ describe("Video Upload and Playback Utilities", () => {
   it("ensures addReel inserts without select() to prevent PostgREST is_blocked RLS failure", async () => {
     const origFetch = globalThis.fetch;
     let postRequestUrl = "";
-    let postRequestBody: Record<string, unknown> | null = null;
+    let postRequestBody = null as Record<string, unknown> | null;
 
     globalThis.fetch = vi
       .fn()
       .mockImplementation(async (url: RequestInfo | URL, init?: RequestInit) => {
         const urlStr = String(url);
-        if (urlStr.includes("/rest/v1/reels")) {
+        if (urlStr.includes("/rest/v1/reels") && init?.method === "POST") {
           postRequestUrl = urlStr;
           if (init?.body) {
             try {
@@ -115,6 +115,7 @@ describe("Video Upload and Playback Utilities", () => {
     const getSessionSpy = vi.spyOn(supabase.auth, "getSession").mockResolvedValue({
       data: {
         session: {
+          access_token: "test-access-token",
           user: { id: testUid },
         } as unknown as import("@supabase/supabase-js").Session,
       },
@@ -128,6 +129,8 @@ describe("Video Upload and Playback Utilities", () => {
         username: "testuser",
         display_name: "Test User",
         avatar_url: null,
+        cover_url: null,
+        is_private: false,
         bio: null,
         location: null,
         website: null,
@@ -147,9 +150,9 @@ describe("Video Upload and Playback Utilities", () => {
       // Must NOT contain select= query param which triggers PostgreSQL SELECT policy & is_blocked
       expect(postRequestUrl).not.toContain("select=");
       expect(postRequestBody).toBeDefined();
-      expect(postRequestBody?.id).toBeDefined();
-      expect(postRequestBody?.creator_id).toBe(testUid);
-      expect(reel.id).toBe(postRequestBody?.id);
+      expect(postRequestBody?.["id"]).toBeDefined();
+      expect(postRequestBody?.["creator_id"]).toBe(testUid);
+      expect(reel.id).toBe(postRequestBody?.["id"]);
     } finally {
       getSessionSpy.mockRestore();
       globalThis.fetch = origFetch;

@@ -454,10 +454,10 @@ export async function getStoredReels(): Promise<ReelItem[]> {
       if (error.code === "42501" || error.message?.includes("is_blocked")) {
         try {
           const publicUrl = (
-            import.meta.env.VITE_SUPABASE_URL || "https://mwfognruqmatlhrirxlb.supabase.co"
+            import.meta.env["VITE_SUPABASE_URL"] || "https://mwfognruqmatlhrirxlb.supabase.co"
           ).replace(/\/+$/, "");
           const apiKey =
-            import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+            import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
             "sb_publishable_jJHTE8XdJJiAfdT8C9WINg_zcgZip4V";
 
           const restRes = await fetch(
@@ -508,7 +508,7 @@ export async function getStoredReels(): Promise<ReelItem[]> {
         saves_count: p.savesCount,
         views_count: p.viewsCount,
         created_at: p.createdAt,
-        tags: p.tags,
+        tags: p.tags ?? null,
       });
       rowIds.add(p.id);
     }
@@ -529,7 +529,7 @@ export async function getStoredReels(): Promise<ReelItem[]> {
         saves_count: sReel.savesCount,
         views_count: sReel.viewsCount,
         created_at: sReel.createdAt,
-        tags: sReel.tags,
+        tags: sReel.tags ?? null,
       });
       rowIds.add(sId);
     }
@@ -544,8 +544,7 @@ export async function getStoredReels(): Promise<ReelItem[]> {
           .from("profiles")
           .select("id, username, display_name, avatar_url")
           .in("id", [...new Set(ids)])
-          .then((res) => res)
-          .catch((err) => {
+          .then((res) => res, (err: unknown) => {
             console.warn("Could not load reel creators:", err);
             return { data: [], error: err };
           })
@@ -556,8 +555,7 @@ export async function getStoredReels(): Promise<ReelItem[]> {
           .from("reel_likes")
           .select("reel_id, user_id")
           .in("reel_id", reelIds)
-          .then((res) => res)
-          .catch((err) => {
+          .then((res) => res, (err: unknown) => {
             console.warn("Could not load reel likes:", err);
             return { data: [], error: err };
           })
@@ -568,8 +566,7 @@ export async function getStoredReels(): Promise<ReelItem[]> {
           .from("reel_comments")
           .select("reel_id")
           .in("reel_id", reelIds)
-          .then((res) => res)
-          .catch((err) => {
+          .then((res) => res, (err: unknown) => {
             console.warn("Could not load reel comments count:", err);
             return { data: [], error: err };
           })
@@ -581,8 +578,7 @@ export async function getStoredReels(): Promise<ReelItem[]> {
           .select("reel_id")
           .eq("user_id", userId)
           .in("reel_id", reelIds)
-          .then((res) => res)
-          .catch((err) => {
+          .then((res) => res, (err: unknown) => {
             console.warn("Could not load saved reels:", err);
             return { data: [], error: err };
           })
@@ -748,7 +744,7 @@ export async function toggleReelLike(
   }
 
   notifyUpdated();
-  return { hasLiked: nextHasLiked, likesCount: finalCount, reel: cached };
+  return { hasLiked: nextHasLiked, likesCount: finalCount, ...(cached ? { reel: cached } : {}) };
 }
 
 export async function toggleReelSave(reelId: string): Promise<boolean> {
@@ -800,7 +796,12 @@ export async function toggleReelSave(reelId: string): Promise<boolean> {
 
 export async function incrementReelShare(reelId: string): Promise<number> {
   try {
-    const { error: rpcErr } = await supabase.rpc("increment_reel_shares", {
+    // This function is not part of the generated database types yet.
+    const rpc = supabase.rpc as unknown as (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ error: unknown }>;
+    const { error: rpcErr } = await rpc("increment_reel_shares", {
       target_reel_id: reelId,
     });
     if (rpcErr) {
@@ -875,10 +876,10 @@ export async function getSavedReels(): Promise<ReelItem[]> {
       if (reelsErr.code === "42501" || reelsErr.message?.includes("is_blocked")) {
         try {
           const publicUrl = (
-            import.meta.env.VITE_SUPABASE_URL || "https://mwfognruqmatlhrirxlb.supabase.co"
+            import.meta.env["VITE_SUPABASE_URL"] || "https://mwfognruqmatlhrirxlb.supabase.co"
           ).replace(/\/+$/, "");
           const apiKey =
-            import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+            import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
             "sb_publishable_jJHTE8XdJJiAfdT8C9WINg_zcgZip4V";
 
           const filter = reelIds.length === 1 ? `eq.${reelIds[0]}` : `in.(${reelIds.join(",")})`;
@@ -919,7 +920,7 @@ export async function getSavedReels(): Promise<ReelItem[]> {
         saves_count: cached.savesCount,
         views_count: cached.viewsCount,
         created_at: cached.createdAt,
-        tags: cached.tags,
+        tags: cached.tags ?? null,
       });
       existingIds.add(id);
     }
@@ -933,8 +934,7 @@ export async function getSavedReels(): Promise<ReelItem[]> {
           .from("profiles")
           .select("id, username, display_name, avatar_url")
           .in("id", [...new Set(creatorIds)])
-          .then((res) => res)
-          .catch((err) => {
+          .then((res) => res, (err: unknown) => {
             console.warn("Could not load creators for saved reels:", err);
             return { data: [] };
           })
@@ -943,8 +943,7 @@ export async function getSavedReels(): Promise<ReelItem[]> {
       .from("reel_likes")
       .select("reel_id, user_id")
       .in("reel_id", reelIds)
-      .then((res) => res)
-      .catch((err) => {
+      .then((res) => res, (err: unknown) => {
         console.warn("Could not load likes for saved reels:", err);
         return { data: [] };
       }),
@@ -952,8 +951,7 @@ export async function getSavedReels(): Promise<ReelItem[]> {
       .from("reel_comments")
       .select("reel_id")
       .in("reel_id", reelIds)
-      .then((res) => res)
-      .catch((err) => {
+      .then((res) => res, (err: unknown) => {
         console.warn("Could not load comments for saved reels:", err);
         return { data: [] };
       }),
@@ -1151,10 +1149,10 @@ export async function getReelComments(reelId: string): Promise<ReelComment[]> {
       if (error.code === "42501" || error.message?.includes("is_blocked")) {
         try {
           const publicUrl = (
-            import.meta.env.VITE_SUPABASE_URL || "https://mwfognruqmatlhrirxlb.supabase.co"
+            import.meta.env["VITE_SUPABASE_URL"] || "https://mwfognruqmatlhrirxlb.supabase.co"
           ).replace(/\/+$/, "");
           const apiKey =
-            import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+            import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
             "sb_publishable_jJHTE8XdJJiAfdT8C9WINg_zcgZip4V";
 
           const restRes = await fetch(
@@ -1187,8 +1185,7 @@ export async function getReelComments(reelId: string): Promise<ReelComment[]> {
           .from("profiles")
           .select("id, username, display_name, avatar_url")
           .in("id", [...new Set(ids)])
-          .then((res) => res)
-          .catch((err) => {
+          .then((res) => res, (err: unknown) => {
             console.warn("Could not load comment authors:", err);
             return { data: [], error: err };
           })
@@ -1199,8 +1196,7 @@ export async function getReelComments(reelId: string): Promise<ReelComment[]> {
           .from("reel_comment_likes")
           .select("comment_id, user_id")
           .in("comment_id", commentIds)
-          .then((res) => res)
-          .catch((err) => {
+          .then((res) => res, (err: unknown) => {
             console.warn("Could not load comment reactions:", err);
             return { data: [], error: err };
           })

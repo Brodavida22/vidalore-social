@@ -170,11 +170,7 @@ export async function compressVideoFile(
         quality: new Quality("medium"),
         hardwareAcceleration: "no-preference",
       },
-      audio: hasAudioTrack
-        ? {
-            codec: "aac",
-          }
-        : undefined,
+      ...(hasAudioTrack ? { audio: { codec: "aac" as const } } : {}),
     });
 
     if (!conversion.isValid) {
@@ -293,8 +289,8 @@ export async function uploadVideoResumable(
 
   // 1. Verify session token for Supabase Storage TUS authentication
   let sessionToken: string | null = null;
-  const supabaseUrl = supabase.supabaseUrl;
-  const supabaseAnonKey = supabase.supabaseKey;
+  const supabaseUrl: string = import.meta.env["VITE_SUPABASE_URL"];
+  const supabaseAnonKey: string = import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"];
 
   try {
     const { data: sessionData } = await supabase.auth.getSession();

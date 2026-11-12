@@ -1,10 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "@tanstack/react-router";
-import { X, Send, Loader2, AlertCircle, Volume2, VolumeX } from "lucide-react";
+import { X, Send, Loader2, AlertCircle, Volume2, VolumeX, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { Input } from "@/components/ui/input";
-import { markStorySeen, type UserStoryGroup, type StoryItem } from "@/services/reelsAndStories";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  deleteStory,
+  markStorySeen,
+  type UserStoryGroup,
+  type StoryItem,
+} from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
 
 const STORY_DURATION_MS = 5000;
@@ -26,7 +41,10 @@ export function StoryViewerModal({
   const [groupIndex, setGroupIndex] = useState(initialGroupIndex);
   const [storyIndex, setStoryIndex] = useState(0);
   const [progress, setProgress] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
+  const [isHolding, setIsHolding] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const isPaused = isHolding || confirmDeleteOpen || deleting;
   const [replyText, setReplyText] = useState("");
   const [videoLoading, setVideoLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
@@ -210,7 +228,24 @@ export function StoryViewerModal({
     toast.success(`Sent ${emoji} to @${currentGroup?.username}`);
   }
 
+  async function handleDeleteStory() {
+    if (!currentStory || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteStory(currentStory.id);
+      toast.success("Story deleted");
+      setConfirmDeleteOpen(false);
+      onClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete story.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (!open || !currentGroup || !currentStory) return null;
+
+  const isOwnStory = !!me && currentStory.userId === me.id;
 
   const timeAgo = formatStoryTime(new Date(currentStory.createdAt));
 
@@ -219,10 +254,10 @@ export function StoryViewerModal({
       role="dialog"
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md select-none animate-fade-in"
-      onMouseDown={() => setIsPaused(true)}
-      onMouseUp={() => setIsPaused(false)}
-      onTouchStart={() => setIsPaused(true)}
-      onTouchEnd={() => setIsPaused(false)}
+      onMouseDown={() => setIsHolding(true)}
+      onMouseUp={() => setIsHolding(false)}
+      onTouchStart={() => setIsHolding(true)}
+      onTouchEnd={() => setIsHolding(false)}
     >
       <div className="relative h-full w-full max-w-sm sm:max-h-[92vh] sm:rounded-2xl overflow-hidden bg-black flex flex-col justify-between shadow-2xl border border-white/10">
         {/* Media Background */}
@@ -408,6 +443,21 @@ export function StoryViewerModal({
                 </button>
               )}
 
+              {isOwnStory && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmDeleteOpen(true);
+                  }}
+                  className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+                  aria-label="Delete story"
+                  title="Delete story"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={onClose}
@@ -465,6 +515,40 @@ export function StoryViewerModal({
           </div>
         </div>
       </div>
+
+      <AlertDialog
+        open={confirmDeleteOpen}
+        onOpenChange={(next) => {
+          if (!deleting) setConfirmDeleteOpen(next);
+        }}
+      >
+        <AlertDialogContent
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this story?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It will be removed for everyone right away. This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDeleteStory();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
