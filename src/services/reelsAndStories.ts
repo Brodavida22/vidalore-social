@@ -115,8 +115,28 @@ function notifyUpdated() {
   }
 }
 
+
 function message(error: unknown, fallback: string): never {
-  console.error(fallback, error);
+  console.error(`[VIDALORE DATABASE ERROR] ${fallback}`, error);
+
+  if (error && typeof error === "object") {
+    const dbError = error as {
+      message?: string;
+      details?: string;
+      hint?: string;
+      code?: string;
+    };
+
+    const parts = [
+      dbError.message,
+      dbError.details,
+      dbError.hint ? `Hint: ${dbError.hint}` : undefined,
+      dbError.code ? `Code: ${dbError.code}` : undefined,
+    ].filter(Boolean);
+
+    throw new Error(parts.length ? parts.join(" | ") : fallback);
+  }
+
   throw new Error(error instanceof Error ? error.message : fallback);
 }
 
