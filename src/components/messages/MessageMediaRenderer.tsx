@@ -61,7 +61,7 @@ async function resolveMediaUrl(value: string): Promise<string> {
   return data.signedUrl;
 }
 
-export default function MessageMediaRenderer({
+export function MessageMediaRenderer({
   messageType,
   mediaUrl,
   mediaName,
@@ -229,4 +229,6 @@ export default function MessageMediaRenderer({
       <span aria-hidden="true">↓</span>
     </a>
   );
-    }
+}
+
+export default MessageMediaRenderer;
