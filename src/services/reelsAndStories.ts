@@ -350,41 +350,57 @@ export function removePersistentReel(reelId: string): void {
   savePersistentReels(current.filter((r) => r.id !== reelId));
 }
 
+
 export async function updateReelVideo(
   reelId: string,
   file: File,
   onProgress?: (progress: number) => void,
 ): Promise<ReelItem> {
   const userId = await currentUserId();
+
+  // Upload and convert the new video first.
   const path = await uploadReelVideo(userId, file, onProgress);
 
-  const { error } = await supabase
+  // Update the database and confirm that the reel was actually updated.
+  const { data: updatedRow, error } = await supabase
     .from("reels")
     .update({ video_url: path })
     .eq("id", reelId)
-    .eq("creator_id", userId);
+    .eq("creator_id", userId)
+    .select("id")
+    .maybeSingle();
 
   if (error) {
-    console.warn("Could not update reel video in database:", error.message);
+    message(error, "Could not update reel video in database.");
   }
 
+  if (!updatedRow) {
+    throw new Error(
+      "The video was uploaded, but the reel database record was not updated. Please check that you own this reel and try again.",
+    );
+  }
+
+  // Clear the cached signed URL so the new video can be loaded.
   notifyUpdated();
+
   const reels = await getStoredReels();
   const found = reels.find((r) => r.id === reelId);
-  if (found) {
+
+  if (found && found.storagePath === path) {
     sessionReelsCache.set(found.id, found);
     return found;
   }
 
-  const signedUrl = path.startsWith("http") ? path : await signedMediaUrl(REEL_BUCKET, path);
+  const signedUrl = await signedMediaUrl(REEL_BUCKET, path);
   const cached = sessionReelsCache.get(reelId);
+
   const updated: ReelItem = {
     id: reelId,
     creatorId: userId,
     creatorName: cached?.creatorName || "VIDALORE Member",
     creatorUsername: cached?.creatorUsername || "member",
     creatorAvatarUrl: cached?.creatorAvatarUrl,
-    creatorVerified: false,
+    creatorVerified: cached?.creatorVerified ?? false,
     videoUrl: signedUrl,
     storagePath: path,
     caption: cached?.caption ?? "",
@@ -396,12 +412,14 @@ export async function updateReelVideo(
     viewsCount: cached?.viewsCount ?? 0,
     hasLiked: cached?.hasLiked ?? false,
     hasSaved: cached?.hasSaved ?? false,
-    isFollowing: false,
+    isFollowing: cached?.isFollowing ?? false,
     createdAt: cached?.createdAt || new Date().toISOString(),
     tags: cached?.tags ?? [],
   };
 
   sessionReelsCache.set(updated.id, updated);
+  upsertPersistentReel(updated);
+
   return updated;
 }
 
