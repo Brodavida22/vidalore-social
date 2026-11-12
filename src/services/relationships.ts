@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -144,15 +143,9 @@ export async function getFollowing(userId: string): Promise<Profile[]> {
 
 export async function getFollowCounts(userId: string) {
   const [followers, following] = await Promise.all([
-    supabase
-      .from("follows")
-      .select("*", { count: "exact", head: true })
-      .eq("following_id", userId),
+    supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", userId),
 
-    supabase
-      .from("follows")
-      .select("*", { count: "exact", head: true })
-      .eq("follower_id", userId),
+    supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", userId),
   ]);
 
   if (followers.error) throw followers.error;
@@ -180,19 +173,15 @@ export async function getFriends(): Promise<Profile[]> {
     .from("friend_requests")
     .select("requester_id, recipient_id")
     .eq("status", "accepted")
-    .or(
-      `requester_id.eq.${userId},recipient_id.eq.${userId}`
-    );
+    .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`);
 
   if (error) throw error;
 
   const friendIds = [
     ...new Set(
       (data ?? []).map((request) =>
-        request.requester_id === userId
-          ? request.recipient_id
-          : request.requester_id
-      )
+        request.requester_id === userId ? request.recipient_id : request.requester_id,
+      ),
     ),
   ];
 
@@ -224,7 +213,7 @@ export async function sendFriendRequest(recipientId: string) {
     .from("friend_requests")
     .select("id, status, requester_id, recipient_id")
     .or(
-      `and(requester_id.eq.${user.id},recipient_id.eq.${recipientId}),and(requester_id.eq.${recipientId},recipient_id.eq.${user.id})`
+      `and(requester_id.eq.${user.id},recipient_id.eq.${recipientId}),and(requester_id.eq.${recipientId},recipient_id.eq.${user.id})`,
     )
     .in("status", ["pending", "accepted"])
     .limit(1)
@@ -335,9 +324,7 @@ export async function cancelFriendRequest(requestId: string) {
 // INCOMING FRIEND REQUESTS
 // ======================================================
 
-export async function getIncomingFriendRequests(): Promise<
-  FriendRequestWithProfile[]
-> {
+export async function getIncomingFriendRequests(): Promise<FriendRequestWithProfile[]> {
   const user = await getCurrentUser();
 
   const { data, error } = await supabase
@@ -362,9 +349,7 @@ export async function getIncomingFriendRequests(): Promise<
 
   if (profileError) throw profileError;
 
-  const profileMap = new Map(
-    (profiles ?? []).map((profile) => [profile.id, profile])
-  );
+  const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
 
   return requests.map((request) => ({
     ...request,
@@ -376,9 +361,7 @@ export async function getIncomingFriendRequests(): Promise<
 // OUTGOING FRIEND REQUESTS
 // ======================================================
 
-export async function getOutgoingFriendRequests(): Promise<
-  FriendRequestWithProfile[]
-> {
+export async function getOutgoingFriendRequests(): Promise<FriendRequestWithProfile[]> {
   const user = await getCurrentUser();
 
   const { data, error } = await supabase
@@ -403,9 +386,7 @@ export async function getOutgoingFriendRequests(): Promise<
 
   if (profileError) throw profileError;
 
-  const profileMap = new Map(
-    (profiles ?? []).map((profile) => [profile.id, profile])
-  );
+  const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
 
   return requests.map((request) => ({
     ...request,
@@ -417,9 +398,7 @@ export async function getOutgoingFriendRequests(): Promise<
 // FRIEND REQUEST STATUS
 // ======================================================
 
-export async function getFriendRequestStatus(
-  userId: string
-): Promise<FriendRequest | null> {
+export async function getFriendRequestStatus(userId: string): Promise<FriendRequest | null> {
   const { data: auth, error: authError } = await supabase.auth.getUser();
 
   if (authError) throw authError;
@@ -429,7 +408,7 @@ export async function getFriendRequestStatus(
     .from("friend_requests")
     .select("*")
     .or(
-      `and(requester_id.eq.${auth.user.id},recipient_id.eq.${userId}),and(requester_id.eq.${userId},recipient_id.eq.${auth.user.id})`
+      `and(requester_id.eq.${auth.user.id},recipient_id.eq.${userId}),and(requester_id.eq.${userId},recipient_id.eq.${auth.user.id})`,
     )
     .order("created_at", { ascending: false })
     .limit(1)

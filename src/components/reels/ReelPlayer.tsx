@@ -26,10 +26,21 @@ import {
   Loader2,
   Wrench,
   Upload,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { ReelCommentsDrawer } from "@/components/reels/ReelCommentsDrawer";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { followUser, unfollowUser, isFollowing as checkFollowing } from "@/services/relationships";
 import {
   toggleReelLike,
@@ -38,6 +49,7 @@ import {
   getFreshReelSignedUrl,
   updateReelVideo,
   transcodeExistingReel,
+  deleteReel,
   type ReelItem,
 } from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
@@ -70,6 +82,8 @@ export function ReelPlayer({
   const [isFollowPending, setIsFollowPending] = useState(false);
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Video repair state
   const [isRepairing, setIsRepairing] = useState(false);
@@ -418,7 +432,9 @@ export function ReelPlayer({
       } else {
         await unfollowUser(reel.creatorId);
       }
-      toast.success(next ? `Following @${reel.creatorUsername}` : `Unfollowed @${reel.creatorUsername}`);
+      toast.success(
+        next ? `Following @${reel.creatorUsername}` : `Unfollowed @${reel.creatorUsername}`,
+      );
     } catch (error) {
       setIsFollowing(previous);
       toast.error(error instanceof Error ? error.message : "Could not update follow status.");
@@ -474,6 +490,20 @@ export function ReelPlayer({
   }
 
   const isOwner = Boolean(me && me.id === reel.creatorId);
+
+  async function handleDeleteReel() {
+    if (isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await deleteReel(reel.id);
+      toast.success("Reel deleted successfully");
+      setConfirmDeleteOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete reel.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
 
   return (
     <div className="relative h-full w-full max-w-md mx-auto aspect-[9/16] rounded-2xl overflow-hidden bg-black select-none shadow-xl border border-white/10 group">
@@ -730,6 +760,22 @@ export function ReelPlayer({
             {reel.savesCount}
           </span>
         </button>
+
+        {/* Delete Action (Owner Only) */}
+        {isOwner && (
+          <button
+            type="button"
+            onClick={() => setConfirmDeleteOpen(true)}
+            className="flex flex-col items-center gap-0.5"
+            aria-label="Delete reel"
+            title="Delete your reel"
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white/90 backdrop-blur-sm hover:bg-destructive/80 hover:text-white transition-colors active:scale-110">
+              <Trash2 className="h-4 w-4" />
+            </span>
+            <span className="text-[0.65rem] font-semibold text-white drop-shadow">Delete</span>
+          </button>
+        )}
       </div>
 
       {/* Bottom Creator Information Overlay */}
@@ -784,6 +830,35 @@ export function ReelPlayer({
           setReel((prev) => ({ ...prev, commentsCount: prev.commentsCount + 1 }));
         }}
       />
+
+      {/* Delete Reel Confirmation Modal */}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent className="border border-border bg-card rounded-2xl max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-base text-foreground">
+              Delete Reel?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-muted-foreground">
+              Are you sure you want to permanently delete this reel? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-lg text-xs" disabled={isDeleting}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDeleteReel();
+              }}
+              disabled={isDeleting}
+              className="rounded-lg bg-destructive hover:bg-destructive/90 text-destructive-foreground text-xs font-semibold"
+            >
+              {isDeleting ? "Deleting..." : "Delete Reel"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

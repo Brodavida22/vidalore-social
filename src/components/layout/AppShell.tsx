@@ -18,6 +18,7 @@ import {
   Plus,
   Search,
   ShieldAlert,
+  MessageSquarePlus,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -30,6 +31,7 @@ import { isAdminQuery } from "@/services/moderation";
 import { NotificationsModal } from "@/components/social/NotificationsModal";
 import { FriendsModal } from "@/components/social/FriendsModal";
 import { SavedPostsModal } from "@/components/social/SavedPostsModal";
+import { BetaFeedbackModal } from "@/components/feedback/BetaFeedbackModal";
 import { Button } from "@/components/ui/button";
 
 export function AppShell() {
@@ -42,6 +44,7 @@ export function AppShell() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [pendingRequests, setPendingRequests] = useState(0);
@@ -205,6 +208,15 @@ export function AppShell() {
             <Settings className="h-5 w-5" />
             Settings
           </Link>
+
+          <button
+            type="button"
+            onClick={() => setFeedbackOpen(true)}
+            className="flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <MessageSquarePlus className="h-5 w-5 text-[#E91E63]" />
+            Beta Feedback
+          </button>
 
           {isAdmin && (
             <Link to="/admin/moderation" className={linkCls} activeProps={activeCls}>
@@ -460,6 +472,18 @@ export function AppShell() {
                 Settings
               </Link>
 
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setFeedbackOpen(true);
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-secondary"
+              >
+                <MessageSquarePlus className="h-4 w-4 text-[#E91E63]" />
+                Beta Feedback
+              </button>
+
               {isAdmin && (
                 <Link
                   to="/admin/moderation"
@@ -572,6 +596,7 @@ export function AppShell() {
       />
 
       <SavedPostsModal open={savedOpen} onOpenChange={setSavedOpen} me={me ?? null} />
+      <BetaFeedbackModal open={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </div>
   );
 }

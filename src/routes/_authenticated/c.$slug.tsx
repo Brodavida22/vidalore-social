@@ -1,4 +1,3 @@
-
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -126,9 +125,7 @@ function CommunityDetailPage() {
         </Link>
 
         <div className="rounded-2xl border border-white/10 bg-zinc-900 p-10 text-center">
-          <h2 className="text-xl font-bold text-white">
-            Community not found
-          </h2>
+          <h2 className="text-xl font-bold text-white">Community not found</h2>
           <p className="mt-2 text-zinc-400">
             This community may have been deleted or you may not have access.
           </p>
@@ -140,10 +137,7 @@ function CommunityDetailPage() {
   const members = membersQuery.data ?? [];
   const posts = postsQuery.data ?? [];
 
-  const isOwner =
-    community.owner_id === community.owner_id &&
-    membershipQuery.isSuccess &&
-    joined;
+  const isOwner = community.owner_id === community.owner_id && membershipQuery.isSuccess && joined;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 md:p-6">
@@ -159,11 +153,7 @@ function CommunityDetailPage() {
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-zinc-900">
         <div className="relative h-40 bg-gradient-to-br from-violet-700/50 via-zinc-900 to-indigo-700/40 md:h-56">
           {community.cover_url && (
-            <img
-              src={community.cover_url}
-              alt=""
-              className="h-full w-full object-cover"
-            />
+            <img src={community.cover_url} alt="" className="h-full w-full object-cover" />
           )}
         </div>
 
@@ -183,13 +173,9 @@ function CommunityDetailPage() {
               )}
 
               <div>
-                <h1 className="text-2xl font-bold text-white md:text-3xl">
-                  {community.name}
-                </h1>
+                <h1 className="text-2xl font-bold text-white md:text-3xl">{community.name}</h1>
 
-                <p className="mt-1 text-sm text-zinc-400">
-                  /c/{community.slug}
-                </p>
+                <p className="mt-1 text-sm text-zinc-400">/c/{community.slug}</p>
 
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-zinc-400">
                   <span className="flex items-center gap-1.5">
@@ -214,11 +200,7 @@ function CommunityDetailPage() {
                 (joined ? (
                   <button
                     onClick={() => {
-                      if (
-                        window.confirm(
-                          "Are you sure you want to leave this community?"
-                        )
-                      ) {
+                      if (window.confirm("Are you sure you want to leave this community?")) {
                         leaveMutation.mutate();
                       }
                     }}
@@ -260,9 +242,7 @@ function CommunityDetailPage() {
           )}
 
           {joinMutation.isError && (
-            <p className="mt-3 text-sm text-red-400">
-              Could not join community. Please try again.
-            </p>
+            <p className="mt-3 text-sm text-red-400">Could not join community. Please try again.</p>
           )}
 
           {leaveMutation.isError && (
@@ -279,9 +259,7 @@ function CommunityDetailPage() {
           {/* Create Post */}
           {joined && (
             <section className="rounded-2xl border border-white/10 bg-zinc-900 p-4 md:p-5">
-              <h2 className="mb-3 font-semibold text-white">
-                Share with the community
-              </h2>
+              <h2 className="mb-3 font-semibold text-white">Share with the community</h2>
 
               <textarea
                 value={postContent}
@@ -293,9 +271,7 @@ function CommunityDetailPage() {
               />
 
               {postMutation.isError && (
-                <p className="mt-2 text-sm text-red-400">
-                  Your post could not be published.
-                </p>
+                <p className="mt-2 text-sm text-red-400">Your post could not be published.</p>
               )}
 
               <div className="mt-3 flex justify-end">
@@ -318,12 +294,8 @@ function CommunityDetailPage() {
           {/* Posts Feed */}
           <section>
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white">
-                Community Feed
-              </h2>
-              <span className="text-sm text-zinc-500">
-                {posts.length} posts
-              </span>
+              <h2 className="text-lg font-bold text-white">Community Feed</h2>
+              <span className="text-sm text-zinc-500">{posts.length} posts</span>
             </div>
 
             {postsQuery.isLoading ? (
@@ -333,9 +305,7 @@ function CommunityDetailPage() {
               </div>
             ) : postsQuery.isError ? (
               <div className="rounded-2xl border border-white/10 bg-zinc-900 p-6 text-center">
-                <p className="text-sm text-red-400">
-                  Could not load community posts.
-                </p>
+                <p className="text-sm text-red-400">Could not load community posts.</p>
                 <button
                   onClick={() => postsQuery.refetch()}
                   className="mt-3 text-sm text-violet-400 hover:text-violet-300"
@@ -363,9 +333,7 @@ function CommunityDetailPage() {
                         M
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-white">
-                          Community member
-                        </p>
+                        <p className="text-sm font-semibold text-white">Community member</p>
                         <p className="flex items-center gap-1 text-xs text-zinc-500">
                           <CalendarDays className="h-3 w-3" />
                           {new Date(post.created_at).toLocaleString()}
@@ -379,8 +347,8 @@ function CommunityDetailPage() {
                       </p>
                     )}
 
-                    {post.media_url && (
-                      post.media_type === "video" ? (
+                    {post.media_url &&
+                      (post.media_type === "video" ? (
                         <video
                           src={post.media_url}
                           controls
@@ -392,8 +360,7 @@ function CommunityDetailPage() {
                           alt="Community post media"
                           className="mt-3 max-h-[500px] w-full rounded-xl object-contain"
                         />
-                      )
-                    )}
+                      ))}
                   </article>
                 ))}
               </div>
@@ -405,9 +372,7 @@ function CommunityDetailPage() {
         <aside className="h-fit rounded-2xl border border-white/10 bg-zinc-900 p-4">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-semibold text-white">Members</h2>
-            <span className="text-xs text-zinc-500">
-              {members.length}
-            </span>
+            <span className="text-xs text-zinc-500">{members.length}</span>
           </div>
 
           {membersQuery.isLoading ? (
@@ -416,16 +381,11 @@ function CommunityDetailPage() {
               Loading members...
             </div>
           ) : members.length === 0 ? (
-            <p className="py-4 text-center text-sm text-zinc-500">
-              No members found.
-            </p>
+            <p className="py-4 text-center text-sm text-zinc-500">No members found.</p>
           ) : (
             <div className="space-y-3">
               {members.slice(0, 15).map((member) => (
-                <div
-                  key={member.id}
-                  className="flex items-center gap-3"
-                >
+                <div key={member.id} className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-300">
                     {member.user_id.slice(0, 2).toUpperCase()}
                   </div>
@@ -434,9 +394,7 @@ function CommunityDetailPage() {
                     <p className="truncate text-sm text-zinc-200">
                       Member {member.user_id.slice(0, 8)}
                     </p>
-                    <p className="text-xs capitalize text-zinc-500">
-                      {member.role}
-                    </p>
+                    <p className="text-xs capitalize text-zinc-500">{member.role}</p>
                   </div>
                 </div>
               ))}

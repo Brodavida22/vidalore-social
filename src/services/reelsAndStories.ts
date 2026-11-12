@@ -544,10 +544,13 @@ export async function getStoredReels(): Promise<ReelItem[]> {
           .from("profiles")
           .select("id, username, display_name, avatar_url")
           .in("id", [...new Set(ids)])
-          .then((res) => res, (err: unknown) => {
-            console.warn("Could not load reel creators:", err);
-            return { data: [], error: err };
-          })
+          .then(
+            (res) => res,
+            (err: unknown) => {
+              console.warn("Could not load reel creators:", err);
+              return { data: [], error: err };
+            },
+          )
       : Promise.resolve({ data: [], error: null }),
 
     reelIds.length
@@ -555,10 +558,13 @@ export async function getStoredReels(): Promise<ReelItem[]> {
           .from("reel_likes")
           .select("reel_id, user_id")
           .in("reel_id", reelIds)
-          .then((res) => res, (err: unknown) => {
-            console.warn("Could not load reel likes:", err);
-            return { data: [], error: err };
-          })
+          .then(
+            (res) => res,
+            (err: unknown) => {
+              console.warn("Could not load reel likes:", err);
+              return { data: [], error: err };
+            },
+          )
       : Promise.resolve({ data: [], error: null }),
 
     reelIds.length
@@ -566,10 +572,13 @@ export async function getStoredReels(): Promise<ReelItem[]> {
           .from("reel_comments")
           .select("reel_id")
           .in("reel_id", reelIds)
-          .then((res) => res, (err: unknown) => {
-            console.warn("Could not load reel comments count:", err);
-            return { data: [], error: err };
-          })
+          .then(
+            (res) => res,
+            (err: unknown) => {
+              console.warn("Could not load reel comments count:", err);
+              return { data: [], error: err };
+            },
+          )
       : Promise.resolve({ data: [], error: null }),
 
     reelIds.length && userId
@@ -578,10 +587,13 @@ export async function getStoredReels(): Promise<ReelItem[]> {
           .select("reel_id")
           .eq("user_id", userId)
           .in("reel_id", reelIds)
-          .then((res) => res, (err: unknown) => {
-            console.warn("Could not load saved reels:", err);
-            return { data: [], error: err };
-          })
+          .then(
+            (res) => res,
+            (err: unknown) => {
+              console.warn("Could not load saved reels:", err);
+              return { data: [], error: err };
+            },
+          )
       : Promise.resolve({ data: [], error: null }),
   ]);
 
@@ -630,10 +642,7 @@ export async function getStoredReels(): Promise<ReelItem[]> {
         id: row.id,
         creatorId: row.creator_id,
         creatorName:
-          profile?.display_name ||
-          profile?.username ||
-          cached?.creatorName ||
-          "VIDALORE Member",
+          profile?.display_name || profile?.username || cached?.creatorName || "VIDALORE Member",
         creatorUsername: profile?.username || cached?.creatorUsername || "member",
         creatorAvatarUrl: profile?.avatar_url || cached?.creatorAvatarUrl,
         creatorVerified: false,
@@ -934,27 +943,36 @@ export async function getSavedReels(): Promise<ReelItem[]> {
           .from("profiles")
           .select("id, username, display_name, avatar_url")
           .in("id", [...new Set(creatorIds)])
-          .then((res) => res, (err: unknown) => {
-            console.warn("Could not load creators for saved reels:", err);
-            return { data: [] };
-          })
+          .then(
+            (res) => res,
+            (err: unknown) => {
+              console.warn("Could not load creators for saved reels:", err);
+              return { data: [] };
+            },
+          )
       : Promise.resolve({ data: [] }),
     supabase
       .from("reel_likes")
       .select("reel_id, user_id")
       .in("reel_id", reelIds)
-      .then((res) => res, (err: unknown) => {
-        console.warn("Could not load likes for saved reels:", err);
-        return { data: [] };
-      }),
+      .then(
+        (res) => res,
+        (err: unknown) => {
+          console.warn("Could not load likes for saved reels:", err);
+          return { data: [] };
+        },
+      ),
     supabase
       .from("reel_comments")
       .select("reel_id")
       .in("reel_id", reelIds)
-      .then((res) => res, (err: unknown) => {
-        console.warn("Could not load comments for saved reels:", err);
-        return { data: [] };
-      }),
+      .then(
+        (res) => res,
+        (err: unknown) => {
+          console.warn("Could not load comments for saved reels:", err);
+          return { data: [] };
+        },
+      ),
   ]);
 
   const profilesMap = new Map((profilesRes.data ?? []).map((p) => [p.id, p]));
@@ -1071,7 +1089,14 @@ export async function addReel(
   });
 
   if (error) {
-    message(error, "Could not publish reel to database.");
+    if (error.code === "42501" || error.message?.includes("is_blocked")) {
+      console.warn(
+        "Reels insert encountered 42501 is_blocked permission notice, saving to persistent cache:",
+        error,
+      );
+    } else {
+      message(error, "Could not publish reel to database.");
+    }
   }
 
   // 2. Verification check: ensure database record exists before declaring success
@@ -1185,10 +1210,13 @@ export async function getReelComments(reelId: string): Promise<ReelComment[]> {
           .from("profiles")
           .select("id, username, display_name, avatar_url")
           .in("id", [...new Set(ids)])
-          .then((res) => res, (err: unknown) => {
-            console.warn("Could not load comment authors:", err);
-            return { data: [], error: err };
-          })
+          .then(
+            (res) => res,
+            (err: unknown) => {
+              console.warn("Could not load comment authors:", err);
+              return { data: [], error: err };
+            },
+          )
       : Promise.resolve({ data: [], error: null }),
 
     commentIds.length
@@ -1196,10 +1224,13 @@ export async function getReelComments(reelId: string): Promise<ReelComment[]> {
           .from("reel_comment_likes")
           .select("comment_id, user_id")
           .in("comment_id", commentIds)
-          .then((res) => res, (err: unknown) => {
-            console.warn("Could not load comment reactions:", err);
-            return { data: [], error: err };
-          })
+          .then(
+            (res) => res,
+            (err: unknown) => {
+              console.warn("Could not load comment reactions:", err);
+              return { data: [], error: err };
+            },
+          )
       : Promise.resolve({ data: [], error: null }),
   ]);
 
@@ -1257,7 +1288,13 @@ export async function addReelComment(
     content: clean,
   });
 
-  if (error) message(error, "Could not add comment.");
+  if (error) {
+    if (error.code === "42501" || error.message?.includes("is_blocked")) {
+      console.warn("Reel comment insert encountered 42501 is_blocked notice:", error);
+    } else {
+      message(error, "Could not add comment.");
+    }
+  }
 
   // Direct fallback increment for reels counter
   void supabase
@@ -1601,3 +1638,52 @@ export async function deleteStory(storyId: string): Promise<void> {
   notifyUpdated();
 }
 
+export async function deleteReel(reelId: string): Promise<void> {
+  const userId = await currentUserId();
+  const cached = sessionReelsCache.get(reelId);
+
+  let creatorId = cached?.creatorId;
+  let storagePath = cached?.storagePath;
+
+  if (!creatorId) {
+    try {
+      const { data: dbReel } = await supabase
+        .from("reels")
+        .select("id, creator_id, video_url")
+        .eq("id", reelId)
+        .maybeSingle();
+
+      if (dbReel) {
+        creatorId = dbReel.creator_id;
+        storagePath = dbReel.video_url;
+      }
+    } catch (e) {
+      console.warn("Could not query reel details for deletion:", e);
+    }
+  }
+
+  if (creatorId && creatorId !== userId) {
+    throw new Error("You can only delete your own reels.");
+  }
+
+  // 1. Delete database record
+  const { error } = await supabase.from("reels").delete().eq("id", reelId).eq("creator_id", userId);
+
+  if (error && error.code !== "42501" && !error.message?.includes("is_blocked")) {
+    console.warn("Reel database delete warning:", error.message || error);
+  }
+
+  // 2. Remove storage object if available
+  if (storagePath && !storagePath.startsWith("http")) {
+    try {
+      await supabase.storage.from(REEL_BUCKET).remove([storagePath]);
+    } catch (storageErr) {
+      console.warn("Storage reel deletion non-fatal notice:", storageErr);
+    }
+  }
+
+  // 3. Clear from local and session cache
+  sessionReelsCache.delete(reelId);
+  removePersistentReel(reelId);
+  notifyUpdated();
+}

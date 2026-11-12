@@ -1,4 +1,3 @@
-
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -78,15 +77,13 @@ function CommunitiesPage() {
 
   const myCommunityIds = useMemo(
     () => new Set(myCommunities.map((community) => community.id)),
-    [myCommunities]
+    [myCommunities],
   );
 
   const filteredCommunities = useMemo(() => {
     const source =
       activeTab === "mine"
-        ? communities.filter((community) =>
-            myCommunityIds.has(community.id)
-          )
+        ? communities.filter((community) => myCommunityIds.has(community.id))
         : communities;
 
     const term = search.trim().toLowerCase();
@@ -97,7 +94,7 @@ function CommunitiesPage() {
       (community) =>
         community.name.toLowerCase().includes(term) ||
         community.description?.toLowerCase().includes(term) ||
-        community.slug.toLowerCase().includes(term)
+        community.slug.toLowerCase().includes(term),
     );
   }, [communities, activeTab, search, myCommunityIds]);
 
@@ -143,9 +140,7 @@ function CommunitiesPage() {
       await refetchMine();
       setActiveTab("mine");
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Unable to create community."
-      );
+      toast.error(error instanceof Error ? error.message : "Unable to create community.");
     } finally {
       setCreating(false);
     }
@@ -160,9 +155,7 @@ function CommunitiesPage() {
       invalidateCommunityQueries();
       await refetchMine();
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Unable to join community."
-      );
+      toast.error(error instanceof Error ? error.message : "Unable to join community.");
     } finally {
       setPendingCommunity(null);
     }
@@ -177,9 +170,7 @@ function CommunitiesPage() {
       invalidateCommunityQueries();
       await refetchMine();
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Unable to leave community."
-      );
+      toast.error(error instanceof Error ? error.message : "Unable to leave community.");
     } finally {
       setPendingCommunity(null);
     }
@@ -196,9 +187,7 @@ function CommunitiesPage() {
             <Sparkles className="h-4 w-4" />
             VIDALORE SOCIAL
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            Communities
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Communities</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Find your people. Share ideas. Build something together.
           </p>
@@ -248,10 +237,7 @@ function CommunitiesPage() {
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, index) => (
-            <div
-              key={index}
-              className="space-y-3 rounded-xl border border-border bg-card p-4"
-            >
+            <div key={index} className="space-y-3 rounded-xl border border-border bg-card p-4">
               <Skeleton className="h-12 w-12 rounded-full" />
               <Skeleton className="h-5 w-2/3" />
               <Skeleton className="h-4 w-full" />
@@ -261,14 +247,8 @@ function CommunitiesPage() {
         </div>
       ) : communitiesError && activeTab === "discover" ? (
         <div className="rounded-xl border border-border bg-card p-8 text-center">
-          <p className="text-muted-foreground">
-            We couldn't load communities right now.
-          </p>
-          <Button
-            variant="outline"
-            className="mt-4"
-            onClick={() => refetchCommunities()}
-          >
+          <p className="text-muted-foreground">We couldn't load communities right now.</p>
+          <Button variant="outline" className="mt-4" onClick={() => refetchCommunities()}>
             Try again
           </Button>
         </div>
@@ -298,9 +278,7 @@ function CommunitiesPage() {
             <Button
               className="mt-5 gap-2"
               onClick={() =>
-                activeTab === "mine"
-                  ? setActiveTab("discover")
-                  : setShowCreate(true)
+                activeTab === "mine" ? setActiveTab("discover") : setShowCreate(true)
               }
             >
               {activeTab === "mine" ? (
@@ -331,11 +309,7 @@ function CommunitiesPage() {
                 {/* Cover */}
                 <div className="relative h-24 bg-gradient-to-br from-primary/20 via-card to-primary/5">
                   {community.cover_url && (
-                    <img
-                      src={community.cover_url}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
+                    <img src={community.cover_url} alt="" className="h-full w-full object-cover" />
                   )}
 
                   <div className="absolute right-3 top-3 rounded-full border border-border/50 bg-background/80 p-1.5 backdrop-blur">
@@ -367,9 +341,7 @@ function CommunitiesPage() {
                     {community.name}
                   </h3>
 
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    /{community.slug}
-                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">/{community.slug}</p>
 
                   <p className="mt-3 line-clamp-3 min-h-[3.75rem] text-sm text-muted-foreground">
                     {community.description || "A community on VidAlore Social."}
@@ -378,8 +350,7 @@ function CommunitiesPage() {
                   <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
                     <span className="flex items-center gap-1.5">
                       <Users className="h-3.5 w-3.5" />
-                      {community.member_count}{" "}
-                      {community.member_count === 1 ? "member" : "members"}
+                      {community.member_count} {community.member_count === 1 ? "member" : "members"}
                     </span>
 
                     <span className="rounded-full bg-muted px-2 py-1 capitalize">
@@ -389,14 +360,8 @@ function CommunitiesPage() {
 
                   <div className="mt-4">
                     {joined ? (
-                      community.owner_id === community.owner_id &&
-                      community.owner_id ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full gap-2"
-                          disabled
-                        >
+                      community.owner_id === community.owner_id && community.owner_id ? (
+                        <Button variant="outline" size="sm" className="w-full gap-2" disabled>
                           <Check className="h-4 w-4" />
                           Joined
                         </Button>
@@ -428,9 +393,7 @@ function CommunitiesPage() {
                         ) : (
                           <Plus className="h-4 w-4" />
                         )}
-                        {community.privacy === "private"
-                          ? "Private community"
-                          : "Join community"}
+                        {community.privacy === "private" ? "Private community" : "Join community"}
                       </Button>
                     )}
                   </div>
@@ -456,10 +419,7 @@ function CommunitiesPage() {
           >
             <div className="mb-5 flex items-center justify-between">
               <div>
-                <h2
-                  id="create-community-title"
-                  className="text-xl font-bold text-foreground"
-                >
+                <h2 id="create-community-title" className="text-xl font-bold text-foreground">
                   Create a community
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -479,9 +439,7 @@ function CommunitiesPage() {
 
             <form onSubmit={handleCreateCommunity} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  Community name
-                </label>
+                <label className="text-sm font-medium text-foreground">Community name</label>
                 <Input
                   value={name}
                   onChange={(event) => {
@@ -496,9 +454,7 @@ function CommunitiesPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  Community URL
-                </label>
+                <label className="text-sm font-medium text-foreground">Community URL</label>
                 <div className="flex items-center rounded-md border border-input bg-muted/30 px-3">
                   <span className="text-sm text-muted-foreground">/c/</span>
                   <input
@@ -515,9 +471,7 @@ function CommunitiesPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  Description
-                </label>
+                <label className="text-sm font-medium text-foreground">Description</label>
                 <textarea
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
@@ -529,9 +483,7 @@ function CommunitiesPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  Privacy
-                </label>
+                <label className="text-sm font-medium text-foreground">Privacy</label>
 
                 <div className="grid grid-cols-2 gap-2">
                   <button

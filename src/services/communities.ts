@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -64,10 +63,7 @@ export async function getCommunities(): Promise<CommunityWithOwner[]> {
   const counts = new Map<string, number>();
 
   for (const member of members ?? []) {
-    counts.set(
-      member.community_id,
-      (counts.get(member.community_id) ?? 0) + 1
-    );
+    counts.set(member.community_id, (counts.get(member.community_id) ?? 0) + 1);
   }
 
   return communities.map((community) => ({
@@ -81,9 +77,7 @@ export async function getCommunities(): Promise<CommunityWithOwner[]> {
 // GET COMMUNITY BY SLUG
 // ================================================
 
-export async function getCommunityBySlug(
-  slug: string
-): Promise<Community | null> {
+export async function getCommunityBySlug(slug: string): Promise<Community | null> {
   const { data, error } = await supabase
     .from("communities")
     .select("*")
@@ -154,18 +148,14 @@ export async function createCommunity(input: {
 // JOIN COMMUNITY
 // ================================================
 
-export async function joinCommunity(
-  communityId: string
-): Promise<void> {
+export async function joinCommunity(communityId: string): Promise<void> {
   const user = await getCurrentUser();
 
-  const { error } = await supabase
-    .from("community_members")
-    .insert({
-      community_id: communityId,
-      user_id: user.id,
-      role: "member",
-    });
+  const { error } = await supabase.from("community_members").insert({
+    community_id: communityId,
+    user_id: user.id,
+    role: "member",
+  });
 
   if (error && error.code === "23505") return;
 
@@ -176,9 +166,7 @@ export async function joinCommunity(
 // LEAVE COMMUNITY
 // ================================================
 
-export async function leaveCommunity(
-  communityId: string
-): Promise<void> {
+export async function leaveCommunity(communityId: string): Promise<void> {
   const user = await getCurrentUser();
 
   const { error } = await supabase
@@ -224,9 +212,7 @@ export async function getMyCommunities(): Promise<Community[]> {
 // CHECK MEMBERSHIP
 // ================================================
 
-export async function isCommunityMember(
-  communityId: string
-): Promise<boolean> {
+export async function isCommunityMember(communityId: string): Promise<boolean> {
   const { data: auth, error: authError } = await supabase.auth.getUser();
 
   if (authError) throw authError;
@@ -248,12 +234,11 @@ export async function isCommunityMember(
 // COMMUNITY MEMBERS
 // ================================================
 
-export async function getCommunityMembers(
-  communityId: string
-) {
+export async function getCommunityMembers(communityId: string) {
   const { data, error } = await supabase
     .from("community_members")
-    .select(`
+    .select(
+      `
       *,
       profile:profiles!community_members_user_id_fkey(
         id,
@@ -261,7 +246,8 @@ export async function getCommunityMembers(
         display_name,
         avatar_url
       )
-    `)
+    `,
+    )
     .eq("community_id", communityId)
     .order("joined_at", { ascending: true });
 
@@ -274,9 +260,7 @@ export async function getCommunityMembers(
 // COMMUNITY POSTS
 // ================================================
 
-export async function getCommunityPosts(
-  communityId: string
-): Promise<CommunityPost[]> {
+export async function getCommunityPosts(communityId: string): Promise<CommunityPost[]> {
   const { data, error } = await supabase
     .from("community_posts")
     .select("*")

@@ -534,7 +534,9 @@ function ProfilePage() {
               {viewedProfile.display_name || viewedProfile.username}
             </h1>
 
-            {viewedProfile.points_balance > 100 && <BadgeCheck className="h-4 w-4 text-[#E91E63]" />}
+            {viewedProfile.points_balance > 100 && (
+              <BadgeCheck className="h-4 w-4 text-[#E91E63]" />
+            )}
           </div>
 
           <p className="text-xs text-muted-foreground">@{viewedProfile.username}</p>
@@ -813,7 +815,9 @@ function ProfilePage() {
           {/* About Tab */}
           {activeTab === "about" && (
             <section className="rounded-xl p-5 space-y-3 border border-border bg-card shadow-sm">
-              <h2 className="text-base font-semibold text-foreground">About @{viewedProfile.username}</h2>
+              <h2 className="text-base font-semibold text-foreground">
+                About @{viewedProfile.username}
+              </h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div className="rounded-lg bg-secondary p-3 border border-border">
@@ -824,7 +828,9 @@ function ProfilePage() {
                 <div className="rounded-lg bg-secondary p-3 border border-border">
                   <p className="text-muted-foreground">Privacy</p>
                   <p className="font-semibold text-foreground mt-0.5">
-                    {viewedProfile.is_private ? "Private Account (Followers only)" : "Public Account"}
+                    {viewedProfile.is_private
+                      ? "Private Account (Followers only)"
+                      : "Public Account"}
                   </p>
                 </div>
 

@@ -1,27 +1,13 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
-import {
-  Search,
-  Sparkles,
-  TrendingUp,
-  UserCheck,
-  UserPlus,
-} from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Search, Sparkles, TrendingUp, UserCheck, UserPlus } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { communityProfilesQuery, type Profile } from "@/services/profiles";
-import {
-  followUser,
-  unfollowUser,
-  isFollowing,
-} from "@/services/relationships";
+import { followUser, unfollowUser, isFollowing } from "@/services/relationships";
 
 const TRENDING_TOPICS = [
   { tag: "DesignSystems", category: "Technology" },
@@ -31,30 +17,16 @@ const TRENDING_TOPICS = [
   { tag: "VidaloreStyle", category: "Fashion" },
 ];
 
-export function RightSidebar({
-  me,
-}: {
-  me?: Profile | null | undefined;
-}) {
+export function RightSidebar({ me }: { me?: Profile | null | undefined }) {
   const [search, setSearch] = useState("");
   const queryClient = useQueryClient();
 
-  const { data: dbProfiles = [] } = useQuery(
-    communityProfilesQuery(6),
-  );
+  const { data: dbProfiles = [] } = useQuery(communityProfilesQuery(6));
 
-  const creators = dbProfiles
-    .filter((profile) => profile.id !== me?.id)
-    .slice(0, 4);
+  const creators = dbProfiles.filter((profile) => profile.id !== me?.id).slice(0, 4);
 
   const followMutation = useMutation({
-    mutationFn: async ({
-      userId,
-      following,
-    }: {
-      userId: string;
-      following: boolean;
-    }) => {
+    mutationFn: async ({ userId, following }: { userId: string; following: boolean }) => {
       if (following) {
         await unfollowUser(userId);
       } else {
@@ -98,10 +70,7 @@ export function RightSidebar({
             Suggested People
           </h2>
 
-          <Link
-            to="/explore"
-            className="text-xs text-[#E91E63] font-medium hover:underline"
-          >
+          <Link to="/explore" className="text-xs text-[#E91E63] font-medium hover:underline">
             View all
           </Link>
         </div>
@@ -129,8 +98,7 @@ export function RightSidebar({
                     })
                   }
                   pending={
-                    followMutation.isPending &&
-                    followMutation.variables?.userId === creator.id
+                    followMutation.isPending && followMutation.variables?.userId === creator.id
                   }
                 />
               );
@@ -239,10 +207,7 @@ function SuggestedCreator({
   creator: Profile;
   disabled: boolean;
   pending: boolean;
-  onFollowToggle: (
-    userId: string,
-    following: boolean,
-  ) => void;
+  onFollowToggle: (userId: string, following: boolean) => void;
 }) {
   const { data: following = false, isLoading } = useQuery({
     queryKey: ["relationship", "following", creator.id],

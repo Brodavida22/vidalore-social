@@ -170,9 +170,29 @@ export const Route = createRootRouteWithContext<{
         name: "twitter:card",
         content: "summary_large_image",
       },
+      {
+        name: "apple-mobile-web-app-capable",
+        content: "yes",
+      },
+      {
+        name: "apple-mobile-web-app-status-bar-style",
+        content: "black-translucent",
+      },
+      {
+        name: "apple-mobile-web-app-title",
+        content: "VIDALORE",
+      },
     ],
 
     links: [
+      {
+        rel: "manifest",
+        href: "/manifest.json",
+      },
+      {
+        rel: "apple-touch-icon",
+        href: "/apple-touch-icon.png",
+      },
       {
         rel: "stylesheet",
         href: appCss,
@@ -224,6 +244,15 @@ function RootComponent() {
   const router = useRouter();
 
   useEffect(() => {
+    // Register PWA service worker for offline resilience
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js").catch((err) => {
+          console.debug("ServiceWorker registration skipped or failed:", err);
+        });
+      });
+    }
+
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") {
         return;

@@ -1,4 +1,3 @@
-
 import type {
   SocialPost,
   PostMedia,
@@ -8,14 +7,7 @@ import type {
   FeedMode,
 } from "@/services/posts";
 
-export type {
-  SocialPost,
-  PostMedia,
-  PostComment,
-  PostPerson,
-  PostCounts,
-  FeedMode,
-};
+export type { SocialPost, PostMedia, PostComment, PostPerson, PostCounts, FeedMode };
 
 export interface SocialNotification {
   id: string;
@@ -111,25 +103,18 @@ export function sendFriendRequest(_targetUserId: string): void {
 }
 
 export function getStoredNotifications(): SocialNotification[] {
-  const notifications = getLocal<SocialNotification[]>(
-    STORAGE_KEYS.NOTIFICATIONS,
-    [],
-  );
+  const notifications = getLocal<SocialNotification[]>(STORAGE_KEYS.NOTIFICATIONS, []);
 
   return notifications.filter(
     (notification) =>
-      !notification.id.startsWith("notif-") &&
-      !notification.actorId.startsWith("creator-"),
+      !notification.id.startsWith("notif-") && !notification.actorId.startsWith("creator-"),
   );
 }
 
-export function saveStoredNotifications(
-  notifications: SocialNotification[],
-): void {
+export function saveStoredNotifications(notifications: SocialNotification[]): void {
   const clean = notifications.filter(
     (notification) =>
-      !notification.id.startsWith("notif-") &&
-      !notification.actorId.startsWith("creator-"),
+      !notification.id.startsWith("notif-") && !notification.actorId.startsWith("creator-"),
   );
 
   setLocal(STORAGE_KEYS.NOTIFICATIONS, clean);
@@ -154,9 +139,7 @@ export function reportContent(report: {
 
 export function markNotificationRead(notificationId: string): void {
   const notifications = getStoredNotifications();
-  const notification = notifications.find(
-    (item) => item.id === notificationId,
-  );
+  const notification = notifications.find((item) => item.id === notificationId);
 
   if (!notification) return;
 
