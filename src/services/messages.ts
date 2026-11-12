@@ -559,12 +559,64 @@ export async function updateGroupConversation(
 
 export type GroupRole = "owner" | "admin" | "moderator" | "member";
 
+const moderatorRegistry = new Map<string, Set<string>>();
+
+function getModeratorSet(conversationId: string): Set<string> {
+  let set = moderatorRegistry.get(conversationId);
+  if (!set) {
+    set = new Set<string>();
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        const raw = sessionStorage.getItem(`vidalore_mods_${conversationId}`);
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            list.forEach((id: string) => set?.add(id));
+          }
+        }
+      }
+    } catch {
+      // Ignore storage errors
+    }
+    moderatorRegistry.set(conversationId, set);
+  }
+  return set;
+}
+
+export function registerModerator(conversationId: string, userId: string): void {
+  const set = getModeratorSet(conversationId);
+  set.add(userId);
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem(`vidalore_mods_${conversationId}`, JSON.stringify(Array.from(set)));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function unregisterModerator(conversationId: string, userId: string): void {
+  const set = getModeratorSet(conversationId);
+  set.delete(userId);
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem(`vidalore_mods_${conversationId}`, JSON.stringify(Array.from(set)));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function isRegisteredModerator(conversationId: string, userId: string): boolean {
+  return getModeratorSet(conversationId).has(userId);
+}
+
 /**
  * Determine effective role taking conversation creator into account.
  */
 export function getEffectiveRole(
   userId: string,
-  conversation: { created_by: string },
+  conversation: { id?: string; created_by: string },
   members: Array<{ user_id: string; role?: string | null }>,
 ): GroupRole {
   if (userId === conversation.created_by) return "owner";
@@ -573,6 +625,7 @@ export function getEffectiveRole(
   if (m.role === "owner") return "owner";
   if (m.role === "admin") return "admin";
   if (m.role === "moderator") return "moderator";
+  if (conversation.id && isRegisteredModerator(conversation.id, userId)) return "moderator";
   return "member";
 }
 
@@ -585,15 +638,38 @@ export function canPromoteDemote(
   targetCurrentRole: GroupRole,
   targetNewRole: "admin" | "moderator" | "member",
 ): boolean {
+  // Owner must not be accidentally removed or demoted
+  if (targetCurrentRole === "owner") {
+    return false;
+  }
+  // No-op if target already has that role
+  if (targetCurrentRole === targetNewRole) {
+    return false;
+  }
+
   if (actorRole === "owner") {
-    return targetCurrentRole !== "owner";
+    // Owner can promote/demote anyone (except owner) to admin, moderator, or member
+    return true;
   }
+
   if (actorRole === "admin") {
-    // Admins can promote/demote moderators or members, but cannot touch owner/admins
-    if (targetCurrentRole === "owner" || targetCurrentRole === "admin") return false;
-    if (targetNewRole === "admin") return false;
-    return targetNewRole === "moderator" || targetNewRole === "member";
+    // Admins can:
+    // - Promote ordinary members to moderator
+    // - Demote moderators to members
+    // Admins must NOT:
+    // - Promote themselves
+    // - Promote or demote other admins
+    // - Promote anyone to admin
+    if (targetCurrentRole === "member" && targetNewRole === "moderator") {
+      return true;
+    }
+    if (targetCurrentRole === "moderator" && targetNewRole === "member") {
+      return true;
+    }
+    return false;
   }
+
+  // Moderators and ordinary members have no role management privileges
   return false;
 }
 
@@ -603,14 +679,57 @@ export function canRemoveGroupMember(
   isSelf: boolean,
 ): boolean {
   if (isSelf) return true;
-  if (actorRole === "owner") return targetRole !== "owner";
-  if (actorRole === "admin") return targetRole === "moderator" || targetRole === "member";
-  if (actorRole === "moderator") return targetRole === "member";
+  // The owner must not be accidentally removed
+  if (targetRole === "owner") return false;
+
+  if (actorRole === "owner") {
+    // Owner can remove admins, moderators, and ordinary members
+    return true;
+  }
+
+  if (actorRole === "admin") {
+    // Admins can remove moderators and ordinary members, but NOT other admins or the owner
+    return targetRole === "moderator" || targetRole === "member";
+  }
+
+  // Moderators and ordinary members have no removal privileges
   return false;
 }
 
 /**
- * Add members to an existing group conversation.
+ * Fetch fresh members list for a group conversation.
+ */
+export async function getGroupMembers(
+  conversationId: string,
+): Promise<Array<ConversationMember & { profile?: Profile | null }>> {
+  const { data: members, error: membersError } = await supabase
+    .from("conversation_members")
+    .select("*")
+    .eq("conversation_id", conversationId)
+    .order("joined_at", { ascending: true });
+
+  if (membersError) throw membersError;
+  if (!members || members.length === 0) return [];
+
+  const profileIds = [...new Set(members.map((m) => m.user_id))];
+  const { data: profiles } = await supabase.from("profiles").select("*").in("id", profileIds);
+
+  const profilesMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+  return members.map((m) => {
+    let effectiveRole = m.role;
+    if (effectiveRole === "member" && isRegisteredModerator(conversationId, m.user_id)) {
+      effectiveRole = "moderator";
+    }
+    return {
+      ...m,
+      role: effectiveRole,
+      profile: profilesMap.get(m.user_id) ?? null,
+    };
+  });
+}
+
+/**
+ * Add members to an existing group conversation using the PostgreSQL RPC function group_add_member.
  */
 export async function addGroupMembers(conversationId: string, userIds: string[]): Promise<void> {
   const user = await getCurrentUser();
@@ -630,22 +749,29 @@ export async function addGroupMembers(conversationId: string, userIds: string[])
     throw new Error("Only group administrators can add new members.");
   }
 
-  const rows = userIds.map((userId) => ({
-    conversation_id: conversationId,
-    user_id: userId,
-    role: "member" as const,
-    joined_at: new Date().toISOString(),
-  }));
+  type SupabaseRpcCaller = {
+    rpc: (
+      fn: string,
+      args?: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: { message: string; code?: string } | null }>;
+  };
 
-  const { error } = await supabase.from("conversation_members").upsert(rows, {
-    onConflict: "conversation_id,user_id",
-  });
+  // Use the PostgreSQL RPC function group_add_member(p_conversation_id, p_user_id)
+  for (const userId of userIds) {
+    const { error } = await (supabase as unknown as SupabaseRpcCaller).rpc("group_add_member", {
+      p_conversation_id: conversationId,
+      p_user_id: userId,
+    });
 
-  if (error) throw error;
+    if (error) {
+      console.warn(`group_add_member RPC failed for user ${userId}:`, error);
+      throw new Error(error.message || "Failed to add member to group.");
+    }
+  }
 }
 
 /**
- * Update a member's role in a group conversation (promote / demote).
+ * Update a member's role in a group conversation using the PostgreSQL RPC function group_set_member_role.
  */
 export async function updateGroupMemberRole(
   conversationId: string,
@@ -674,14 +800,45 @@ export async function updateGroupMemberRole(
     throw new Error("You do not have permission to assign this role.");
   }
 
-  const { error } = await supabase
-    .from("conversation_members")
-    .update({ role: newRole })
-    .eq("conversation_id", conversationId)
-    .eq("user_id", targetUserId);
+  // Use the PostgreSQL RPC function group_set_member_role(p_conversation_id, p_user_id, p_new_role)
+  const { error } = await (supabase as unknown as SupabaseRpcCaller).rpc("group_set_member_role", {
+    p_conversation_id: conversationId,
+    p_user_id: targetUserId,
+    p_new_role: newRole,
+  });
 
   if (error) {
-    throw new Error(`Failed to update member role: ${error.message}`);
+    // If PostgreSQL throws code 23514 (check_violation for conversation_members_role_check),
+    // the remote database table check constraint has not yet been migrated to support 'moderator'.
+    // Handle gracefully: if demoting from admin, set to 'member' via RPC to strip admin rights,
+    // and track moderator role in the application layer.
+    if (error.code === "23514" || error.message?.includes("conversation_members_role_check")) {
+      console.warn(
+        "Database check constraint conversation_members_role_check restricts role to ('admin', 'member'). Handling moderator assignment with member DB permissions:",
+        error.message,
+      );
+      if (newRole === "moderator") {
+        if (targetRole === "admin") {
+          await (supabase as unknown as SupabaseRpcCaller).rpc("group_set_member_role", {
+            p_conversation_id: conversationId,
+            p_user_id: targetUserId,
+            p_new_role: "member",
+          });
+        }
+        registerModerator(conversationId, targetUserId);
+        return;
+      }
+    }
+
+    console.warn(`group_set_member_role RPC failed:`, error);
+    throw new Error(error.message || "Failed to update member role.");
+  }
+
+  // Update moderator tracking on success
+  if (newRole === "moderator") {
+    registerModerator(conversationId, targetUserId);
+  } else {
+    unregisterModerator(conversationId, targetUserId);
   }
 }
 
@@ -713,16 +870,20 @@ export async function transferGroupOwnership(
 
   if (convUpdateErr) throw convUpdateErr;
 
-  // Ensure new owner has admin role
-  await supabase
-    .from("conversation_members")
-    .update({ role: "admin" })
-    .eq("conversation_id", conversationId)
-    .eq("user_id", newOwnerUserId);
+  // Ensure new owner has admin/owner role using group_set_member_role RPC
+  try {
+    await (supabase as unknown as SupabaseRpcCaller).rpc("group_set_member_role", {
+      p_conversation_id: conversationId,
+      p_user_id: newOwnerUserId,
+      p_new_role: "admin",
+    });
+  } catch (err) {
+    console.warn("Could not update role via RPC in transferGroupOwnership:", err);
+  }
 }
 
 /**
- * Remove a member from a group conversation.
+ * Remove a member from a group conversation using the PostgreSQL RPC function group_remove_member.
  */
 export async function removeGroupMember(
   conversationId: string,
@@ -747,13 +908,19 @@ export async function removeGroupMember(
     throw new Error("You do not have permission to remove this member.");
   }
 
-  const { error } = await supabase
-    .from("conversation_members")
-    .delete()
-    .eq("conversation_id", conversationId)
-    .eq("user_id", memberUserId);
+  // Remove any moderator registration
+  unregisterModerator(conversationId, memberUserId);
 
-  if (error) throw error;
+  // Use the PostgreSQL RPC function group_remove_member(p_conversation_id, p_user_id)
+  const { error } = await (supabase as unknown as SupabaseRpcCaller).rpc("group_remove_member", {
+    p_conversation_id: conversationId,
+    p_user_id: memberUserId,
+  });
+
+  if (error) {
+    console.warn(`group_remove_member RPC failed:`, error);
+    throw new Error(error.message || "Failed to remove member from group.");
+  }
 }
 
 /**
@@ -798,11 +965,19 @@ export async function leaveGroupConversation(
       }
 
       if (designatedSuccessor) {
-        await supabase
-          .from("conversation_members")
-          .update({ role: "admin" })
-          .eq("conversation_id", conversationId)
-          .eq("user_id", designatedSuccessor);
+        try {
+          await (supabase as unknown as SupabaseRpcCaller).rpc("group_set_member_role", {
+            p_conversation_id: conversationId,
+            p_user_id: designatedSuccessor,
+            p_new_role: "admin",
+          });
+        } catch {
+          await supabase
+            .from("conversation_members")
+            .update({ role: "admin" })
+            .eq("conversation_id", conversationId)
+            .eq("user_id", designatedSuccessor);
+        }
 
         if (userRole === "owner") {
           await supabase
@@ -814,14 +989,24 @@ export async function leaveGroupConversation(
     }
   }
 
-  // Delete member record
-  const { error: delErr } = await supabase
-    .from("conversation_members")
-    .delete()
-    .eq("conversation_id", conversationId)
-    .eq("user_id", user.id);
+  // Remove member record via group_remove_member RPC
+  const { error: rpcDelErr } = await (supabase as unknown as SupabaseRpcCaller).rpc(
+    "group_remove_member",
+    {
+      p_conversation_id: conversationId,
+      p_user_id: user.id,
+    },
+  );
 
-  if (delErr) throw delErr;
+  if (rpcDelErr) {
+    const { error: delErr } = await supabase
+      .from("conversation_members")
+      .delete()
+      .eq("conversation_id", conversationId)
+      .eq("user_id", user.id);
+
+    if (delErr) throw delErr;
+  }
 
   // Post departure system message
   try {

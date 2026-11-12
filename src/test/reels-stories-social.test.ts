@@ -194,7 +194,12 @@ describe("Reels & Stories Social Systems", () => {
 
       vi.mocked(supabase.from).mockImplementation((table: string) => {
         if (table === "reel_comments") {
-          return { insert: mockInsert } as unknown as ReturnType<typeof supabase.from>;
+          return {
+            insert: mockInsert,
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ count: 1, error: null }),
+            }),
+          } as unknown as ReturnType<typeof supabase.from>;
         }
         if (table === "reels") {
           return { update: mockUpdate } as unknown as ReturnType<typeof supabase.from>;
@@ -268,11 +273,12 @@ describe("Reels & Stories Social Systems", () => {
       vi.mocked(supabase.from).mockImplementation((table: string) => {
         if (table === "reel_saves") {
           return {
-            select: vi.fn().mockReturnValue({
+            select: vi.fn().mockImplementation(() => ({
               eq: vi.fn().mockReturnValue({
                 order: vi.fn().mockResolvedValue({ data: mockSaves, error: null }),
               }),
-            }),
+              in: vi.fn().mockResolvedValue({ data: [{ reel_id: "reel-100" }], error: null }),
+            })),
           } as unknown as ReturnType<typeof supabase.from>;
         }
         if (table === "reels") {
@@ -351,11 +357,14 @@ describe("Reels & Stories Social Systems", () => {
       vi.mocked(supabase.from).mockImplementation((table: string) => {
         if (table === "reel_saves") {
           return {
-            select: vi.fn().mockReturnValue({
+            select: vi.fn().mockImplementation(() => ({
               eq: vi.fn().mockReturnValue({
                 order: vi.fn().mockResolvedValue({ data: mockSaves, error: null }),
               }),
-            }),
+              in: vi
+                .fn()
+                .mockResolvedValue({ data: [{ reel_id: "reel-blocked-100" }], error: null }),
+            })),
           } as unknown as ReturnType<typeof supabase.from>;
         }
         if (table === "reels") {
@@ -405,7 +414,21 @@ describe("Reels & Stories Social Systems", () => {
 
       vi.mocked(supabase.from).mockImplementation((table: string) => {
         if (table === "reel_saves") {
-          return { delete: mockDelete } as unknown as ReturnType<typeof supabase.from>;
+          return {
+            delete: mockDelete,
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ count: 0, error: null }),
+            }),
+          } as unknown as ReturnType<typeof supabase.from>;
+        }
+        if (table === "reels") {
+          return {
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                then: vi.fn(),
+              }),
+            }),
+          } as unknown as ReturnType<typeof supabase.from>;
         }
         return {} as unknown as ReturnType<typeof supabase.from>;
       });

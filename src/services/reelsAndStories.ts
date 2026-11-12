@@ -642,7 +642,9 @@ export async function getStoredReels(): Promise<ReelItem[]> {
       }
 
       const likesCount = likeCounts.has(row.id) ? likeCounts.get(row.id)! : (row.likes_count ?? 0);
-      const commentsCount = commentCounts.has(row.id) ? commentCounts.get(row.id)! : (row.comments_count ?? 0);
+      const commentsCount = commentCounts.has(row.id)
+        ? commentCounts.get(row.id)!
+        : (row.comments_count ?? 0);
       const savesCount = saveCounts.has(row.id) ? saveCounts.get(row.id)! : (row.saves_count ?? 0);
 
       const item: ReelItem = {
@@ -1059,7 +1061,9 @@ export async function getSavedReels(): Promise<ReelItem[]> {
       caption: row.caption ?? "",
       audioTitle: row.audio_title ?? undefined,
       likesCount: likeCounts.has(row.id) ? likeCounts.get(row.id)! : (row.likes_count ?? 0),
-      commentsCount: commentCounts.has(row.id) ? commentCounts.get(row.id)! : (row.comments_count ?? 0),
+      commentsCount: commentCounts.has(row.id)
+        ? commentCounts.get(row.id)!
+        : (row.comments_count ?? 0),
       sharesCount: row.shares_count ?? 0,
       savesCount: saveCounts.has(row.id) ? saveCounts.get(row.id)! : (row.saves_count ?? 1),
       viewsCount: row.views_count ?? 0,
@@ -1362,7 +1366,8 @@ export async function addReelComment(
     .select("id", { count: "exact", head: true })
     .eq("reel_id", reelId);
 
-  const finalCount = typeof count === "number" ? count : (sessionReelsCache.get(reelId)?.commentsCount ?? 0) + 1;
+  const finalCount =
+    typeof count === "number" ? count : (sessionReelsCache.get(reelId)?.commentsCount ?? 0) + 1;
 
   void supabase
     .from("reels")
@@ -1411,7 +1416,10 @@ export async function deleteReelComment(commentId: string, reelId: string): Prom
     .select("id", { count: "exact", head: true })
     .eq("reel_id", reelId);
 
-  const finalCount = typeof count === "number" ? count : Math.max(0, (sessionReelsCache.get(reelId)?.commentsCount ?? 1) - 1);
+  const finalCount =
+    typeof count === "number"
+      ? count
+      : Math.max(0, (sessionReelsCache.get(reelId)?.commentsCount ?? 1) - 1);
 
   void supabase
     .from("reels")

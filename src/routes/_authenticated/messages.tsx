@@ -1282,8 +1282,11 @@ function MessagesPage() {
                   onOpenChange={setGroupDetailsOpen}
                   conversation={selectedConversation}
                   currentUserId={currentUserId}
-                  onConversationUpdated={() => {
-                    queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+                  onConversationUpdated={async () => {
+                    await queryClient.invalidateQueries({
+                      queryKey: ["messages", "conversations"],
+                    });
+                    await queryClient.refetchQueries({ queryKey: ["messages", "conversations"] });
                   }}
                   onLeftGroup={() => {
                     setSelectedConversation(null);

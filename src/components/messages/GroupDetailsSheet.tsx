@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Users,
   Shield,
@@ -15,6 +15,7 @@ import {
   MoreVertical,
   ArrowRightLeft,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -47,6 +48,7 @@ import {
   type ConversationListItem,
   type Profile,
   type GroupRole,
+  type ConversationMember,
   getEffectiveRole,
   canManageGroup,
   canPromoteDemote,
@@ -58,10 +60,10 @@ import {
   removeGroupMember,
   leaveGroupConversation,
   deleteGroupConversation,
+  getGroupMembers,
   searchProfiles,
 } from "@/services/messages";
 import { uploadProfileImage } from "@/services/profiles";
-import { Trash2 } from "lucide-react";
 
 export function GroupDetailsSheet({
   open,
@@ -76,10 +78,13 @@ export function GroupDetailsSheet({
   onOpenChange: (open: boolean) => void;
   conversation: ConversationListItem;
   currentUserId: string;
-  onConversationUpdated: () => void;
+  onConversationUpdated: () => void | Promise<void>;
   onLeftGroup: () => void;
   onGroupDeleted?: () => void;
 }) {
+  const [members, setMembers] = useState<Array<ConversationMember & { profile?: Profile | null }>>(
+    conversation.members,
+  );
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [newTitle, setNewTitle] = useState(conversation.title || "");
   const [savingTitle, setSavingTitle] = useState(false);
@@ -89,6 +94,23 @@ export function GroupDetailsSheet({
   const [searchResults, setSearchResults] = useState<Profile[]>([]);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+
+  // Role Change Confirmation Modal
+  const [roleChangeTarget, setRoleChangeTarget] = useState<{
+    userId: string;
+    name: string;
+    currentRole: GroupRole;
+    newRole: "admin" | "moderator" | "member";
+  } | null>(null);
+  const [isChangingRole, setIsChangingRole] = useState(false);
+
+  // Remove Member Confirmation Modal
+  const [removeTarget, setRemoveTarget] = useState<{
+    userId: string;
+    name: string;
+    role: GroupRole;
+  } | null>(null);
+  const [isRemovingMember, setIsRemovingMember] = useState(false);
 
   // Group deletion modal for Owner
   const [deleteGroupModalOpen, setDeleteGroupModalOpen] = useState(false);
@@ -103,12 +125,44 @@ export function GroupDetailsSheet({
   const [transferTarget, setTransferTarget] = useState<{ id: string; name: string } | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
 
-  const myRole: GroupRole = getEffectiveRole(currentUserId, conversation, conversation.members);
+  // Keep local members synchronized with conversation prop changes
+  useEffect(() => {
+    setMembers(conversation.members);
+  }, [conversation.members]);
+
+  // When sheet opens, fetch fresh members from the database
+  useEffect(() => {
+    if (open && conversation.id) {
+      getGroupMembers(conversation.id)
+        .then((fresh) => {
+          if (fresh && fresh.length > 0) {
+            setMembers(fresh);
+          }
+        })
+        .catch((err) => {
+          console.warn("Could not fetch fresh group members on open:", err);
+        });
+    }
+  }, [open, conversation.id]);
+
+  const refreshMembershipData = async () => {
+    try {
+      const latest = await getGroupMembers(conversation.id);
+      if (latest && latest.length > 0) {
+        setMembers(latest);
+      }
+    } catch (err) {
+      console.warn("Could not refresh group members:", err);
+    }
+    await onConversationUpdated();
+  };
+
+  const myRole: GroupRole = getEffectiveRole(currentUserId, conversation, members);
   const canEditSettings = canManageGroup(myRole);
 
-  const otherMembers = conversation.members.filter((m) => m.user_id !== currentUserId);
+  const otherMembers = members.filter((m) => m.user_id !== currentUserId);
   const otherAdmins = otherMembers.filter((m) => {
-    const r = getEffectiveRole(m.user_id, conversation, conversation.members);
+    const r = getEffectiveRole(m.user_id, conversation, members);
     return r === "owner" || r === "admin";
   });
   const isLastAdmin = (myRole === "owner" || myRole === "admin") && otherAdmins.length === 0;
@@ -124,7 +178,7 @@ export function GroupDetailsSheet({
       await updateGroupConversation(conversation.id, { title: newTitle.trim() });
       toast.success("Group title updated.");
       setIsEditingTitle(false);
-      onConversationUpdated();
+      await refreshMembershipData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update group title.");
     } finally {
@@ -141,7 +195,7 @@ export function GroupDetailsSheet({
       const imageUrl = await uploadProfileImage(currentUserId, file, "avatar");
       await updateGroupConversation(conversation.id, { image_url: imageUrl });
       toast.success("Group image updated!");
-      onConversationUpdated();
+      await refreshMembershipData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to upload group image.");
     }
@@ -157,7 +211,7 @@ export function GroupDetailsSheet({
     setLoadingSearch(true);
     try {
       const results = await searchProfiles(term, currentUserId);
-      const existingIds = new Set(conversation.members.map((m) => m.user_id));
+      const existingIds = new Set(members.map((m) => m.user_id));
       setSearchResults(results.filter((p) => !existingIds.has(p.id)));
     } catch (err) {
       console.error(err);
@@ -170,30 +224,86 @@ export function GroupDetailsSheet({
     setActionInProgress(profile.id);
     try {
       await addGroupMembers(conversation.id, [profile.id]);
+      // Update local state immediately
+      setMembers((prev) => [
+        ...prev,
+        {
+          conversation_id: conversation.id,
+          user_id: profile.id,
+          role: "member",
+          joined_at: new Date().toISOString(),
+          last_read_at: null,
+          profile,
+        },
+      ]);
       toast.success(`Added ${profile.display_name || profile.username} to group.`);
-      onConversationUpdated();
       setSearchResults((prev) => prev.filter((p) => p.id !== profile.id));
+      await refreshMembershipData();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to add member.");
+      toast.error(err instanceof Error ? err.message : "Failed to add member to group.");
     } finally {
       setActionInProgress(null);
     }
   };
 
-  const handleRoleChange = async (
-    targetUserId: string,
-    targetName: string,
+  const handleRequestRoleChange = (
+    userId: string,
+    name: string,
+    currentRole: GroupRole,
     newRole: "admin" | "moderator" | "member",
   ) => {
-    setActionInProgress(targetUserId);
+    setRoleChangeTarget({ userId, name, currentRole, newRole });
+  };
+
+  const handleConfirmRoleChange = async () => {
+    if (!roleChangeTarget) return;
+
+    setIsChangingRole(true);
     try {
-      await updateGroupMemberRole(conversation.id, targetUserId, newRole);
-      toast.success(`Updated ${targetName}'s role to ${newRole}.`);
-      onConversationUpdated();
+      await updateGroupMemberRole(
+        conversation.id,
+        roleChangeTarget.userId,
+        roleChangeTarget.newRole,
+      );
+
+      // Update displayed role immediately in local state
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.user_id === roleChangeTarget.userId ? { ...m, role: roleChangeTarget.newRole } : m,
+        ),
+      );
+
+      toast.success(`Updated ${roleChangeTarget.name}'s role to ${roleChangeTarget.newRole}.`);
+      setRoleChangeTarget(null);
+      await refreshMembershipData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update role.");
     } finally {
-      setActionInProgress(null);
+      setIsChangingRole(false);
+    }
+  };
+
+  const handleRequestRemoveMember = (userId: string, name: string, role: GroupRole) => {
+    setRemoveTarget({ userId, name, role });
+  };
+
+  const handleConfirmRemoveMember = async () => {
+    if (!removeTarget) return;
+
+    setIsRemovingMember(true);
+    try {
+      await removeGroupMember(conversation.id, removeTarget.userId);
+
+      // Update displayed member count and list immediately
+      setMembers((prev) => prev.filter((m) => m.user_id !== removeTarget.userId));
+
+      toast.success(`Removed ${removeTarget.name} from group.`);
+      setRemoveTarget(null);
+      await refreshMembershipData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove member.");
+    } finally {
+      setIsRemovingMember(false);
     }
   };
 
@@ -204,26 +314,11 @@ export function GroupDetailsSheet({
       await transferGroupOwnership(conversation.id, transferTarget.id);
       toast.success(`Transferred group ownership to ${transferTarget.name}.`);
       setTransferTarget(null);
-      onConversationUpdated();
+      await refreshMembershipData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to transfer ownership.");
     } finally {
       setIsTransferring(false);
-    }
-  };
-
-  const handleRemoveMember = async (userId: string, name: string) => {
-    if (!confirm(`Are you sure you want to remove ${name} from this group?`)) return;
-
-    setActionInProgress(userId);
-    try {
-      await removeGroupMember(conversation.id, userId);
-      toast.success(`Removed ${name} from group.`);
-      onConversationUpdated();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to remove member.");
-    } finally {
-      setActionInProgress(null);
     }
   };
 
@@ -268,10 +363,10 @@ export function GroupDetailsSheet({
     }
   };
 
-  // Group members into categorized hierarchy
-  const membersWithRoles = conversation.members.map((member) => ({
+  // Group members with their effective roles
+  const membersWithRoles = members.map((member) => ({
     ...member,
-    effectiveRole: getEffectiveRole(member.user_id, conversation, conversation.members),
+    effectiveRole: getEffectiveRole(member.user_id, conversation, members),
     name: member.profile?.display_name || member.profile?.username || "Member",
   }));
 
@@ -368,11 +463,11 @@ export function GroupDetailsSheet({
               )}
 
               <div className="flex items-center justify-center gap-2 mt-1">
-                <span className="text-xs text-muted-foreground">
-                  {conversation.members.length} member{conversation.members.length === 1 ? "" : "s"}
+                <span className="text-xs text-muted-foreground font-medium">
+                  {members.length} {members.length === 1 ? "member" : "members"}
                 </span>
                 <span className="text-muted-foreground text-xs">·</span>
-                <span className="text-xs font-medium text-[#E91E63] capitalize">
+                <span className="text-xs font-semibold text-[#E91E63] capitalize">
                   Your Role: {myRole}
                 </span>
               </div>
@@ -383,7 +478,7 @@ export function GroupDetailsSheet({
           <div className="flex-1 py-4 space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Members & Roles
+                Members & Roles ({members.length})
               </h4>
               {canEditSettings && (
                 <Button
@@ -440,6 +535,11 @@ export function GroupDetailsSheet({
                       </Button>
                     </div>
                   ))}
+                  {searchMemberText.trim() && !loadingSearch && searchResults.length === 0 && (
+                    <p className="text-center text-xs text-muted-foreground py-2">
+                      No matching users found.
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -450,12 +550,13 @@ export function GroupDetailsSheet({
                 const isSelf = member.user_id === currentUserId;
                 const role = member.effectiveRole;
 
-                const canPromoteToAdmin = canPromoteDemote(myRole, role, "admin");
-                const canPromoteToMod = canPromoteDemote(myRole, role, "moderator");
-                const canDemoteToMember = canPromoteDemote(myRole, role, "member");
-                const canDemoteToMod = myRole === "owner" && role === "admin";
-                const canTransfer = myRole === "owner" && !isSelf;
-                const canRemove = canRemoveGroupMember(myRole, role, isSelf);
+                const canPromoteToAdmin = !isSelf && canPromoteDemote(myRole, role, "admin");
+                const canPromoteToMod = !isSelf && canPromoteDemote(myRole, role, "moderator");
+                const canDemoteToMember = !isSelf && canPromoteDemote(myRole, role, "member");
+                const canDemoteToMod = !isSelf && myRole === "owner" && role === "admin";
+                const canTransfer = !isSelf && myRole === "owner";
+                const canRemove = !isSelf && canRemoveGroupMember(myRole, role, false);
+
                 const hasActions =
                   !isSelf &&
                   (canPromoteToAdmin ||
@@ -497,11 +598,11 @@ export function GroupDetailsSheet({
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      {/* Role Badge */}
+                      {/* Clear Role Badges */}
                       {role === "owner" && (
                         <Badge
                           variant="secondary"
-                          className="text-[10px] px-2 py-0.5 gap-1 bg-amber-500/10 text-amber-500 border-amber-500/20"
+                          className="text-[10px] px-2 py-0.5 gap-1 bg-amber-500/10 text-amber-500 border-amber-500/20 font-semibold"
                         >
                           <Crown size={10} />
                           Owner
@@ -510,7 +611,7 @@ export function GroupDetailsSheet({
                       {role === "admin" && (
                         <Badge
                           variant="secondary"
-                          className="text-[10px] px-2 py-0.5 gap-1 bg-[#E91E63]/10 text-[#E91E63] border-[#E91E63]/20"
+                          className="text-[10px] px-2 py-0.5 gap-1 bg-[#E91E63]/10 text-[#E91E63] border-[#E91E63]/20 font-semibold"
                         >
                           <Shield size={10} />
                           Admin
@@ -519,24 +620,29 @@ export function GroupDetailsSheet({
                       {role === "moderator" && (
                         <Badge
                           variant="secondary"
-                          className="text-[10px] px-2 py-0.5 gap-1 bg-purple-500/10 text-purple-400 border-purple-500/20"
+                          className="text-[10px] px-2 py-0.5 gap-1 bg-purple-500/10 text-purple-400 border-purple-500/20 font-semibold"
                         >
                           <ShieldCheck size={10} />
-                          Mod
+                          Moderator
                         </Badge>
                       )}
                       {role === "member" && (
-                        <span className="text-[10px] text-muted-foreground px-1.5">Member</span>
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] px-2 py-0.5 text-muted-foreground border-border font-normal"
+                        >
+                          Member
+                        </Badge>
                       )}
 
-                      {/* Role Management Dropdown */}
+                      {/* Role Management Dropdown with Confirmation Modals */}
                       {hasActions && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
                               type="button"
                               className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition"
-                              title="Manage role"
+                              title="Manage member"
                             >
                               <MoreVertical size={14} />
                             </button>
@@ -545,7 +651,12 @@ export function GroupDetailsSheet({
                             {canPromoteToAdmin && (
                               <DropdownMenuItem
                                 onClick={() =>
-                                  handleRoleChange(member.user_id, member.name, "admin")
+                                  handleRequestRoleChange(
+                                    member.user_id,
+                                    member.name,
+                                    role,
+                                    "admin",
+                                  )
                                 }
                                 className="gap-2 cursor-pointer text-[#E91E63]"
                               >
@@ -557,7 +668,12 @@ export function GroupDetailsSheet({
                             {canPromoteToMod && (
                               <DropdownMenuItem
                                 onClick={() =>
-                                  handleRoleChange(member.user_id, member.name, "moderator")
+                                  handleRequestRoleChange(
+                                    member.user_id,
+                                    member.name,
+                                    role,
+                                    "moderator",
+                                  )
                                 }
                                 className="gap-2 cursor-pointer text-purple-400"
                               >
@@ -569,9 +685,14 @@ export function GroupDetailsSheet({
                             {canDemoteToMod && (
                               <DropdownMenuItem
                                 onClick={() =>
-                                  handleRoleChange(member.user_id, member.name, "moderator")
+                                  handleRequestRoleChange(
+                                    member.user_id,
+                                    member.name,
+                                    role,
+                                    "moderator",
+                                  )
                                 }
-                                className="gap-2 cursor-pointer"
+                                className="gap-2 cursor-pointer text-purple-400"
                               >
                                 <ShieldCheck size={13} />
                                 <span>Demote to Moderator</span>
@@ -581,11 +702,16 @@ export function GroupDetailsSheet({
                             {canDemoteToMember && (
                               <DropdownMenuItem
                                 onClick={() =>
-                                  handleRoleChange(member.user_id, member.name, "member")
+                                  handleRequestRoleChange(
+                                    member.user_id,
+                                    member.name,
+                                    role,
+                                    "member",
+                                  )
                                 }
                                 className="gap-2 cursor-pointer text-muted-foreground"
                               >
-                                <span>Change to Member</span>
+                                <span>Demote to Member</span>
                               </DropdownMenuItem>
                             )}
 
@@ -608,7 +734,9 @@ export function GroupDetailsSheet({
                               <>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
-                                  onClick={() => handleRemoveMember(member.user_id, member.name)}
+                                  onClick={() =>
+                                    handleRequestRemoveMember(member.user_id, member.name, role)
+                                  }
                                   className="gap-2 text-destructive focus:text-destructive cursor-pointer"
                                 >
                                   <UserMinus size={13} />
@@ -650,6 +778,131 @@ export function GroupDetailsSheet({
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Confirmation Modal: Change Member Role */}
+      <Dialog
+        open={Boolean(roleChangeTarget)}
+        onOpenChange={() => !isChangingRole && setRoleChangeTarget(null)}
+      >
+        <DialogContent className="sm:max-w-md bg-card border-border p-5">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-foreground font-display text-base">
+              {roleChangeTarget?.newRole === "admin" && (
+                <Shield className="h-5 w-5 text-[#E91E63]" />
+              )}
+              {roleChangeTarget?.newRole === "moderator" && (
+                <ShieldCheck className="h-5 w-5 text-purple-400" />
+              )}
+              {roleChangeTarget?.newRole === "member" && (
+                <UserMinus className="h-5 w-5 text-muted-foreground" />
+              )}
+              {roleChangeTarget?.newRole === "admin"
+                ? "Promote to Administrator?"
+                : roleChangeTarget?.newRole === "moderator"
+                  ? "Promote to Moderator?"
+                  : "Change Role to Member?"}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground pt-1.5 leading-relaxed">
+              {roleChangeTarget?.newRole === "admin" && (
+                <>
+                  Are you sure you want to promote <strong>{roleChangeTarget.name}</strong> to
+                  Administrator? They will be able to add members, manage moderators, and remove
+                  members.
+                </>
+              )}
+              {roleChangeTarget?.newRole === "moderator" && (
+                <>
+                  Are you sure you want to promote <strong>{roleChangeTarget.name}</strong> to
+                  Moderator? They will be recognized with a Moderator badge in this group.
+                </>
+              )}
+              {roleChangeTarget?.newRole === "member" && (
+                <>
+                  Are you sure you want to demote <strong>{roleChangeTarget.name}</strong> to
+                  ordinary Member? They will lose their elevated permissions in this group.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="flex justify-end gap-2 pt-3 border-t border-border">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setRoleChangeTarget(null)}
+              disabled={isChangingRole}
+              className="text-xs rounded-lg"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleConfirmRoleChange}
+              disabled={isChangingRole}
+              className={`text-xs rounded-lg font-semibold gap-1.5 text-white ${
+                roleChangeTarget?.newRole === "admin"
+                  ? "bg-[#E91E63] hover:bg-[#C2185B]"
+                  : roleChangeTarget?.newRole === "moderator"
+                    ? "bg-purple-600 hover:bg-purple-700"
+                    : "bg-secondary text-foreground hover:bg-secondary/80 border border-border"
+              }`}
+            >
+              {isChangingRole ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Check size={13} />
+              )}
+              Confirm & Update Role
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Modal: Remove Member */}
+      <Dialog
+        open={Boolean(removeTarget)}
+        onOpenChange={() => !isRemovingMember && setRemoveTarget(null)}
+      >
+        <DialogContent className="sm:max-w-md bg-card border-border p-5">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive font-display text-base">
+              <UserMinus className="h-5 w-5 text-destructive" />
+              Remove Member from Group?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground pt-1.5 leading-relaxed">
+              Are you sure you want to remove <strong>{removeTarget?.name}</strong> from{" "}
+              <strong>"{conversation.title || "this group"}"</strong>? They will no longer be able
+              to read or send messages in this group.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="flex justify-end gap-2 pt-3 border-t border-border">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setRemoveTarget(null)}
+              disabled={isRemovingMember}
+              className="text-xs rounded-lg"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleConfirmRemoveMember}
+              disabled={isRemovingMember}
+              className="text-xs rounded-lg font-semibold gap-1.5"
+            >
+              {isRemovingMember ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <UserMinus size={13} />
+              )}
+              Remove Member
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirmation Modal: Leave Group (with Admin Succession if needed) */}
       <Dialog open={leaveModalOpen} onOpenChange={setLeaveModalOpen}>
