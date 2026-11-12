@@ -46,6 +46,7 @@ import {
   toggleReelLike,
   toggleReelSave,
   incrementReelShare,
+  recordReelView,
   getFreshReelSignedUrl,
   updateReelVideo,
   transcodeExistingReel,
@@ -95,16 +96,18 @@ export function ReelPlayer({
   const repairFileInputRef = useRef<HTMLInputElement>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const viewRecordedForRef = useRef<string | null>(null);
 
   // Sync internal reel & videoSrc when initialReel changes
-  useEffect(() => {
-    setReel(initialReel);
-    setVideoSrc(initialReel.videoUrl || "");
-    setVideoError(false);
-    setErrorMessage("");
-    setIsLoading(true);
-    setIsBuffering(false);
-  }, [initialReel]);
+useEffect(() => {
+  setReel(initialReel);
+  setVideoSrc(initialReel.videoUrl || "");
+  setVideoError(false);
+  setErrorMessage("");
+  setIsLoading(true);
+  setIsBuffering(false);
+  viewRecordedForRef.current = null;
+}, [initialReel]);
 
   // Handle active / inactive playback lifecycle
   useEffect(() => {
@@ -235,12 +238,35 @@ export function ReelPlayer({
     setIsBuffering(false);
   }
 
-  function handlePlaying() {
+    function handlePlaying() {
     setIsPlaying(true);
     setIsLoading(false);
     setIsBuffering(false);
     setIsAutoplayBlocked(false);
-  }
+
+    if (!isActive || viewRecordedForRef.current === reel.id) {
+      return;
+    }
+
+    const reelId = reel.id;
+    viewRecordedForRef.current = reelId;
+
+    void recordReelView(reelId)
+      .then((viewsCount) => {
+        setReel((prev) =>
+          prev.id === reelId
+            ? { ...prev, viewsCount }
+            : prev,
+        );
+      })
+      .catch((error) => {
+        if (viewRecordedForRef.current === reelId) {
+          viewRecordedForRef.current = null;
+        }
+
+        console.warn("Could not record reel view:", error);
+      });
+    }
 
   function handleWaiting() {
     setIsBuffering(true);
