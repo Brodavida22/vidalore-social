@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
+import { Maximize2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 type MessageMediaRendererProps = {
@@ -210,16 +211,112 @@ export function MessageMediaRenderer({
   if (isImage) {
     return (
       <>
-        <button type="button" onClick={() => setPreviewOpen(true)} className="block max-w-full overflow-hidden rounded-2xl text-left">
-          <img src={resolvedUrl} alt={mediaName || "Shared image"} loading="lazy" className="block max-h-[360px] max-w-full rounded-2xl object-contain" onError={() => setLoadError("Image could not be displayed. Tap to retry.")} />
+        <button
+          type="button"
+          onClick={() => setPreviewOpen(true)}
+          aria-label="Open image full screen"
+          className="group relative block max-w-full overflow-hidden rounded-2xl text-left"
+        >
+          <img
+            src={resolvedUrl}
+            alt={mediaName || "Shared image"}
+            loading="lazy"
+            className="block max-h-[360px] max-w-full rounded-2xl object-contain transition-opacity group-active:opacity-90"
+            onError={() => setLoadError("Image could not be displayed. Tap to retry.")}
+          />
+          <span className="absolute bottom-2 right-2 rounded-full bg-black/60 p-2 text-white opacity-90" aria-hidden="true">
+            <Maximize2 size={16} />
+          </span>
         </button>
-        {previewOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 p-3" onClick={() => setPreviewOpen(false)}><button type="button" aria-label="Close image" className="absolute right-4 top-4 rounded-full bg-white/15 px-3 py-2 text-white">✕</button><img src={resolvedUrl} alt={mediaName || "Shared image"} className="max-h-[92vh] max-w-full object-contain" onClick={(event) => event.stopPropagation()} /></div>}
+        {previewOpen && (
+          <div
+            className="fixed inset-0 z-[100] flex h-[100dvh] w-screen items-center justify-center bg-black p-0"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Full-screen image viewer"
+            onClick={() => setPreviewOpen(false)}
+          >
+            <button
+              type="button"
+              aria-label="Close image viewer"
+              onClick={() => setPreviewOpen(false)}
+              className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-sm"
+            >
+              <X size={22} />
+            </button>
+            <img
+              src={resolvedUrl}
+              alt={mediaName || "Shared image"}
+              className="max-h-[100dvh] max-w-full select-none object-contain"
+              onClick={(event) => event.stopPropagation()}
+            />
+            {mediaName && (
+              <span className="absolute bottom-4 left-4 right-4 truncate text-center text-xs text-white/75">
+                {mediaName}
+              </span>
+            )}
+          </div>
+        )}
       </>
     );
   }
 
   if (isVideo) {
-    return <video ref={videoRef} src={resolvedUrl} controls playsInline preload="metadata" className="block max-h-[420px] w-full max-w-[min(78vw,420px)] rounded-2xl bg-black object-contain" onError={() => setLoadError("Video could not be played. Try reloading the attachment.")} />;
+    return (
+      <>
+        <div className="group relative my-1 max-w-full overflow-hidden rounded-2xl bg-black">
+          <video
+            ref={videoRef}
+            src={resolvedUrl}
+            controls
+            playsInline
+            preload="metadata"
+            className="block max-h-[420px] w-full max-w-[min(78vw,420px)] rounded-2xl bg-black object-contain"
+            onError={() => setLoadError("Video could not be played. Try reloading the attachment.")}
+          />
+          <button
+            type="button"
+            onClick={() => setPreviewOpen(true)}
+            aria-label="Open video full screen"
+            title="Open full screen"
+            className="absolute right-2 top-2 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/65 text-white opacity-90 shadow transition hover:bg-black/85"
+          >
+            <Maximize2 size={17} />
+          </button>
+        </div>
+        {previewOpen && (
+          <div
+            className="fixed inset-0 z-[100] flex h-[100dvh] w-screen items-center justify-center bg-black p-0"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Full-screen video player"
+          >
+            <button
+              type="button"
+              aria-label="Close video viewer"
+              onClick={() => {
+                const player = document.getElementById("vidalore-fullscreen-chat-video") as HTMLVideoElement | null;
+                player?.pause();
+                setPreviewOpen(false);
+              }}
+              className="absolute right-4 top-4 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm"
+            >
+              <X size={22} />
+            </button>
+            <video
+              id="vidalore-fullscreen-chat-video"
+              src={resolvedUrl}
+              controls
+              autoPlay
+              playsInline={false}
+              preload="auto"
+              className="h-full w-full object-contain"
+              onError={() => setLoadError("Video could not be played in full-screen mode.")}
+            />
+          </div>
+        )}
+      </>
+    );
   }
 
   return (
@@ -230,5 +327,6 @@ export function MessageMediaRenderer({
     </a>
   );
 }
+
 
 export default MessageMediaRenderer;
