@@ -245,15 +245,17 @@ export function MessageItem({
       )}
 
       <div
-        className={`relative max-w-[85%] sm:max-w-[75%] flex flex-col z-10 ${isMine ? "items-end" : "items-start"}`}
+        className={`relative max-w-[85%] sm:max-w-[75%] flex flex-col z-10 select-none ${isMine ? "items-end" : "items-start"}`}
         style={{
           transform: `translateX(${swipeOffset}px)`,
           transition: isSwiping ? "none" : "transform 0.2s cubic-bezier(0.2, 0, 1)",
+          touchAction: "pan-y",
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
+        onContextMenu={handleContextMenu}
       >
         {/* SENDER NAME & ROLE BADGE IN GROUP */}
         {!isMine && isGroup && (

@@ -173,19 +173,56 @@
   * {
     border-color: var(--color-border);
   }
+
+  /* Disable text selection and callouts across entire app UI (message bubbles, feed cards, buttons, nav labels) */
+  *,
+  *::before,
+  *::after {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* Allow text inputs, textareas, and editable fields to be selected, copied and typed into */
+  input,
+  textarea,
+  select,
+  [contenteditable="true"],
+  [contenteditable=""] {
+    -webkit-user-select: text !important;
+    user-select: text !important;
+    -webkit-touch-callout: default !important;
+  }
+
   html {
     color-scheme: dark light;
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
   }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
   }
+
   h1,
   h2,
   h3 {
     font-family: var(--font-display);
     letter-spacing: -0.015em;
+  }
+
+  /* Mobile active conversation rules: hide bottom navigation bar and mobile header */
+  @media (max-width: 767px) {
+    body[data-active-chat="true"] header.sticky,
+    body[data-active-chat="true"] nav[aria-label="Mobile Navigation"] {
+      display: none !important;
+    }
+    body[data-active-chat="true"] main {
+      padding-bottom: 0 !important;
+    }
   }
 }

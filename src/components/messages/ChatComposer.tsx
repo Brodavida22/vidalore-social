@@ -183,7 +183,7 @@ export function ChatComposer({
   };
 
   return (
-    <div className="border-t border-border bg-card p-2 sm:p-3 space-y-2">
+    <div className="border-t border-border bg-card p-2 sm:p-3 pb-[max(env(safe-area-inset-bottom),0.5rem)] space-y-2 shrink-0">
       {/* 1. REPLY BANNER */}
       {replyingTo && (
         <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-secondary/80 border border-border text-xs">
@@ -353,7 +353,7 @@ export function ChatComposer({
                 editingMessage ? "Edit message..." : "Write a message... (Enter to send)"
               }
               rows={1}
-              className="w-full resize-none bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground max-h-28 overflow-y-auto"
+              className="w-full resize-none bg-transparent text-[16px] sm:text-sm text-foreground outline-none placeholder:text-muted-foreground max-h-28 overflow-y-auto leading-relaxed"
               maxLength={5000}
               disabled={isSending}
             />

@@ -139,7 +139,8 @@ export const Route = createRootRouteWithContext<{
       { charSet: "utf-8" },
       {
         name: "viewport",
-        content: "width=device-width, initial-scale=1",
+        content:
+          "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content",
       },
       {
         name: "theme-color",
@@ -267,7 +268,24 @@ function RootComponent() {
       }
     });
 
+    // Block multi-touch pinch zoom & gesture zoom while preserving 1-finger vertical scroll & gestures
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches && e.touches.length > 1) {
+        e.preventDefault();
+      }
+    };
+    const handleGesture = (e: Event) => {
+      e.preventDefault();
+    };
+
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("gesturestart", handleGesture);
+    document.addEventListener("gesturechange", handleGesture);
+
     return () => {
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("gesturestart", handleGesture);
+      document.removeEventListener("gesturechange", handleGesture);
       data.subscription.unsubscribe();
     };
   }, [router, queryClient]);

@@ -581,11 +581,10 @@ export async function getStoredReels(): Promise<ReelItem[]> {
           )
       : Promise.resolve({ data: [], error: null }),
 
-    reelIds.length && userId
+    reelIds.length
       ? supabase
           .from("reel_saves")
-          .select("reel_id")
-          .eq("user_id", userId)
+          .select("reel_id, user_id")
           .in("reel_id", reelIds)
           .then(
             (res) => res,
@@ -617,8 +616,15 @@ export async function getStoredReels(): Promise<ReelItem[]> {
     commentCounts.set(c.reel_id, (commentCounts.get(c.reel_id) || 0) + 1);
   }
 
-  // Saved reels for current user
-  const saved = new Set((userSavesResult.data ?? []).map((x: { reel_id: string }) => x.reel_id));
+  // Calculate accurate saves count per reel and user hasSaved status
+  const saveCounts = new Map<string, number>();
+  const saved = new Set<string>();
+  for (const s of (userSavesResult.data ?? []) as Array<{ reel_id: string; user_id: string }>) {
+    saveCounts.set(s.reel_id, (saveCounts.get(s.reel_id) || 0) + 1);
+    if (userId && s.user_id === userId) {
+      saved.add(s.reel_id);
+    }
+  }
 
   const items = await Promise.all(
     rows.map(async (row) => {
@@ -635,8 +641,9 @@ export async function getStoredReels(): Promise<ReelItem[]> {
         }
       }
 
-      const likesCount = Math.max(row.likes_count ?? 0, likeCounts.get(row.id) ?? 0);
-      const commentsCount = Math.max(row.comments_count ?? 0, commentCounts.get(row.id) ?? 0);
+      const likesCount = likeCounts.has(row.id) ? likeCounts.get(row.id)! : (row.likes_count ?? 0);
+      const commentsCount = commentCounts.has(row.id) ? commentCounts.get(row.id)! : (row.comments_count ?? 0);
+      const savesCount = saveCounts.has(row.id) ? saveCounts.get(row.id)! : (row.saves_count ?? 0);
 
       const item: ReelItem = {
         id: row.id,
@@ -653,10 +660,10 @@ export async function getStoredReels(): Promise<ReelItem[]> {
         likesCount,
         commentsCount,
         sharesCount: row.shares_count ?? cached?.sharesCount ?? 0,
-        savesCount: row.saves_count ?? cached?.savesCount ?? 0,
+        savesCount,
         viewsCount: row.views_count ?? cached?.viewsCount ?? 0,
-        hasLiked: liked.has(row.id) || cached?.hasLiked || false,
-        hasSaved: saved.has(row.id) || cached?.hasSaved || false,
+        hasLiked: Boolean(userId && liked.has(row.id)),
+        hasSaved: Boolean(userId && saved.has(row.id)),
         isFollowing: false,
         createdAt: row.created_at,
         tags: row.tags ?? cached?.tags ?? [],
@@ -745,6 +752,13 @@ export async function toggleReelLike(
 
   const finalCount = typeof count === "number" ? count : nextHasLiked ? 1 : 0;
 
+  // Direct sync update to reels counter
+  void supabase
+    .from("reels")
+    .update({ likes_count: finalCount })
+    .eq("id", reelId)
+    .then(() => {});
+
   const cached = sessionReelsCache.get(reelId);
   if (cached) {
     cached.hasLiked = nextHasLiked;
@@ -756,7 +770,9 @@ export async function toggleReelLike(
   return { hasLiked: nextHasLiked, likesCount: finalCount, ...(cached ? { reel: cached } : {}) };
 }
 
-export async function toggleReelSave(reelId: string): Promise<boolean> {
+export async function toggleReelSave(
+  reelId: string,
+): Promise<{ hasSaved: boolean; savesCount: number }> {
   const userId = await currentUserId();
 
   const { data: existing, error: readError } = await supabase
@@ -792,15 +808,30 @@ export async function toggleReelSave(reelId: string): Promise<boolean> {
     nextSaved = true;
   }
 
+  // Fetch verified saves count across all users
+  const { count } = await supabase
+    .from("reel_saves")
+    .select("reel_id", { count: "exact", head: true })
+    .eq("reel_id", reelId);
+
+  const finalCount = typeof count === "number" ? count : nextSaved ? 1 : 0;
+
+  // Direct sync update to reels counter
+  void supabase
+    .from("reels")
+    .update({ saves_count: finalCount })
+    .eq("id", reelId)
+    .then(() => {});
+
   const cached = sessionReelsCache.get(reelId);
   if (cached) {
     cached.hasSaved = nextSaved;
-    cached.savesCount = Math.max(0, cached.savesCount + (nextSaved ? 1 : -1));
+    cached.savesCount = finalCount;
     sessionReelsCache.set(reelId, { ...cached });
   }
 
   notifyUpdated();
-  return nextSaved;
+  return { hasSaved: nextSaved, savesCount: finalCount };
 }
 
 export async function incrementReelShare(reelId: string): Promise<number> {
@@ -937,7 +968,7 @@ export async function getSavedReels(): Promise<ReelItem[]> {
 
   const creatorIds = reelRows.map((r) => r.creator_id).filter(Boolean);
 
-  const [profilesRes, allLikesRes, allCommentsRes] = await Promise.all([
+  const [profilesRes, allLikesRes, allCommentsRes, allSavesRes] = await Promise.all([
     creatorIds.length
       ? supabase
           .from("profiles")
@@ -973,6 +1004,17 @@ export async function getSavedReels(): Promise<ReelItem[]> {
           return { data: [] };
         },
       ),
+    supabase
+      .from("reel_saves")
+      .select("reel_id")
+      .in("reel_id", reelIds)
+      .then(
+        (res) => res,
+        (err: unknown) => {
+          console.warn("Could not load saves for saved reels:", err);
+          return { data: [] };
+        },
+      ),
   ]);
 
   const profilesMap = new Map((profilesRes.data ?? []).map((p) => [p.id, p]));
@@ -988,6 +1030,10 @@ export async function getSavedReels(): Promise<ReelItem[]> {
   const commentCounts = new Map<string, number>();
   for (const c of allCommentsRes.data ?? []) {
     commentCounts.set(c.reel_id, (commentCounts.get(c.reel_id) || 0) + 1);
+  }
+  const saveCounts = new Map<string, number>();
+  for (const s of allSavesRes.data ?? []) {
+    saveCounts.set(s.reel_id, (saveCounts.get(s.reel_id) || 0) + 1);
   }
 
   const byId = new Map(reelRows.map((r) => [r.id, r]));
@@ -1012,10 +1058,10 @@ export async function getSavedReels(): Promise<ReelItem[]> {
       storagePath: row.video_url,
       caption: row.caption ?? "",
       audioTitle: row.audio_title ?? undefined,
-      likesCount: Math.max(row.likes_count ?? 0, likeCounts.get(row.id) ?? 0),
-      commentsCount: Math.max(row.comments_count ?? 0, commentCounts.get(row.id) ?? 0),
+      likesCount: likeCounts.has(row.id) ? likeCounts.get(row.id)! : (row.likes_count ?? 0),
+      commentsCount: commentCounts.has(row.id) ? commentCounts.get(row.id)! : (row.comments_count ?? 0),
       sharesCount: row.shares_count ?? 0,
-      savesCount: row.saves_count ?? 1,
+      savesCount: saveCounts.has(row.id) ? saveCounts.get(row.id)! : (row.saves_count ?? 1),
       viewsCount: row.views_count ?? 0,
       hasLiked: userLikes.has(row.id),
       hasSaved: true,
@@ -1043,10 +1089,24 @@ export async function removeSavedReel(reelId: string): Promise<void> {
     message(error, "Could not remove saved reel.");
   }
 
+  // Fetch verified saves count across all users
+  const { count } = await supabase
+    .from("reel_saves")
+    .select("reel_id", { count: "exact", head: true })
+    .eq("reel_id", reelId);
+
+  const finalCount = typeof count === "number" ? count : 0;
+
+  void supabase
+    .from("reels")
+    .update({ saves_count: finalCount })
+    .eq("id", reelId)
+    .then(() => {});
+
   const cached = sessionReelsCache.get(reelId);
   if (cached) {
     cached.hasSaved = false;
-    cached.savesCount = Math.max(0, cached.savesCount - 1);
+    cached.savesCount = finalCount;
     sessionReelsCache.set(reelId, { ...cached });
   }
 
@@ -1296,16 +1356,23 @@ export async function addReelComment(
     }
   }
 
-  // Direct fallback increment for reels counter
+  // Fetch verified comments count
+  const { count } = await supabase
+    .from("reel_comments")
+    .select("id", { count: "exact", head: true })
+    .eq("reel_id", reelId);
+
+  const finalCount = typeof count === "number" ? count : (sessionReelsCache.get(reelId)?.commentsCount ?? 0) + 1;
+
   void supabase
     .from("reels")
-    .update({ comments_count: (sessionReelsCache.get(reelId)?.commentsCount ?? 0) + 1 })
+    .update({ comments_count: finalCount })
     .eq("id", reelId)
     .then(() => {});
 
   const cached = sessionReelsCache.get(reelId);
   if (cached) {
-    cached.commentsCount = cached.commentsCount + 1;
+    cached.commentsCount = finalCount;
     sessionReelsCache.set(reelId, { ...cached });
   }
 
@@ -1322,6 +1389,156 @@ export async function addReelComment(
     createdAt,
     reactionsCount: 0,
     hasReacted: false,
+  };
+}
+
+export async function deleteReelComment(commentId: string, reelId: string): Promise<void> {
+  const userId = await currentUserId();
+
+  const { error } = await supabase
+    .from("reel_comments")
+    .delete()
+    .eq("id", commentId)
+    .eq("author_id", userId);
+
+  if (error) {
+    message(error, "Could not delete comment.");
+  }
+
+  // Fetch verified comments count
+  const { count } = await supabase
+    .from("reel_comments")
+    .select("id", { count: "exact", head: true })
+    .eq("reel_id", reelId);
+
+  const finalCount = typeof count === "number" ? count : Math.max(0, (sessionReelsCache.get(reelId)?.commentsCount ?? 1) - 1);
+
+  void supabase
+    .from("reels")
+    .update({ comments_count: finalCount })
+    .eq("id", reelId)
+    .then(() => {});
+
+  const cached = sessionReelsCache.get(reelId);
+  if (cached) {
+    cached.commentsCount = finalCount;
+    sessionReelsCache.set(reelId, { ...cached });
+  }
+
+  notifyUpdated();
+}
+
+export interface ReelEngagementCallbacks {
+  onLikesCountChange?: (count: number) => void;
+  onCommentsCountChange?: (count: number) => void;
+  onSavesCountChange?: (count: number) => void;
+  onCommentInserted?: (commentId: string) => void;
+  onCommentDeleted?: (commentId: string) => void;
+}
+
+export function subscribeToReelEngagement(
+  reelId: string,
+  callbacks: ReelEngagementCallbacks,
+): () => void {
+  if (typeof supabase.channel !== "function") {
+    return () => {};
+  }
+
+  const channelName = `reel_engagement_${reelId}_${Math.random().toString(36).slice(2, 8)}`;
+  const channel = supabase
+    .channel(channelName)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "reel_likes",
+        filter: `reel_id=eq.${reelId}`,
+      },
+      async () => {
+        try {
+          const { count } = await supabase
+            .from("reel_likes")
+            .select("reel_id", { count: "exact", head: true })
+            .eq("reel_id", reelId);
+          if (typeof count === "number") {
+            callbacks.onLikesCountChange?.(count);
+            const cached = sessionReelsCache.get(reelId);
+            if (cached) {
+              cached.likesCount = count;
+              sessionReelsCache.set(reelId, { ...cached });
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to update realtime like count:", e);
+        }
+      },
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "reel_saves",
+        filter: `reel_id=eq.${reelId}`,
+      },
+      async () => {
+        try {
+          const { count } = await supabase
+            .from("reel_saves")
+            .select("reel_id", { count: "exact", head: true })
+            .eq("reel_id", reelId);
+          if (typeof count === "number") {
+            callbacks.onSavesCountChange?.(count);
+            const cached = sessionReelsCache.get(reelId);
+            if (cached) {
+              cached.savesCount = count;
+              sessionReelsCache.set(reelId, { ...cached });
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to update realtime save count:", e);
+        }
+      },
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "reel_comments",
+        filter: `reel_id=eq.${reelId}`,
+      },
+      async (payload) => {
+        try {
+          const { count } = await supabase
+            .from("reel_comments")
+            .select("id", { count: "exact", head: true })
+            .eq("reel_id", reelId);
+          if (typeof count === "number") {
+            callbacks.onCommentsCountChange?.(count);
+            const cached = sessionReelsCache.get(reelId);
+            if (cached) {
+              cached.commentsCount = count;
+              sessionReelsCache.set(reelId, { ...cached });
+            }
+          }
+          if (payload.eventType === "INSERT") {
+            const newRecord = payload.new as { id?: string };
+            callbacks.onCommentInserted?.(newRecord?.id ?? "");
+          } else if (payload.eventType === "DELETE") {
+            const oldRecord = payload.old as { id?: string };
+            callbacks.onCommentDeleted?.(oldRecord?.id ?? "");
+          }
+        } catch (e) {
+          console.warn("Failed to update realtime comment count:", e);
+        }
+      },
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
   };
 }
 

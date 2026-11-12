@@ -48,6 +48,18 @@ export function AppShell() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [pendingRequests, setPendingRequests] = useState(0);
+  const [isInActiveChat, setIsInActiveChat] = useState(false);
+
+  useEffect(() => {
+    const handleActiveChat = (e: Event) => {
+      const customEvent = e as CustomEvent<{ active: boolean }>;
+      setIsInActiveChat(Boolean(customEvent.detail?.active));
+    };
+    window.addEventListener("vidalore:active-chat-changed", handleActiveChat as EventListener);
+    return () => {
+      window.removeEventListener("vidalore:active-chat-changed", handleActiveChat as EventListener);
+    };
+  }, []);
 
   function syncSocialCounters() {
     const rel = getStoredRelationships();
@@ -259,64 +271,66 @@ export function AppShell() {
       </aside>
 
       {/* MOBILE TOP HEADER */}
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur-md md:hidden">
-        <Link to="/home" className="flex items-center">
-          <Logo size="sm" />
-        </Link>
-
-        <div className="flex items-center gap-1.5">
-          <Link
-            to="/explore"
-            className="rounded-lg p-2 text-muted-foreground hover:text-[#E91E63] hover:bg-secondary transition-colors"
-            aria-label="Search and explore"
-          >
-            <Search className="h-5 w-5" />
+      {!isInActiveChat && (
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur-md md:hidden">
+          <Link to="/home" className="flex items-center">
+            <Logo size="sm" />
           </Link>
 
-          <button
-            type="button"
-            onClick={() => setNotificationsOpen(true)}
-            className="relative rounded-lg p-2 text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Notifications"
-          >
-            <Bell className="h-5 w-5" />
-            {unreadNotifs > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-[#E91E63] text-[10px] leading-none font-bold text-white ring-2 ring-background">
-                {unreadNotifs > 99 ? "99+" : unreadNotifs}
-              </span>
-            )}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <Link
+              to="/explore"
+              className="rounded-lg p-2 text-muted-foreground hover:text-[#E91E63] hover:bg-secondary transition-colors"
+              aria-label="Search and explore"
+            >
+              <Search className="h-5 w-5" />
+            </Link>
 
-          <button
-            type="button"
-            onClick={() => setFriendsOpen(true)}
-            className="relative rounded-lg p-2 text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Network"
-          >
-            <Users className="h-5 w-5" />
-            {pendingRequests > 0 && (
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#E91E63] ring-2 ring-background" />
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={() => setNotificationsOpen(true)}
+              className="relative rounded-lg p-2 text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Notifications"
+            >
+              <Bell className="h-5 w-5" />
+              {unreadNotifs > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-[#E91E63] text-[10px] leading-none font-bold text-white ring-2 ring-background">
+                  {unreadNotifs > 99 ? "99+" : unreadNotifs}
+                </span>
+              )}
+            </button>
 
-          <Link
-            to="/points"
-            className="flex items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:border-[#E91E63]/40 transition-colors"
-          >
-            <Sparkles className="h-3 w-3 text-[#E91E63]" />
-            <span>{me?.points_balance ?? "—"}</span>
-          </Link>
+            <button
+              type="button"
+              onClick={() => setFriendsOpen(true)}
+              className="relative rounded-lg p-2 text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Network"
+            >
+              <Users className="h-5 w-5" />
+              {pendingRequests > 0 && (
+                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#E91E63] ring-2 ring-background" />
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen(true)}
-            className="rounded-lg p-2 text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Open navigation menu"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-        </div>
-      </header>
+            <Link
+              to="/points"
+              className="flex items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-foreground hover:border-[#E91E63]/40 transition-colors"
+            >
+              <Sparkles className="h-3 w-3 text-[#E91E63]" />
+              <span>{me?.points_balance ?? "—"}</span>
+            </Link>
+
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="rounded-lg p-2 text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Open navigation menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          </div>
+        </header>
+      )}
 
       {/* MOBILE SLIDE-OUT MENU */}
       {mobileMenuOpen && (
@@ -509,73 +523,75 @@ export function AppShell() {
       )}
 
       {/* MAIN CONTENT AREA */}
-      <main className="pb-20 md:ml-64 md:pb-8">
+      <main className={isInActiveChat ? "pb-0 md:ml-64 md:pb-8" : "pb-20 md:ml-64 md:pb-8"}>
         <Outlet />
       </main>
 
       {/* MOBILE BOTTOM NAVIGATION (5 Destinations: Home, Explore, Reels, Inbox, Profile) */}
-      <nav
-        aria-label="Mobile Navigation"
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 items-center border-t border-border bg-background/95 px-2 py-1.5 backdrop-blur-lg md:hidden"
-      >
-        {/* 1. Home */}
-        <Link
-          to="/home"
-          className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
-          activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
+      {!isInActiveChat && (
+        <nav
+          aria-label="Mobile Navigation"
+          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 items-center border-t border-border bg-background/95 px-2 py-1.5 backdrop-blur-lg md:hidden"
         >
-          <Home className="h-5 w-5" />
-          <span>Home</span>
-        </Link>
-
-        {/* 2. Explore */}
-        <Link
-          to="/explore"
-          className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
-          activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
-        >
-          <Compass className="h-5 w-5" />
-          <span>Explore</span>
-        </Link>
-
-        {/* 3. Reels */}
-        <Link
-          to="/reels"
-          className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
-          activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
-        >
-          <Clapperboard className="h-5 w-5" />
-          <span>Reels</span>
-        </Link>
-
-        {/* 4. Inbox */}
-        <Link
-          to="/messages"
-          className="relative flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
-          activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
-        >
-          <MessageSquare className="h-5 w-5" />
-          <span>Inbox</span>
-        </Link>
-
-        {/* 5. Profile */}
-        {me ? (
+          {/* 1. Home */}
           <Link
-            to="/u/$username"
-            params={{ username: me.username }}
+            to="/home"
             className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
             activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
           >
-            <UserAvatar profile={me} className="h-5 w-5 ring-1 ring-border" />
-            <span>Profile</span>
+            <Home className="h-5 w-5" />
+            <span>Home</span>
           </Link>
-        ) : (
-          <span className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground">
-            <User className="h-5 w-5" />
-            <span>Profile</span>
-          </span>
-        )}
-      </nav>
+
+          {/* 2. Explore */}
+          <Link
+            to="/explore"
+            className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
+            activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
+          >
+            <Compass className="h-5 w-5" />
+            <span>Explore</span>
+          </Link>
+
+          {/* 3. Reels */}
+          <Link
+            to="/reels"
+            className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
+            activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
+          >
+            <Clapperboard className="h-5 w-5" />
+            <span>Reels</span>
+          </Link>
+
+          {/* 4. Inbox */}
+          <Link
+            to="/messages"
+            className="relative flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
+            activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
+          >
+            <MessageSquare className="h-5 w-5" />
+            <span>Inbox</span>
+          </Link>
+
+          {/* 5. Profile */}
+          {me ? (
+            <Link
+              to="/u/$username"
+              params={{ username: me.username }}
+              className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground"
+              activeProps={{ className: "text-[#E91E63] [&_svg]:text-[#E91E63] font-semibold" }}
+            >
+              <UserAvatar profile={me} className="h-5 w-5 ring-1 ring-border" />
+              <span>Profile</span>
+            </Link>
+          ) : (
+            <span className="flex flex-col items-center justify-center gap-0.5 py-1 text-[0.65rem] text-muted-foreground">
+              <User className="h-5 w-5" />
+              <span>Profile</span>
+            </span>
+          )}
+        </nav>
+      )}
 
       {/* SOCIAL MODALS */}
       <NotificationsModal

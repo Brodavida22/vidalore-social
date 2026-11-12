@@ -91,8 +91,45 @@ function formatDateSeparator(dateString: string): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
+function useVisualViewportHeight() {
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleResize = () => {
+      if (window.visualViewport) {
+        setViewportHeight(window.visualViewport.height);
+      } else {
+        setViewportHeight(window.innerHeight);
+      }
+    };
+
+    handleResize();
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", handleResize);
+      window.visualViewport.addEventListener("scroll", handleResize);
+    } else {
+      window.addEventListener("resize", handleResize);
+    }
+
+    return () => {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", handleResize);
+        window.visualViewport.removeEventListener("scroll", handleResize);
+      } else {
+        window.removeEventListener("resize", handleResize);
+      }
+    };
+  }, []);
+
+  return viewportHeight;
+}
+
 function MessagesPage() {
   const queryClient = useQueryClient();
+  const viewportHeight = useVisualViewportHeight();
 
   const [selectedConversation, setSelectedConversation] = useState<ConversationListItem | null>(
     null,
@@ -399,24 +436,130 @@ function MessagesPage() {
     void markConversationAsRead(selectedId);
   }, [selectedId, currentUserId, messages.length, queryClient]);
 
-  /* 6. SCROLL TO BOTTOM LOGIC */
+  /* 6. INTELLIGENT SCROLL TO BOTTOM LOGIC */
+  const isNearBottomRef = useRef(true);
+  const prevMessagesCountRef = useRef(0);
+  const prevSelectedIdRef = useRef<string | null>(null);
+
   const scrollToBottom = (smooth = true) => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
     }
   };
 
-  useEffect(() => {
-    if (messages.length > 0) {
-      scrollToBottom(false);
-    }
-  }, [selectedId, messages.length]);
-
   const handleScroll = () => {
     const el = messagesContainerRef.current;
     if (!el) return;
-    const isUp = el.scrollHeight - el.scrollTop - el.clientHeight > 180;
-    setShowScrollBottomBtn(isUp);
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const isNearBottom = distanceToBottom < 100;
+    isNearBottomRef.current = isNearBottom;
+    setShowScrollBottomBtn(!isNearBottom);
+  };
+
+  useEffect(() => {
+    if (!selectedId) return;
+
+    // Reset scroll when opening a different conversation
+    if (prevSelectedIdRef.current !== selectedId) {
+      prevSelectedIdRef.current = selectedId;
+      prevMessagesCountRef.current = messages.length;
+      isNearBottomRef.current = true;
+      setShowScrollBottomBtn(false);
+      requestAnimationFrame(() => {
+        scrollToBottom(false);
+      });
+      return;
+    }
+
+    // When message count changes in current conversation
+    if (messages.length > prevMessagesCountRef.current) {
+      const lastMsg = messages[messages.length - 1];
+      const isMine = lastMsg?.sender_id === currentUserId;
+
+      // Only auto-scroll if message was sent by me OR user was already at the bottom reading
+      if (isMine || isNearBottomRef.current) {
+        requestAnimationFrame(() => {
+          scrollToBottom(true);
+        });
+      }
+      prevMessagesCountRef.current = messages.length;
+    }
+  }, [selectedId, messages, currentUserId]);
+
+  // Keep latest message visible if user was reading at the bottom when mobile keyboard opens
+  useEffect(() => {
+    if (viewportHeight && isNearBottomRef.current && selectedConversation) {
+      requestAnimationFrame(() => {
+        scrollToBottom(false);
+      });
+    }
+  }, [viewportHeight, selectedConversation]);
+
+  // Active chat notification for mobile shell
+  useEffect(() => {
+    const isActive = Boolean(selectedConversation);
+    if (isActive) {
+      document.body.setAttribute("data-active-chat", "true");
+    } else {
+      document.body.removeAttribute("data-active-chat");
+    }
+
+    window.dispatchEvent(
+      new CustomEvent("vidalore:active-chat-changed", {
+        detail: { active: isActive },
+      }),
+    );
+
+    return () => {
+      document.body.removeAttribute("data-active-chat");
+      window.dispatchEvent(
+        new CustomEvent("vidalore:active-chat-changed", {
+          detail: { active: false },
+        }),
+      );
+    };
+  }, [selectedConversation]);
+
+  // Lock page-level body scroll on mobile during active conversation to avoid layout jumping
+  useEffect(() => {
+    if (!selectedConversation) return;
+
+    const originalOverflow = document.body.style.overflow;
+    const originalOverscroll = document.body.style.overscrollBehavior;
+
+    if (window.innerWidth < 768) {
+      document.body.style.overflow = "hidden";
+      document.body.style.overscrollBehavior = "none";
+    }
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.overscrollBehavior = originalOverscroll;
+    };
+  }, [selectedConversation]);
+
+  // Handle Android / browser back button to return to chat list if active chat is open
+  useEffect(() => {
+    if (!selectedConversation) return;
+
+    window.history.pushState({ vidaloreChat: selectedConversation.id }, "");
+
+    const handlePopState = () => {
+      setSelectedConversation(null);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [selectedConversation]);
+
+  const handleBackFromChat = () => {
+    if (typeof window !== "undefined" && window.history.state?.vidaloreChat) {
+      window.history.back();
+    } else {
+      setSelectedConversation(null);
+    }
   };
 
   // Smooth scroll and flash message when quoted reply is clicked
@@ -643,9 +786,19 @@ function MessagesPage() {
   };
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-90px)] max-w-7xl flex-col p-2 sm:p-4 md:h-[calc(100dvh-40px)] md:p-6">
-      {/* TOP BAR / HEADER */}
-      <div className="mb-3 flex items-center justify-between">
+    <div
+      className={`mx-auto flex max-w-7xl flex-col ${
+        selectedConversation
+          ? "p-0 md:p-6 h-[100dvh] md:h-[calc(100dvh-40px)]"
+          : "p-2 sm:p-4 md:p-6 h-[calc(100dvh-75px)] md:h-[calc(100dvh-40px)]"
+      }`}
+    >
+      {/* TOP BAR / HEADER (Hidden on mobile when conversation is active) */}
+      <div
+        className={`${
+          selectedConversation ? "hidden md:flex" : "flex"
+        } mb-3 items-center justify-between`}
+      >
         <div className="flex items-center gap-3">
           <div className="rounded-xl bg-[#E91E63]/10 p-2.5 text-[#E91E63]">
             <MessageCircle size={22} />
@@ -682,7 +835,13 @@ function MessagesPage() {
       </div>
 
       {/* MAIN CONTAINER */}
-      <div className="grid min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card md:grid-cols-[340px_1fr] shadow-sm">
+      <div
+        className={`grid min-h-0 flex-1 overflow-hidden bg-card shadow-sm ${
+          selectedConversation
+            ? "border-0 rounded-none md:rounded-2xl md:border md:border-border md:grid-cols-[340px_1fr]"
+            : "rounded-2xl border border-border md:grid-cols-[340px_1fr]"
+        }`}
+      >
         {/* ================= LEFT SIDEBAR ================= */}
         <aside
           className={`${
@@ -934,8 +1093,18 @@ function MessagesPage() {
         {/* ================= RIGHT CHAT WINDOW ================= */}
         <section
           className={`${
-            selectedConversation ? "flex" : "hidden md:flex"
-          } min-h-0 flex-col bg-background/50 relative`}
+            selectedConversation
+              ? "fixed inset-0 z-40 flex flex-col bg-background md:relative md:inset-auto md:z-auto md:h-full md:bg-background/50"
+              : "hidden md:flex min-h-0 flex-col bg-background/50 relative"
+          }`}
+          style={
+            selectedConversation &&
+            viewportHeight &&
+            typeof window !== "undefined" &&
+            window.innerWidth < 768
+              ? { height: `${viewportHeight}px`, maxHeight: `${viewportHeight}px` }
+              : undefined
+          }
         >
           {!selectedConversation ? (
             /* Empty State */
@@ -976,7 +1145,7 @@ function MessagesPage() {
                 isOnline={isDirectPeerOnline}
                 typingUsers={activeTypingNames}
                 isOwner={currentMemberRole === "owner"}
-                onBack={() => setSelectedConversation(null)}
+                onBack={handleBackFromChat}
                 onOpenDetails={() => setGroupDetailsOpen(true)}
                 onClearChat={handleClearChat}
                 onDeleteConversation={handleDeleteConversation}
@@ -988,7 +1157,7 @@ function MessagesPage() {
               <div
                 ref={messagesContainerRef}
                 onScroll={handleScroll}
-                className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4"
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-4 space-y-4"
               >
                 {messagesQuery.isLoading && (
                   <div className="py-12 flex flex-col items-center justify-center gap-2 text-muted-foreground">
@@ -1086,7 +1255,7 @@ function MessagesPage() {
                 <button
                   type="button"
                   onClick={() => scrollToBottom(true)}
-                  className="absolute bottom-20 right-6 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-[#E91E63] text-white shadow-lg hover:bg-[#C2185B] transition"
+                  className="absolute bottom-16 right-4 sm:bottom-20 sm:right-6 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-[#E91E63] text-white shadow-xl hover:bg-[#C2185B] transition active:scale-95"
                   title="Jump to latest"
                 >
                   <ChevronDown size={18} />
