@@ -149,9 +149,9 @@ describe("Video Upload and Playback Utilities", () => {
       // Must NOT contain select= query param which triggers PostgreSQL SELECT policy & is_blocked
       expect(postRequestUrl).not.toContain("select=");
       expect(postRequestBody).toBeDefined();
-      expect(postRequestBody?.id).toBeDefined();
-      expect(postRequestBody?.creator_id).toBe(testUid);
-      expect(reel.id).toBe(postRequestBody?.id);
+      expect(postRequestBody?.["id"]).toBeDefined();
+      expect(postRequestBody?.["creator_id"]).toBe(testUid);
+      expect(reel.id).toBe(postRequestBody?.["id"]);
     } finally {
       getSessionSpy.mockRestore();
       globalThis.fetch = origFetch;
