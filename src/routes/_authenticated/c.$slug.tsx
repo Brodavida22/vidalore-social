@@ -96,7 +96,7 @@ function CommunityDetailPage() {
 
   const postMutation = useMutation({
     mutationFn: () =>
-      createCommunityPost(community!.id, postContent.trim()),
+      createCommunityPost({ communityId: community!.id, content: postContent.trim() }),
     onSuccess: async () => {
       setPostContent("");
       await queryClient.invalidateQueries({

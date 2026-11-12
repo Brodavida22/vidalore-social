@@ -53,8 +53,9 @@ function isMediaError(val: unknown): boolean {
   if (!val) return false;
   if (typeof val === "object") {
     const obj = val as Record<string, unknown>;
-    if (obj.target && typeof obj.target === "object") {
-      const tag = String((obj.target as Record<string, unknown>).tagName || "").toUpperCase();
+    const target = obj["target"];
+    if (target && typeof target === "object") {
+      const tag = String((target as Record<string, unknown>)["tagName"] || "").toUpperCase();
       if (tag === "VIDEO" || tag === "AUDIO" || tag === "SOURCE") return true;
     }
   }

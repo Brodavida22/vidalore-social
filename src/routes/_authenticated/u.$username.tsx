@@ -266,7 +266,9 @@ function ProfilePage() {
     );
   }
 
-  const joined = new Date(profile.created_at).toLocaleDateString(undefined, {
+  const viewedProfile = profile;
+
+  const joined = new Date(viewedProfile.created_at).toLocaleDateString(undefined, {
     month: "long",
     year: "numeric",
   });
@@ -277,7 +279,7 @@ function ProfilePage() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `@${profile.username} on VIDALORE SOCIAL`,
+          title: `@${viewedProfile.username} on VIDALORE SOCIAL`,
           url,
         });
       } catch {
@@ -296,16 +298,16 @@ function ProfilePage() {
   async function handleFollowToggle() {
     try {
       if (isFollowing) {
-        await unfollowUser(profile.id);
-        toast.success(`Unfollowed @${profile.username}`);
+        await unfollowUser(viewedProfile.id);
+        toast.success(`Unfollowed @${viewedProfile.username}`);
       } else {
-        await followUser(profile.id);
-        toast.success(`Following @${profile.username}`);
+        await followUser(viewedProfile.id);
+        toast.success(`Following @${viewedProfile.username}`);
       }
 
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["is-following", profile.id],
+          queryKey: ["is-following", viewedProfile.id],
         }),
         queryClient.invalidateQueries({
           queryKey: ["follow-counts"],
@@ -353,27 +355,27 @@ function ProfilePage() {
 
   async function handleFriendRequest() {
     try {
-      await sendSupabaseFriendRequest(profile.id);
+      await sendSupabaseFriendRequest(viewedProfile.id);
       await refetchFriendStatus();
 
-      toast.success(`Friend request sent to @${profile.username}`);
+      toast.success(`Friend request sent to @${viewedProfile.username}`);
     } catch {
-      sendFriendRequest(profile.id);
+      sendFriendRequest(viewedProfile.id);
       setRelState(getStoredRelationships());
 
-      toast.success(`Friend request sent to @${profile.username}`);
+      toast.success(`Friend request sent to @${viewedProfile.username}`);
     }
   }
 
   async function handleBlockToggle() {
     try {
       if (isUserBlocked) {
-        await unblockUser(profile.id);
-        toast.success(`Unblocked @${profile.username}`);
+        await unblockUser(viewedProfile.id);
+        toast.success(`Unblocked @${viewedProfile.username}`);
       } else {
-        await blockUser(profile.id);
+        await blockUser(viewedProfile.id);
 
-        toast.success(`Blocked @${profile.username}`, {
+        toast.success(`Blocked @${viewedProfile.username}`, {
           description: "Their posts and interactions are now hidden from your feeds.",
         });
       }
@@ -394,8 +396,8 @@ function ProfilePage() {
     <div className="mx-auto max-w-3xl pb-16 px-3 sm:px-4">
       {/* Cover Photo */}
       <div className="relative h-40 sm:h-52 overflow-hidden bg-secondary md:mt-4 md:rounded-xl border border-border shadow-sm">
-        {profile.cover_url ? (
-          <img src={profile.cover_url} alt="" className="h-full w-full object-cover" />
+        {viewedProfile.cover_url ? (
+          <img src={viewedProfile.cover_url} alt="" className="h-full w-full object-cover" />
         ) : (
           <div className="h-full w-full bg-[#111111] flex items-center justify-center">
             <span className="font-display text-2xl font-black tracking-widest text-white/20 select-none">
@@ -410,7 +412,7 @@ function ProfilePage() {
         <div className="-mt-12 sm:-mt-16 flex items-end justify-between gap-3">
           <div className="relative">
             <UserAvatar
-              profile={profile}
+              profile={viewedProfile}
               className="h-24 w-24 sm:h-28 sm:w-28 border-4 border-background text-2xl sm:text-3xl shadow-md ring-2 ring-[#E91E63]"
             />
           </div>
@@ -515,8 +517,8 @@ function ProfilePage() {
                     >
                       <UserX className="h-3.5 w-3.5 mr-2" />
                       {isUserBlocked
-                        ? `Unblock @${profile.username}`
-                        : `Block @${profile.username}`}
+                        ? `Unblock @${viewedProfile.username}`
+                        : `Block @${viewedProfile.username}`}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -529,25 +531,25 @@ function ProfilePage() {
         <div className="mt-3">
           <div className="flex items-center gap-1.5">
             <h1 className="text-xl sm:text-2xl font-bold text-foreground">
-              {profile.display_name || profile.username}
+              {viewedProfile.display_name || viewedProfile.username}
             </h1>
 
-            {profile.points_balance > 100 && <BadgeCheck className="h-4 w-4 text-[#E91E63]" />}
+            {viewedProfile.points_balance > 100 && <BadgeCheck className="h-4 w-4 text-[#E91E63]" />}
           </div>
 
-          <p className="text-xs text-muted-foreground">@{profile.username}</p>
+          <p className="text-xs text-muted-foreground">@{viewedProfile.username}</p>
 
-          {profile.bio && (
+          {viewedProfile.bio && (
             <p className="mt-2 text-xs sm:text-sm text-foreground whitespace-pre-line leading-relaxed max-w-xl">
-              {profile.bio}
+              {viewedProfile.bio}
             </p>
           )}
 
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-            {profile.location && (
+            {viewedProfile.location && (
               <span className="flex items-center gap-1">
                 <MapPin className="h-3.5 w-3.5 text-[#E91E63]" />
-                {profile.location}
+                {viewedProfile.location}
               </span>
             )}
 
@@ -556,7 +558,7 @@ function ProfilePage() {
               Joined {joined}
             </span>
 
-            {profile.is_private && (
+            {viewedProfile.is_private && (
               <span className="flex items-center gap-1 text-[#E91E63]">
                 <Shield className="h-3.5 w-3.5" />
                 Private Account
@@ -571,7 +573,7 @@ function ProfilePage() {
             <div className="flex items-center gap-2 text-xs text-destructive font-medium">
               <UserX className="h-4 w-4 shrink-0" />
               <span>
-                You have blocked @{profile.username}. Their posts and activity are hidden.
+                You have blocked @{viewedProfile.username}. Their posts and activity are hidden.
               </span>
             </div>
 
@@ -608,7 +610,7 @@ function ProfilePage() {
             }}
           />
 
-          <Stat label="Points" value={profile.points_balance.toString()} highlight />
+          <Stat label="Points" value={viewedProfile.points_balance.toString()} highlight />
         </div>
 
         {/* Profile Tabs */}
@@ -666,7 +668,7 @@ function ProfilePage() {
                   <p className="text-xs text-muted-foreground">
                     {isMe
                       ? "Publish your first post to appear here!"
-                      : `@${profile.username} hasn't published any posts.`}
+                      : `@${viewedProfile.username} hasn't published any posts.`}
                   </p>
                 </div>
               ) : (
@@ -748,7 +750,7 @@ function ProfilePage() {
                   <p className="font-semibold text-foreground text-sm">No tagged posts</p>
 
                   <p className="text-xs text-muted-foreground">
-                    Posts mentioning @{profile.username} will show here.
+                    Posts mentioning @{viewedProfile.username} will show here.
                   </p>
                 </div>
               ) : (
@@ -811,7 +813,7 @@ function ProfilePage() {
           {/* About Tab */}
           {activeTab === "about" && (
             <section className="rounded-xl p-5 space-y-3 border border-border bg-card shadow-sm">
-              <h2 className="text-base font-semibold text-foreground">About @{profile.username}</h2>
+              <h2 className="text-base font-semibold text-foreground">About @{viewedProfile.username}</h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div className="rounded-lg bg-secondary p-3 border border-border">
@@ -822,7 +824,7 @@ function ProfilePage() {
                 <div className="rounded-lg bg-secondary p-3 border border-border">
                   <p className="text-muted-foreground">Privacy</p>
                   <p className="font-semibold text-foreground mt-0.5">
-                    {profile.is_private ? "Private Account (Followers only)" : "Public Account"}
+                    {viewedProfile.is_private ? "Private Account (Followers only)" : "Public Account"}
                   </p>
                 </div>
 
@@ -834,7 +836,7 @@ function ProfilePage() {
                 <div className="rounded-lg bg-secondary p-3 border border-border">
                   <p className="text-muted-foreground">VIDA Points</p>
                   <p className="font-semibold text-[#E91E63] mt-0.5">
-                    {profile.points_balance} points
+                    {viewedProfile.points_balance} points
                   </p>
                 </div>
               </div>
@@ -949,9 +951,9 @@ function ProfilePage() {
       </Dialog>
 
       <ReportModal
-        targetId={profile.id}
+        targetId={viewedProfile.id}
         targetType="profile"
-        targetLabel={`@${profile.username}'s profile`}
+        targetLabel={`@${viewedProfile.username}'s profile`}
         open={reportOpen}
         onOpenChange={setReportOpen}
       />
