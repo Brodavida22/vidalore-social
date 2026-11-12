@@ -1,371 +1,232 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import {
-  Play,
-  Pause,
-  FileText,
-  Download,
-  Maximize2,
-  AlertCircle,
-  Loader2,
-  RefreshCw,
-} from "lucide-react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-const CHAT_MEDIA_BUCKET = "chat-media";
-const SIGNED_URL_TTL_SECONDS = 60 * 60;
+type MessageMediaRendererProps = {
+  messageType?: string | null;
+  mediaUrl?: string | null;
+  mediaName?: string | null;
+  isMine?: boolean;
+};
 
-function getChatMediaPath(value: string): string {
-  const raw = value.trim();
+const BUCKET = "chat-media";
+const WAVEFORM_BARS = [
+  10, 16, 23, 14, 30, 19, 37, 25, 15, 32, 22, 42, 27, 17, 35, 24,
+  44, 29, 18, 36, 25, 48, 31, 20, 39, 26, 45, 33, 17, 38, 24, 43,
+  29, 15, 34, 22, 46, 30, 18, 40, 26, 49, 32, 19, 37, 25, 43, 28,
+  16, 35, 23, 41, 27, 14, 33, 21, 39, 26, 45, 30, 18, 36, 24, 42,
+];
 
-  if (!raw || raw.startsWith("blob:")) {
-    throw new Error("This attachment has no permanent storage path. It may be an old local-only upload.");
-  }
-
-  // New messages store the stable storage object path directly.
-  if (!/^https?:\/\//i.test(raw)) return raw.replace(/^\/+/, "");
-
-  // Older messages may contain a Supabase signed/public URL. Extract its
-  // object path and issue a fresh signed URL for the private bucket.
-  const marker = `/storage/v1/object/`;
-  const markerIndex = raw.indexOf(marker);
-  if (markerIndex < 0) {
-    throw new Error("This attachment URL is not a supported chat-media URL.");
-  }
-
-  const afterMarker = raw.slice(markerIndex + marker.length);
-  const bucketPrefix = afterMarker.match(/^(?:sign|public)\/chat-media\//);
-  if (!bucketPrefix) {
-    throw new Error("This attachment does not belong to the chat-media bucket.");
-  }
-
-  const encodedPath = afterMarker.slice(bucketPrefix[0].length).split("?")[0];
-  try {
-    return decodeURIComponent(encodedPath);
-  } catch {
-    return encodedPath;
-  }
-}
-
-function formatSeconds(value: number): string {
+function formatTime(value: number): string {
   if (!Number.isFinite(value) || value < 0) return "0:00";
-  const total = Math.floor(value);
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const seconds = Math.floor(value);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function MessageMediaRenderer({
+function extractStoragePath(value: string): string | null {
+  if (!value || value.startsWith("blob:")) return null;
+  if (!/^https?:\/\//i.test(value)) return value.replace(/^\/+/, "");
+
+  try {
+    const url = new URL(value);
+    const marker = `/storage/v1/object/`;
+    const markerIndex = url.pathname.indexOf(marker);
+    if (markerIndex === -1) return null;
+    const tail = url.pathname.slice(markerIndex + marker.length);
+    const parts = tail.split("/");
+    if (parts[0] === "sign" || parts[0] === "public" || parts[0] === "authenticated") {
+      parts.shift();
+    }
+    const bucket = parts.shift();
+    if (bucket !== BUCKET) return null;
+    return parts.map((part) => decodeURIComponent(part)).join("/");
+  } catch {
+    return null;
+  }
+}
+
+async function resolveMediaUrl(value: string): Promise<string> {
+  if (/^https?:\/\//i.test(value) && !value.includes("/storage/v1/object/")) {
+    return value;
+  }
+  const path = extractStoragePath(value);
+  if (!path) {
+    if (value.startsWith("blob:")) {
+      throw new Error("This attachment is no longer available. Please ask the sender to upload it again.");
+    }
+    throw new Error("The attachment link is invalid.");
+  }
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 60);
+  if (error || !data?.signedUrl) throw new Error(error?.message || "Could not load this attachment.");
+  return data.signedUrl;
+}
+
+export default function MessageMediaRenderer({
   messageType,
   mediaUrl,
   mediaName,
-  isMine,
-}: {
-  messageType: string;
-  mediaUrl: string;
-  mediaName?: string | null;
-  isMine: boolean;
-}) {
-  const [imageModalOpen, setImageModalOpen] = useState(false);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [audioProgress, setAudioProgress] = useState(0);
-  const [audioDuration, setAudioDuration] = useState(0);
-  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+  isMine = false,
+}: MessageMediaRendererProps) {
   const [resolvedUrl, setResolvedUrl] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [mediaError, setMediaError] = useState("");
-  const [retryCount, setRetryCount] = useState(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const resolveRequestRef = useRef(0);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [audioError, setAudioError] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
-  const resolveMedia = useCallback(async () => {
-    const requestId = ++resolveRequestRef.current;
-    setIsLoading(true);
-    setMediaError("");
-    setResolvedUrl("");
-    setIsPlayingAudio(false);
-    setAudioProgress(0);
-    setAudioCurrentTime(0);
-    setAudioDuration(0);
+  const kind = (messageType || "").toLowerCase();
+  const isAudio = ["audio", "voice", "voice_note", "voicenote"].includes(kind);
+  const isImage = kind === "image" || /\.(jpe?g|png|gif|webp|avif)(\?|$)/i.test(mediaName || mediaUrl || "");
+  const isVideo = kind === "video" || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(mediaName || mediaUrl || "");
+  const isPdf = kind === "file" && /\.pdf$/i.test(mediaName || mediaUrl || "");
 
+  const loadMedia = useCallback(async () => {
+    if (!mediaUrl) {
+      setLoadError("Attachment unavailable.");
+      return;
+    }
+    setLoading(true);
+    setLoadError("");
     try {
-      const path = getChatMediaPath(mediaUrl);
-      const { data, error } = await supabase.storage
-        .from(CHAT_MEDIA_BUCKET)
-        .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
-
-      if (error) throw error;
-      if (!data?.signedUrl) throw new Error("The storage service did not return an attachment link.");
-
-      if (requestId === resolveRequestRef.current) {
-        setResolvedUrl(data.signedUrl);
-        setIsLoading(false);
-      }
+      const url = await resolveMediaUrl(mediaUrl);
+      setResolvedUrl(url);
     } catch (error) {
-      if (requestId === resolveRequestRef.current) {
-        setMediaError(
-          error instanceof Error ? error.message : "Unable to load this attachment.",
-        );
-        setIsLoading(false);
-      }
+      setLoadError(error instanceof Error ? error.message : "Could not load attachment.");
+    } finally {
+      setLoading(false);
     }
   }, [mediaUrl]);
 
   useEffect(() => {
-    void resolveMedia();
-    return () => {
-      resolveRequestRef.current += 1;
-    };
-  }, [resolveMedia, retryCount]);
-
-  const handleMediaError = () => {
-    // Refresh a signed link once automatically (for example, if an older
-    // signed URL has expired). A manual retry remains available if it fails.
-    if (retryCount === 0) {
-      setRetryCount(1);
-      return;
-    }
-    setMediaError("Unable to load attachment. Check your connection and try again.");
-    setIsLoading(false);
-  };
+    setResolvedUrl("");
+    setLoadError("");
+    setCurrentTime(0);
+    setDuration(0);
+    setPlaying(false);
+    setAudioError(false);
+    void loadMedia();
+  }, [loadMedia]);
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !resolvedUrl || messageType !== "audio") return;
-
-    const onTimeUpdate = () => {
-      const duration = audio.duration;
-      if (Number.isFinite(duration) && duration > 0) {
-        setAudioCurrentTime(Number.isFinite(audio.currentTime) ? audio.currentTime : 0);
-        setAudioProgress(Math.min(100, Math.max(0, (audio.currentTime / duration) * 100)));
-      }
-    };
-    const onLoadedMetadata = () => {
-      setAudioDuration(
-        Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0,
-      );
-    };
-    const onDurationChange = () => {
-      setAudioDuration(
-        Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0,
-      );
-    };
+    if (!audio) return;
+    const updateTime = () => setCurrentTime(Number.isFinite(audio.currentTime) ? audio.currentTime : 0);
+    const updateDuration = () => setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
     const onEnded = () => {
-      setIsPlayingAudio(false);
-      setAudioCurrentTime(0);
-      setAudioProgress(0);
+      setPlaying(false);
+      setCurrentTime(0);
     };
-    const onPlay = () => setIsPlayingAudio(true);
-    const onPause = () => setIsPlayingAudio(false);
-
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    audio.addEventListener("loadedmetadata", onLoadedMetadata);
-    audio.addEventListener("durationchange", onDurationChange);
-    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("timeupdate", updateTime);
+    audio.addEventListener("loadedmetadata", updateDuration);
+    audio.addEventListener("durationchange", updateDuration);
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
-
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("error", () => setAudioError(true));
     return () => {
-      audio.removeEventListener("timeupdate", onTimeUpdate);
-      audio.removeEventListener("loadedmetadata", onLoadedMetadata);
-      audio.removeEventListener("durationchange", onDurationChange);
-      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("timeupdate", updateTime);
+      audio.removeEventListener("loadedmetadata", updateDuration);
+      audio.removeEventListener("durationchange", updateDuration);
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("ended", onEnded);
     };
-  }, [resolvedUrl, messageType]);
+  }, [resolvedUrl]);
+
+  const progress = useMemo(
+    () => duration > 0 && Number.isFinite(duration) ? Math.min(1, Math.max(0, currentTime / duration)) : 0,
+    [currentTime, duration],
+  );
 
   const toggleAudio = async () => {
     const audio = audioRef.current;
-    if (!audio) return;
-    if (!audio.paused) {
+    if (!audio || !resolvedUrl) return;
+    if (audio.paused) {
+      if (duration > 0 && currentTime >= duration) audio.currentTime = 0;
+      try {
+        await audio.play();
+      } catch {
+        setAudioError(true);
+      }
+    } else {
       audio.pause();
-      return;
-    }
-    try {
-      await audio.play();
-    } catch {
-      handleMediaError();
     }
   };
 
-  const seekAudio = (value: number) => {
+  const seekAudio = (event: MouseEvent<HTMLDivElement>) => {
     const audio = audioRef.current;
-    if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
-    const nextTime = Math.min(audio.duration, Math.max(0, value));
-    audio.currentTime = nextTime;
-    setAudioCurrentTime(nextTime);
-    setAudioProgress((nextTime / audio.duration) * 100);
+    if (!audio || !Number.isFinite(duration) || duration <= 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    audio.currentTime = ratio * duration;
+    setCurrentTime(audio.currentTime);
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 rounded-xl bg-secondary/70 p-3 text-xs text-muted-foreground">
-        <Loader2 size={16} className="animate-spin" />
-        <span>Loading attachment…</span>
-      </div>
-    );
+  if (!mediaUrl) return null;
+
+  if (loading && !resolvedUrl) {
+    return <div className="flex min-h-20 items-center justify-center gap-2 rounded-xl bg-muted/70 px-4 py-5 text-sm text-muted-foreground"><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" />Loading attachment…</div>;
   }
 
-  if (mediaError || !resolvedUrl) {
-    return (
-      <div className="flex flex-wrap items-center gap-2 rounded-xl bg-destructive/10 p-3 text-xs text-destructive">
-        <AlertCircle size={16} />
-        <span className="min-w-0 flex-1">{mediaError || "Unable to load attachment."}</span>
-        <button
-          type="button"
-          onClick={() => setRetryCount((count) => count + 1)}
-          className="inline-flex items-center gap-1 rounded-lg border border-current/30 px-2 py-1 font-medium"
-        >
-          <RefreshCw size={13} />
-          Retry
-        </button>
-      </div>
-    );
+  if (loadError) {
+    return <div className="flex flex-col gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm"><span className="text-destructive">{loadError}</span><button type="button" onClick={() => void loadMedia()} className="w-fit rounded-lg bg-background px-3 py-1.5 font-medium shadow-sm">Try again</button></div>;
   }
 
-  // IMAGE
-  if (messageType === "image") {
-    return (
-      <div className="my-1 overflow-hidden rounded-xl">
-        <div
-          className="group relative cursor-pointer"
-          onClick={() => setImageModalOpen(true)}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") setImageModalOpen(true);
-          }}
-          aria-label="Open image preview"
-        >
-          <img
-            src={resolvedUrl}
-            alt={mediaName || "Attached image"}
-            className="max-h-72 w-full rounded-xl object-cover transition group-hover:opacity-95"
-            loading="lazy"
-            onError={handleMediaError}
-          />
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/20 opacity-0 transition-opacity group-hover:opacity-100">
-            <span className="rounded-full bg-black/60 p-2 text-white">
-              <Maximize2 size={16} />
-            </span>
-          </div>
-        </div>
+  if (!resolvedUrl) return null;
 
-        <Dialog open={imageModalOpen} onOpenChange={setImageModalOpen}>
-          <DialogContent className="flex max-w-4xl flex-col items-center justify-center border-none bg-black/95 p-1 shadow-2xl">
-            <img
-              src={resolvedUrl}
-              alt={mediaName || "Image preview"}
-              className="max-h-[85vh] max-w-full rounded-lg object-contain"
-              onError={handleMediaError}
-            />
-            {mediaName && (
-              <p className="mt-2 max-w-md truncate text-xs text-white/70">{mediaName}</p>
-            )}
-          </DialogContent>
-        </Dialog>
-      </div>
-    );
-  }
-
-  // VIDEO
-  if (messageType === "video") {
+  if (isAudio) {
+    const shownTime = duration > 0 ? (playing ? currentTime : duration) : currentTime;
     return (
-      <div className="my-1 max-w-full overflow-hidden rounded-xl">
-        <video
-          key={resolvedUrl}
-          src={resolvedUrl}
-          controls
-          playsInline
-          preload="metadata"
-          className="max-h-72 w-full rounded-xl bg-black"
-          onError={handleMediaError}
-        />
-        {mediaName && (
-          <p className={`mt-1 truncate text-[10px] ${isMine ? "text-white/80" : "text-muted-foreground"}`}>
-            {mediaName}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  // AUDIO / VOICE NOTE
-  if (messageType === "audio") {
-    return (
-      <div
-        className={`my-1 flex min-w-[210px] items-center gap-3 rounded-xl p-2.5 sm:min-w-[250px] ${
-          isMine ? "bg-white/10 text-white" : "bg-secondary text-foreground"
-        }`}
-      >
-        <audio
-          ref={audioRef}
-          key={resolvedUrl}
-          src={resolvedUrl}
-          preload="metadata"
-          onError={handleMediaError}
-        />
-        <button
-          type="button"
-          onClick={() => void toggleAudio()}
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full shadow-sm transition ${
-            isMine
-              ? "bg-white text-[#E91E63] hover:bg-white/90"
-              : "bg-[#E91E63] text-white hover:bg-[#C2185B]"
-          }`}
-          aria-label={isPlayingAudio ? "Pause voice note" : "Play voice note"}
-        >
-          {isPlayingAudio ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
+      <div className={`flex w-full min-w-[230px] max-w-[330px] items-center gap-3 rounded-2xl px-3 py-3 ${isMine ? "bg-primary-foreground/10" : "bg-muted/80"}`}>
+        <audio ref={audioRef} src={resolvedUrl} preload="metadata" />
+        <button type="button" onClick={() => void toggleAudio()} aria-label={playing ? "Pause voice note" : "Play voice note"} className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg ${isMine ? "bg-primary-foreground text-primary" : "bg-primary text-primary-foreground"}`}>
+          {playing ? "Ⅱ" : "▶"}
         </button>
         <div className="min-w-0 flex-1">
-          <input
-            type="range"
-            min={0}
-            max={audioDuration > 0 ? audioDuration : 0}
-            step={0.1}
-            value={Math.min(audioCurrentTime, audioDuration || 0)}
-            disabled={!audioDuration}
-            onChange={(event) => seekAudio(Number(event.target.value))}
-            aria-label="Seek voice note"
-            className="h-2 w-full cursor-pointer accent-[#E91E63] disabled:cursor-default"
-          />
-          <div className="mt-1 flex items-center justify-between text-[10px] opacity-80">
-            <span>{formatSeconds(audioCurrentTime)}</span>
-            <span>{formatSeconds(audioDuration)}</span>
+          <div className="flex h-9 items-center gap-[2px]" role="slider" aria-label="Voice note progress" aria-valuemin={0} aria-valuemax={duration || 0} aria-valuenow={currentTime} tabIndex={0} onClick={seekAudio} onKeyDown={(event) => {
+            if (event.key === "ArrowRight" && audioRef.current && duration > 0) audioRef.current.currentTime = Math.min(duration, currentTime + 5);
+            if (event.key === "ArrowLeft" && audioRef.current) audioRef.current.currentTime = Math.max(0, currentTime - 5);
+          }}>
+            {WAVEFORM_BARS.map((height, index) => (
+              <span key={index} className={`flex-1 rounded-full ${index / WAVEFORM_BARS.length <= progress ? (isMine ? "bg-primary-foreground" : "bg-primary") : (isMine ? "bg-primary-foreground/35" : "bg-muted-foreground/35")}`} style={{ height: `${height}%`, minWidth: 2 }} />
+            ))}
+          </div>
+          <div className="mt-1 flex items-center justify-between text-[11px] tabular-nums opacity-75">
+            <span>{formatTime(currentTime)}</span>
+            <span>{audioError ? "Can't play audio" : formatTime(duration)}</span>
           </div>
         </div>
+        <span className="sr-only">{mediaName || "Voice message"}</span>
       </div>
     );
   }
 
-  // GENERIC FILE ATTACHMENT
+  if (isImage) {
+    return (
+      <>
+        <button type="button" onClick={() => setPreviewOpen(true)} className="block max-w-full overflow-hidden rounded-2xl text-left">
+          <img src={resolvedUrl} alt={mediaName || "Shared image"} loading="lazy" className="block max-h-[360px] max-w-full rounded-2xl object-contain" onError={() => setLoadError("Image could not be displayed. Tap to retry.")} />
+        </button>
+        {previewOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 p-3" onClick={() => setPreviewOpen(false)}><button type="button" aria-label="Close image" className="absolute right-4 top-4 rounded-full bg-white/15 px-3 py-2 text-white">✕</button><img src={resolvedUrl} alt={mediaName || "Shared image"} className="max-h-[92vh] max-w-full object-contain" onClick={(event) => event.stopPropagation()} /></div>}
+      </>
+    );
+  }
+
+  if (isVideo) {
+    return <video ref={videoRef} src={resolvedUrl} controls playsInline preload="metadata" className="block max-h-[420px] w-full max-w-[min(78vw,420px)] rounded-2xl bg-black object-contain" onError={() => setLoadError("Video could not be played. Try reloading the attachment.")} />;
+  }
+
   return (
-    <div
-      className={`my-1 flex items-center gap-3 rounded-xl border p-3 ${
-        isMine
-          ? "border-white/20 bg-white/10 text-white"
-          : "border-border bg-secondary/80 text-foreground"
-      }`}
-    >
-      <div className={`rounded-lg p-2 ${isMine ? "bg-white text-[#E91E63]" : "bg-[#E91E63]/10 text-[#E91E63]"}`}>
-        <FileText size={18} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-medium">{mediaName || "Attachment"}</p>
-        <p className="text-[10px] opacity-75">{messageType.toUpperCase()}</p>
-      </div>
-      <a
-        href={resolvedUrl}
-        download={mediaName || "download"}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="rounded-lg p-1.5 transition hover:bg-black/10 dark:hover:bg-white/10"
-        title="Download file"
-        aria-label="Download attachment"
-      >
-        <Download size={16} />
-      </a>
-    </div>
+    <a href={resolvedUrl} target="_blank" rel="noreferrer" download={mediaName || undefined} className="flex max-w-full items-center gap-3 rounded-xl bg-muted/80 p-3 text-sm hover:bg-muted">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-background text-lg">{isPdf ? "📄" : "📎"}</span>
+      <span className="min-w-0 flex-1 truncate font-medium">{mediaName || "Download attachment"}</span>
+      <span aria-hidden="true">↓</span>
+    </a>
   );
-}
+    }
