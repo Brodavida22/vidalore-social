@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as AuthenticatedCommunitiesRouteImport } from './routes/_authenticated/communities'
 import { Route as AuthenticatedCreateRouteImport } from './routes/_authenticated/create'
 import { Route as AuthenticatedExploreRouteImport } from './routes/_authenticated/explore'
 import { Route as AuthenticatedHomeRouteImport } from './routes/_authenticated/home'
@@ -19,6 +20,7 @@ import { Route as AuthenticatedMessagesRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedPointsRouteImport } from './routes/_authenticated/points'
 import { Route as AuthenticatedReelsRouteImport } from './routes/_authenticated/reels'
 import { Route as AuthenticatedAdminModerationRouteImport } from './routes/_authenticated/admin.moderation'
+import { Route as AuthenticatedCSlugRouteImport } from './routes/_authenticated/c.$slug'
 import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_authenticated/settings.profile'
 import { Route as AuthenticatedUUsernameRouteImport } from './routes/_authenticated/u.$username'
 
@@ -36,6 +38,12 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
   path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedCommunitiesRoute =
+  AuthenticatedCommunitiesRouteImport.update({
+    id: '/communities',
+    path: '/communities',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedCreateRoute = AuthenticatedCreateRouteImport.update({
   id: '/create',
   path: '/create',
@@ -72,6 +80,11 @@ const AuthenticatedAdminModerationRoute =
     path: '/admin/moderation',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedCSlugRoute = AuthenticatedCSlugRouteImport.update({
+  id: '/c/$slug',
+  path: '/c/$slug',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedSettingsProfileRoute =
   AuthenticatedSettingsProfileRouteImport.update({
     id: '/settings/profile',
@@ -87,6 +100,7 @@ const AuthenticatedUUsernameRoute = AuthenticatedUUsernameRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/communities': typeof AuthenticatedCommunitiesRoute
   '/create': typeof AuthenticatedCreateRoute
   '/explore': typeof AuthenticatedExploreRoute
   '/home': typeof AuthenticatedHomeRoute
@@ -94,12 +108,14 @@ export interface FileRoutesByFullPath {
   '/points': typeof AuthenticatedPointsRoute
   '/reels': typeof AuthenticatedReelsRoute
   '/admin/moderation': typeof AuthenticatedAdminModerationRoute
+  '/c/$slug': typeof AuthenticatedCSlugRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/u/$username': typeof AuthenticatedUUsernameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/communities': typeof AuthenticatedCommunitiesRoute
   '/create': typeof AuthenticatedCreateRoute
   '/explore': typeof AuthenticatedExploreRoute
   '/home': typeof AuthenticatedHomeRoute
@@ -107,6 +123,7 @@ export interface FileRoutesByTo {
   '/points': typeof AuthenticatedPointsRoute
   '/reels': typeof AuthenticatedReelsRoute
   '/admin/moderation': typeof AuthenticatedAdminModerationRoute
+  '/c/$slug': typeof AuthenticatedCSlugRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/u/$username': typeof AuthenticatedUUsernameRoute
 }
@@ -115,6 +132,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/reset-password': typeof ResetPasswordRoute
+  '/_authenticated/communities': typeof AuthenticatedCommunitiesRoute
   '/_authenticated/create': typeof AuthenticatedCreateRoute
   '/_authenticated/explore': typeof AuthenticatedExploreRoute
   '/_authenticated/home': typeof AuthenticatedHomeRoute
@@ -122,6 +140,7 @@ export interface FileRoutesById {
   '/_authenticated/points': typeof AuthenticatedPointsRoute
   '/_authenticated/reels': typeof AuthenticatedReelsRoute
   '/_authenticated/admin/moderation': typeof AuthenticatedAdminModerationRoute
+  '/_authenticated/c/$slug': typeof AuthenticatedCSlugRoute
   '/_authenticated/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/_authenticated/u/$username': typeof AuthenticatedUUsernameRoute
 }
@@ -130,6 +149,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/reset-password'
+    | '/communities'
     | '/create'
     | '/explore'
     | '/home'
@@ -137,12 +157,14 @@ export interface FileRouteTypes {
     | '/points'
     | '/reels'
     | '/admin/moderation'
+    | '/c/$slug'
     | '/settings/profile'
     | '/u/$username'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/reset-password'
+    | '/communities'
     | '/create'
     | '/explore'
     | '/home'
@@ -150,6 +172,7 @@ export interface FileRouteTypes {
     | '/points'
     | '/reels'
     | '/admin/moderation'
+    | '/c/$slug'
     | '/settings/profile'
     | '/u/$username'
   id:
@@ -157,6 +180,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/reset-password'
+    | '/_authenticated/communities'
     | '/_authenticated/create'
     | '/_authenticated/explore'
     | '/_authenticated/home'
@@ -164,6 +188,7 @@ export interface FileRouteTypes {
     | '/_authenticated/points'
     | '/_authenticated/reels'
     | '/_authenticated/admin/moderation'
+    | '/_authenticated/c/$slug'
     | '/_authenticated/settings/profile'
     | '/_authenticated/u/$username'
   fileRoutesById: FileRoutesById
@@ -196,6 +221,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/communities': {
+      id: '/_authenticated/communities'
+      path: '/communities'
+      fullPath: '/communities'
+      preLoaderRoute: typeof AuthenticatedCommunitiesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/create': {
       id: '/_authenticated/create'
@@ -246,6 +278,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminModerationRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/c/$slug': {
+      id: '/_authenticated/c/$slug'
+      path: '/c/$slug'
+      fullPath: '/c/$slug'
+      preLoaderRoute: typeof AuthenticatedCSlugRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/settings/profile': {
       id: '/_authenticated/settings/profile'
       path: '/settings/profile'
@@ -264,6 +303,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedCommunitiesRoute: typeof AuthenticatedCommunitiesRoute
   AuthenticatedCreateRoute: typeof AuthenticatedCreateRoute
   AuthenticatedExploreRoute: typeof AuthenticatedExploreRoute
   AuthenticatedHomeRoute: typeof AuthenticatedHomeRoute
@@ -271,11 +311,13 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedPointsRoute: typeof AuthenticatedPointsRoute
   AuthenticatedReelsRoute: typeof AuthenticatedReelsRoute
   AuthenticatedAdminModerationRoute: typeof AuthenticatedAdminModerationRoute
+  AuthenticatedCSlugRoute: typeof AuthenticatedCSlugRoute
   AuthenticatedSettingsProfileRoute: typeof AuthenticatedSettingsProfileRoute
   AuthenticatedUUsernameRoute: typeof AuthenticatedUUsernameRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedCommunitiesRoute: AuthenticatedCommunitiesRoute,
   AuthenticatedCreateRoute: AuthenticatedCreateRoute,
   AuthenticatedExploreRoute: AuthenticatedExploreRoute,
   AuthenticatedHomeRoute: AuthenticatedHomeRoute,
@@ -283,6 +325,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedPointsRoute: AuthenticatedPointsRoute,
   AuthenticatedReelsRoute: AuthenticatedReelsRoute,
   AuthenticatedAdminModerationRoute: AuthenticatedAdminModerationRoute,
+  AuthenticatedCSlugRoute: AuthenticatedCSlugRoute,
   AuthenticatedSettingsProfileRoute: AuthenticatedSettingsProfileRoute,
   AuthenticatedUUsernameRoute: AuthenticatedUUsernameRoute,
 }
