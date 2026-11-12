@@ -115,6 +115,7 @@ describe("Video Upload and Playback Utilities", () => {
     const getSessionSpy = vi.spyOn(supabase.auth, "getSession").mockResolvedValue({
       data: {
         session: {
+          access_token: "test-access-token",
           user: { id: testUid },
         } as unknown as import("@supabase/supabase-js").Session,
       },
