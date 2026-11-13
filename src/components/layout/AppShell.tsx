@@ -33,6 +33,7 @@ import { UserAvatar } from "@/components/profile/UserAvatar";
 import { myProfileQuery } from "@/services/profiles";
 import { getStoredRelationships } from "@/services/social";
 import { unreadNotificationsCountQuery, notificationsKeys } from "@/services/notifications";
+import { clearAllReelCaches } from "@/services/reelsAndStories";
 import { isAdminQuery } from "@/services/moderation";
 import { NotificationsModal } from "@/components/social/NotificationsModal";
 import { FriendsModal } from "@/components/social/FriendsModal";
@@ -144,6 +145,7 @@ export function AppShell() {
     suppressOverlayHistoryBack();
     setMobileMenuOpen(false);
     try {
+      clearAllReelCaches();
       await queryClient.cancelQueries();
       queryClient.clear();
       try {

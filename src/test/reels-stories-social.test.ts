@@ -64,6 +64,7 @@ import {
   toggleReelLike,
   toggleReelSave,
   incrementReelShare,
+  getStoredReels,
   getSavedReels,
   removeSavedReel,
   getReelComments,
@@ -72,6 +73,9 @@ import {
   toggleCommentReaction,
   addStory,
   addReel,
+  deleteReel,
+  sessionReelsCache,
+  clearAllReelCaches,
   type ReelItem,
 } from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
@@ -568,6 +572,202 @@ describe("Reels & Stories Social Systems", () => {
       expect(reel.caption).toBe("Evening stroll in Paris");
       expect(reel.creatorId).toBe(mockMe.id);
       expect(reel.creatorUsername).toBe(mockMe.username);
+    });
+  });
+
+  describe("7. Authoritative Reels Feed & Stale Cache Cleanup", () => {
+    it("returns [] when Supabase reels table has 0 rows and purges stale localStorage/session caches", async () => {
+      clearAllReelCaches();
+      localStorage.setItem(
+        "vidalore_persistent_reels_v1",
+        JSON.stringify([
+          {
+            id: "old-deleted-reel-1",
+            creatorId: "user-999",
+            creatorName: "Old Creator",
+            creatorUsername: "old_creator",
+            videoUrl: "https://storage.mock/old-video.mp4",
+            storagePath: "user-999/old-video.mp4",
+            caption: "Deleted reel that must not reappear",
+            likesCount: 99,
+            commentsCount: 12,
+            sharesCount: 4,
+            savesCount: 7,
+            viewsCount: 420,
+            createdAt: "2026-10-01T00:00:00Z",
+          },
+        ]),
+      );
+      localStorage.setItem(
+        "vidalore_local_reel_views_v1",
+        JSON.stringify({ "user-123:old-deleted-reel-1": 420 }),
+      );
+      sessionReelsCache.set("old-deleted-reel-1", {
+        id: "old-deleted-reel-1",
+        creatorId: "user-999",
+        creatorName: "Old Creator",
+        creatorUsername: "old_creator",
+        videoUrl: "https://storage.mock/old-video.mp4",
+        caption: "Deleted reel in session cache",
+        likesCount: 10,
+        commentsCount: 0,
+        sharesCount: 0,
+        savesCount: 0,
+        viewsCount: 10,
+        createdAt: "2026-10-01T00:00:00Z",
+      });
+
+      vi.mocked(supabase.from).mockImplementation((table: string) => {
+        if (table === "reels") {
+          return {
+            select: vi.fn().mockReturnValue({
+              order: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+          } as unknown as ReturnType<typeof supabase.from>;
+        }
+        return {} as unknown as ReturnType<typeof supabase.from>;
+      });
+
+      const firstLoad = await getStoredReels();
+      expect(firstLoad).toEqual([]);
+      expect(localStorage.getItem("vidalore_persistent_reels_v1")).toBeNull();
+      expect(localStorage.getItem("vidalore_local_reel_views_v1")).toBeNull();
+      expect(sessionReelsCache.size).toBe(0);
+
+      // Re-fetching (refresh / reopen) continues to return empty without resurrecting deleted reels
+      const secondLoad = await getStoredReels();
+      expect(secondLoad).toEqual([]);
+      expect(sessionReelsCache.size).toBe(0);
+    });
+
+    it("shows newly created reels from Supabase and removes them once deleted in DB", async () => {
+      clearAllReelCaches();
+      let dbRows: Array<Record<string, unknown>> = [
+        {
+          id: "live-reel-1",
+          creator_id: "user-123",
+          video_url: "user-123/new-clip.mp4",
+          caption: "Brand new reel",
+          audio_title: "Rose Sound",
+          likes_count: 1,
+          comments_count: 0,
+          shares_count: 0,
+          saves_count: 0,
+          views_count: 5,
+          created_at: "2026-11-13T09:00:00Z",
+          tags: ["new"],
+        },
+      ];
+
+      vi.mocked(supabase.from).mockImplementation((table: string) => {
+        if (table === "reels") {
+          return {
+            select: vi.fn().mockReturnValue({
+              order: vi.fn().mockReturnValue({
+                limit: vi.fn().mockImplementation(async () => ({ data: dbRows, error: null })),
+              }),
+            }),
+            delete: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockImplementation(async () => {
+                  dbRows = [];
+                  return { error: null };
+                }),
+              }),
+            }),
+          } as unknown as ReturnType<typeof supabase.from>;
+        }
+        if (table === "profiles") {
+          return {
+            select: vi.fn().mockReturnValue({
+              in: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: "user-123",
+                    username: "vidalore_user",
+                    display_name: "Vidalore User",
+                    avatar_url: null,
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          } as unknown as ReturnType<typeof supabase.from>;
+        }
+        if (table === "reel_likes" || table === "reel_saves") {
+          return {
+            select: vi.fn().mockReturnValue({
+              in: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          } as unknown as ReturnType<typeof supabase.from>;
+        }
+        return {} as unknown as ReturnType<typeof supabase.from>;
+      });
+
+      const initial = await getStoredReels();
+      expect(initial).toHaveLength(1);
+      expect(initial[0]!.id).toBe("live-reel-1");
+      expect(localStorage.getItem("vidalore_persistent_reels_v1")).toBeNull();
+
+      await deleteReel("live-reel-1");
+      expect(sessionReelsCache.has("live-reel-1")).toBe(false);
+
+      const afterDelete = await getStoredReels();
+      expect(afterDelete).toEqual([]);
+    });
+
+    it("never resurrects deleted reels in getSavedReels or when network/DB fails offline", async () => {
+      clearAllReelCaches();
+      sessionReelsCache.set("deleted-saved-reel", {
+        id: "deleted-saved-reel",
+        creatorId: "creator-1",
+        creatorName: "Creator",
+        creatorUsername: "creator",
+        videoUrl: "https://storage.mock/deleted.mp4",
+        caption: "Ghost saved reel",
+        likesCount: 0,
+        commentsCount: 0,
+        sharesCount: 0,
+        savesCount: 1,
+        viewsCount: 0,
+        createdAt: "2026-11-01T00:00:00Z",
+      });
+
+      vi.mocked(supabase.from).mockImplementation((table: string) => {
+        if (table === "reel_saves") {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                order: vi.fn().mockResolvedValue({
+                  data: [{ reel_id: "deleted-saved-reel", created_at: "2026-11-01T00:00:00Z" }],
+                  error: null,
+                }),
+              }),
+            }),
+          } as unknown as ReturnType<typeof supabase.from>;
+        }
+        if (table === "reels") {
+          return {
+            select: vi.fn().mockReturnValue({
+              in: vi.fn().mockResolvedValue({ data: [], error: null }),
+              order: vi.fn().mockReturnValue({
+                limit: vi.fn().mockRejectedValue(new Error("Network offline")),
+              }),
+            }),
+          } as unknown as ReturnType<typeof supabase.from>;
+        }
+        return {} as unknown as ReturnType<typeof supabase.from>;
+      });
+
+      const saved = await getSavedReels();
+      expect(saved).toEqual([]);
+
+      localStorage.setItem("vidalore_persistent_reels_v1", JSON.stringify([{ id: "stale" }]));
+      const offlineFeed = await getStoredReels();
+      expect(offlineFeed).toEqual([]);
+      expect(localStorage.getItem("vidalore_persistent_reels_v1")).toBeNull();
     });
   });
 });

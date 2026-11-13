@@ -236,6 +236,9 @@ function ProfilePage() {
         return [];
       }
     },
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const allReels = reelsQuery.data ?? [];

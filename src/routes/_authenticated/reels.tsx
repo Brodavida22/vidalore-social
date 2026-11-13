@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Clapperboard,
   Upload,
@@ -10,6 +10,7 @@ import {
   Play,
   Bookmark,
   Eye,
+  Loader2,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
   getStoredReels,
   getSavedReels,
   removeSavedReel,
+  reelsKeys,
   type ReelItem,
 } from "@/services/reelsAndStories";
 
@@ -54,9 +56,11 @@ export const Route = createFileRoute("/_authenticated/reels")({
 function ReelsPage() {
   const search = Route.useSearch();
   const targetReelId = search.reelId || search.id;
+  const queryClient = useQueryClient();
   const { data: me } = useQuery(myProfileQuery());
   const { preferredMuted, setPreferredMuted, togglePreferredMuted } = useVideoAudioPreference();
   const [reels, setReels] = useState<ReelItem[]>([]);
+  const [reelsLoading, setReelsLoading] = useState(true);
   const [savedReels, setSavedReels] = useState<ReelItem[]>([]);
   const [savedLoading, setSavedLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -70,31 +74,39 @@ function ReelsPage() {
       const items = await getStoredReels();
       const list = Array.isArray(items) ? items : [];
       setReels(list);
+      queryClient.setQueryData(reelsKeys.feed(), list);
       if (targetReelId) {
         const foundIdx = list.findIndex((r) => r.id === targetReelId);
         if (foundIdx >= 0) {
           setActiveIndex(foundIdx);
           setTab("stream");
+          return;
         }
       }
+      setActiveIndex((prev) => (list.length === 0 ? 0 : Math.min(prev, list.length - 1)));
     } catch (error) {
       console.warn("Could not load reels:", error);
       setReels([]);
+      setActiveIndex(0);
+    } finally {
+      setReelsLoading(false);
     }
-  }, [targetReelId]);
+  }, [queryClient, targetReelId]);
 
   const reloadSavedReels = useCallback(async () => {
     setSavedLoading(true);
     try {
       const items = await getSavedReels();
-      setSavedReels(Array.isArray(items) ? items : []);
+      const list = Array.isArray(items) ? items : [];
+      setSavedReels(list);
+      queryClient.setQueryData(reelsKeys.saved(), list);
     } catch (error) {
       console.warn("Could not load saved reels:", error);
       setSavedReels([]);
     } finally {
       setSavedLoading(false);
     }
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     void reloadReels();
@@ -108,6 +120,8 @@ function ReelsPage() {
 
   useEffect(() => {
     const handleUpdate = () => {
+      void queryClient.invalidateQueries({ queryKey: reelsKeys.all });
+      void queryClient.invalidateQueries({ queryKey: ["saved-reels"] });
       void reloadReels();
       if (tab === "saved") {
         void reloadSavedReels();
@@ -115,7 +129,7 @@ function ReelsPage() {
     };
     window.addEventListener("vidalore:reels-updated", handleUpdate);
     return () => window.removeEventListener("vidalore:reels-updated", handleUpdate);
-  }, [reloadReels, reloadSavedReels, tab]);
+  }, [queryClient, reloadReels, reloadSavedReels, tab]);
 
   const handleNext = useCallback(() => {
     if (activeIndex < reels.length - 1) {
@@ -256,7 +270,12 @@ function ReelsPage() {
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
-          {reels.length === 0 ? (
+          {reelsLoading ? (
+            <div className="py-16 flex flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin text-[#E91E63]" />
+              <span>Loading reels...</span>
+            </div>
+          ) : reels.length === 0 ? (
             <div className="rounded-xl border border-border bg-card p-12 text-center space-y-3">
               <Clapperboard className="h-10 w-10 text-[#E91E63] mx-auto" />
               <h2 className="font-display text-xl font-bold text-foreground">No reels yet</h2>
@@ -341,53 +360,76 @@ function ReelsPage() {
             <span className="text-xs text-muted-foreground">{reels.length} videos</span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {reels.map((reel, idx) => (
-              <div
-                key={reel.id}
-                onMouseEnter={() => prefetchVideoUrl(reel.videoUrl)}
-                onClick={() => {
-                  setActiveIndex(idx);
-                  setTab("stream");
-                }}
-                className="group relative aspect-[9/16] rounded-xl overflow-hidden bg-black cursor-pointer border border-border hover:border-primary transition-all shadow-sm"
+          {reelsLoading ? (
+            <div className="py-12 flex flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin text-[#E91E63]" />
+              <span>Loading reels...</span>
+            </div>
+          ) : reels.length === 0 ? (
+            <div className="rounded-xl border border-border bg-card p-10 text-center space-y-3">
+              <Clapperboard className="h-9 w-9 text-[#E91E63] mx-auto" />
+              <p className="font-semibold text-sm text-foreground">No reels yet</p>
+              <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+                Reels shared by users will appear here.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setUploadOpen(true)}
+                className="rounded-lg bg-[#E91E63] hover:bg-[#C2185B] text-white text-xs"
               >
-                <video
-                  src={reel.videoUrl || undefined}
-                  className="h-full w-full object-cover"
-                  muted
-                  playsInline
-                  preload="metadata"
-                  onError={(e) => {
-                    e.stopPropagation();
-                    e.currentTarget.style.display = "none";
+                Upload First Reel
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {reels.map((reel, idx) => (
+                <div
+                  key={reel.id}
+                  onMouseEnter={() => prefetchVideoUrl(reel.videoUrl)}
+                  onClick={() => {
+                    setActiveIndex(idx);
+                    setTab("stream");
                   }}
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-between p-2.5">
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span className="inline-flex items-center gap-1 rounded bg-black/60 px-2 py-0.5 text-[0.65rem] text-white font-medium">
-                      <Eye className="h-3 w-3" />
-                      {reel.viewsCount.toLocaleString()}
-                    </span>
-                    <span className="rounded bg-black/60 px-2 py-0.5 text-[0.65rem] text-white font-medium">
-                      {reel.likesCount} likes
+                  className="group relative aspect-[9/16] rounded-xl overflow-hidden bg-black cursor-pointer border border-border hover:border-primary transition-all shadow-sm"
+                >
+                  <video
+                    src={reel.videoUrl || undefined}
+                    className="h-full w-full object-cover"
+                    muted
+                    playsInline
+                    preload="metadata"
+                    onError={(e) => {
+                      e.stopPropagation();
+                      e.currentTarget.style.display = "none";
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-between p-2.5">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="inline-flex items-center gap-1 rounded bg-black/60 px-2 py-0.5 text-[0.65rem] text-white font-medium">
+                        <Eye className="h-3 w-3" />
+                        {reel.viewsCount.toLocaleString()}
+                      </span>
+                      <span className="rounded bg-black/60 px-2 py-0.5 text-[0.65rem] text-white font-medium">
+                        {reel.likesCount} likes
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-white truncate">
+                        @{reel.creatorUsername}
+                      </p>
+                      <p className="text-[0.65rem] text-white/80 line-clamp-1">{reel.caption}</p>
+                    </div>
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white shadow-sm">
+                      <Play className="h-5 w-5 ml-0.5" />
                     </span>
                   </div>
-                  <div>
-                    <p className="text-xs font-semibold text-white truncate">
-                      @{reel.creatorUsername}
-                    </p>
-                    <p className="text-[0.65rem] text-white/80 line-clamp-1">{reel.caption}</p>
-                  </div>
                 </div>
-                <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white shadow-sm">
-                    <Play className="h-5 w-5 ml-0.5" />
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         /* Saved Reels Tab */

@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { getMyAdminRole, type AdminRole } from "@/services/moderation";
+import { clearReelFromClientCache } from "@/services/reelsAndStories";
 import {
   DEFAULT_GAMES_CATALOG,
   DEFAULT_QUESTIONS,
@@ -563,6 +564,13 @@ export async function adminDeleteContentItem(input: {
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  if (input.targetType === "reel") {
+    clearReelFromClientCache(input.targetId);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("vidalore:reels-updated"));
+    }
   }
 }
 

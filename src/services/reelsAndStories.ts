@@ -13,7 +13,9 @@ export const reelsFeedQuery = () =>
   queryOptions({
     queryKey: reelsKeys.feed(),
     queryFn: () => getStoredReels(),
-    staleTime: 1000 * 30,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
 export const storiesKeys = {
@@ -449,38 +451,84 @@ export async function uploadStoryMedia(
 
 export const sessionReelsCache = new Map<string, ReelItem>();
 
-const REELS_STORAGE_KEY = "vidalore_persistent_reels_v1";
+const LEGACY_REELS_STORAGE_KEY = "vidalore_persistent_reels_v1";
 
-export function loadPersistentReels(): ReelItem[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(REELS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-export function savePersistentReels(reels: ReelItem[]): void {
+function clearLegacyPersistentReelsStorage(): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(REELS_STORAGE_KEY, JSON.stringify(reels.slice(0, 100)));
-  } catch (err) {
-    console.warn("Could not save persistent reels:", err);
+    window.localStorage.removeItem(LEGACY_REELS_STORAGE_KEY);
+  } catch {
+    // Ignore storage access errors
   }
 }
 
-export function upsertPersistentReel(reel: ReelItem): void {
-  const current = loadPersistentReels();
-  const filtered = current.filter((r) => r.id !== reel.id);
-  savePersistentReels([reel, ...filtered]);
+// Purge any stale pre-fix reels persisted in localStorage on startup
+clearLegacyPersistentReelsStorage();
+
+function pruneLocalViewedReels(validReelIds: Set<string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    const current = loadLocalViewedReels();
+    let changed = false;
+    for (const key of Object.keys(current)) {
+      const separatorIdx = key.indexOf(":");
+      const reelId = separatorIdx >= 0 ? key.slice(separatorIdx + 1) : key;
+      if (!validReelIds.has(reelId)) {
+        delete current[key];
+        changed = true;
+      }
+    }
+    if (changed) {
+      if (Object.keys(current).length === 0) {
+        window.localStorage.removeItem(LOCAL_REEL_VIEWS_KEY);
+      } else {
+        window.localStorage.setItem(LOCAL_REEL_VIEWS_KEY, JSON.stringify(current));
+      }
+    }
+  } catch {
+    // Ignore storage access errors
+  }
 }
 
-export function removePersistentReel(reelId: string): void {
-  const current = loadPersistentReels();
-  savePersistentReels(current.filter((r) => r.id !== reelId));
+function clearLocalViewedReelsForReel(reelId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const current = loadLocalViewedReels();
+    let changed = false;
+    for (const key of Object.keys(current)) {
+      if (key === reelId || key.endsWith(`:${reelId}`)) {
+        delete current[key];
+        changed = true;
+      }
+    }
+    if (changed) {
+      if (Object.keys(current).length === 0) {
+        window.localStorage.removeItem(LOCAL_REEL_VIEWS_KEY);
+      } else {
+        window.localStorage.setItem(LOCAL_REEL_VIEWS_KEY, JSON.stringify(current));
+      }
+    }
+  } catch {
+    // Ignore storage access errors
+  }
+}
+
+export function clearReelFromClientCache(reelId: string): void {
+  const cached = sessionReelsCache.get(reelId);
+  if (cached?.storagePath) {
+    signedUrlCache.delete(cached.storagePath);
+  }
+  sessionReelsCache.delete(reelId);
+  clearLegacyPersistentReelsStorage();
+  clearLocalViewedReelsForReel(reelId);
+}
+
+export function clearAllReelCaches(): void {
+  sessionReelsCache.clear();
+  signedUrlCache.clear();
+  sessionRecordedViews.clear();
+  inFlightReelViews.clear();
+  clearLegacyPersistentReelsStorage();
 }
 
 export async function updateReelVideo(
@@ -550,7 +598,7 @@ export async function updateReelVideo(
   };
 
   sessionReelsCache.set(updated.id, updated);
-  upsertPersistentReel(updated);
+  clearLegacyPersistentReelsStorage();
 
   return updated;
 }
@@ -579,6 +627,7 @@ export async function transcodeExistingReel(
 
 export async function getStoredReels(): Promise<ReelItem[]> {
   const userId = (await tryGetCurrentUserId()) || "";
+  clearLegacyPersistentReelsStorage();
 
   let rows: Array<{
     id: string;
@@ -594,6 +643,7 @@ export async function getStoredReels(): Promise<ReelItem[]> {
     created_at: string;
     tags?: string[] | null;
   }> = [];
+  let dbQuerySucceeded = false;
 
   try {
     const { data, error } = await supabase
@@ -607,14 +657,15 @@ export async function getStoredReels(): Promise<ReelItem[]> {
       // If error 42501 (is_blocked), also attempt to query own reels directly
       if (userId) {
         try {
-          const { data: ownData } = await supabase
+          const { data: ownData, error: ownErr } = await supabase
             .from("reels")
             .select("*")
             .eq("creator_id", userId)
             .order("created_at", { ascending: false })
             .limit(100);
-          if (ownData && ownData.length > 0) {
+          if (!ownErr && Array.isArray(ownData)) {
             rows = ownData as typeof rows;
+            dbQuerySucceeded = true;
           }
         } catch (ownErr) {
           console.warn("Could not load own reels fallback:", ownErr);
@@ -638,7 +689,8 @@ export async function getStoredReels(): Promise<ReelItem[]> {
           );
           if (restRes.ok) {
             const fallbackRows = await restRes.json();
-            if (Array.isArray(fallbackRows) && fallbackRows.length > 0) {
+            if (Array.isArray(fallbackRows)) {
+              dbQuerySucceeded = true;
               const existingIds = new Set(rows.map((r) => r.id));
               for (const fb of fallbackRows) {
                 if (!existingIds.has(fb.id)) {
@@ -652,57 +704,22 @@ export async function getStoredReels(): Promise<ReelItem[]> {
           console.warn("Public reels query fallback failed:", fallbackErr);
         }
       }
-    } else if (data) {
+    } else if (Array.isArray(data)) {
       rows = data as typeof rows;
+      dbQuerySucceeded = true;
     }
   } catch (err) {
     console.warn("Failed to load reels from database:", err);
   }
 
-  // Merge with persistent client storage and session cache
-  const persistent = loadPersistentReels();
-  const rowIds = new Set(rows.map((r) => r.id));
-
-  // Add from persistent storage
-  for (const p of persistent) {
-    if (!rowIds.has(p.id)) {
-      rows.push({
-        id: p.id,
-        creator_id: p.creatorId,
-        video_url: p.storagePath || p.videoUrl,
-        caption: p.caption,
-        audio_title: p.audioTitle ?? null,
-        likes_count: p.likesCount,
-        comments_count: p.commentsCount,
-        shares_count: p.sharesCount,
-        saves_count: p.savesCount,
-        views_count: p.viewsCount,
-        created_at: p.createdAt,
-        tags: p.tags ?? null,
-      });
-      rowIds.add(p.id);
+  // Never resurrect deleted or cached reels from localStorage or sessionReelsCache.
+  // When the database has 0 reels (or fails), reconcile and return only live database rows.
+  if (rows.length === 0) {
+    sessionReelsCache.clear();
+    if (dbQuerySucceeded) {
+      pruneLocalViewedReels(new Set());
     }
-  }
-
-  // Add from sessionReelsCache
-  for (const [sId, sReel] of sessionReelsCache.entries()) {
-    if (!rowIds.has(sId)) {
-      rows.unshift({
-        id: sReel.id,
-        creator_id: sReel.creatorId,
-        video_url: sReel.storagePath || sReel.videoUrl,
-        caption: sReel.caption,
-        audio_title: sReel.audioTitle ?? null,
-        likes_count: sReel.likesCount,
-        comments_count: sReel.commentsCount,
-        shares_count: sReel.sharesCount,
-        saves_count: sReel.savesCount,
-        views_count: sReel.viewsCount,
-        created_at: sReel.createdAt,
-        tags: sReel.tags ?? null,
-      });
-      rowIds.add(sId);
-    }
+    return [];
   }
 
   const ids = rows.map((r) => r.creator_id).filter(Boolean);
@@ -753,7 +770,6 @@ export async function getStoredReels(): Promise<ReelItem[]> {
   ]);
 
   const profiles = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
-  const persistentMap = new Map(persistent.map((p) => [p.id, p]));
 
   // RLS returns only this user's own like/save rows; use them only for button state.
   const liked = new Set(
@@ -777,7 +793,6 @@ export async function getStoredReels(): Promise<ReelItem[]> {
   const items = await Promise.all(
     rows.map(async (row) => {
       const profile = profiles.get(row.creator_id);
-      const cached = sessionReelsCache.get(row.id) || persistentMap.get(row.id);
 
       let videoUrl = row.video_url;
       if (!videoUrl.startsWith("http")) {
@@ -795,42 +810,36 @@ export async function getStoredReels(): Promise<ReelItem[]> {
       const commentsCount = Math.max(0, Number(row.comments_count ?? 0));
       const savesCount = Math.max(0, Number(row.saves_count ?? 0));
       const localViewFloor = userId ? (localViewedReels[`${userId}:${row.id}`] ?? 0) : 0;
-      const viewsCount = Math.max(
-        0,
-        Number(row.views_count ?? cached?.viewsCount ?? 0),
-        localViewFloor,
-      );
+      const viewsCount = Math.max(0, Number(row.views_count ?? 0), localViewFloor);
 
       const item: ReelItem = {
         id: row.id,
         creatorId: row.creator_id,
-        creatorName:
-          profile?.display_name || profile?.username || cached?.creatorName || "VIDALORE Member",
-        creatorUsername: profile?.username || cached?.creatorUsername || "member",
-        creatorAvatarUrl: profile?.avatar_url || cached?.creatorAvatarUrl,
+        creatorName: profile?.display_name || profile?.username || "VIDALORE Member",
+        creatorUsername: profile?.username || "member",
+        creatorAvatarUrl: profile?.avatar_url,
         creatorVerified: false,
         videoUrl,
         storagePath: row.video_url,
-        caption: row.caption ?? cached?.caption ?? "",
-        audioTitle: row.audio_title ?? cached?.audioTitle ?? undefined,
+        caption: row.caption ?? "",
+        audioTitle: row.audio_title ?? undefined,
         likesCount,
         commentsCount,
-        sharesCount: row.shares_count ?? cached?.sharesCount ?? 0,
+        sharesCount: row.shares_count ?? 0,
         savesCount,
         viewsCount,
         hasLiked: Boolean(userId && liked.has(row.id)),
         hasSaved: Boolean(userId && saved.has(row.id)),
         isFollowing: false,
         createdAt: row.created_at,
-        tags: row.tags ?? cached?.tags ?? [],
+        tags: row.tags ?? [],
       };
 
-      sessionReelsCache.set(item.id, item);
       return item;
     }),
   );
 
-  // Deduplicate items by ID
+  // Deduplicate items by ID and reconcile sessionReelsCache strictly to current DB rows
   const deduped: ReelItem[] = [];
   const seenIds = new Set<string>();
   for (const item of items) {
@@ -840,7 +849,15 @@ export async function getStoredReels(): Promise<ReelItem[]> {
     }
   }
 
-  savePersistentReels(deduped);
+  sessionReelsCache.clear();
+  for (const item of deduped) {
+    sessionReelsCache.set(item.id, item);
+  }
+
+  if (dbQuerySucceeded) {
+    pruneLocalViewedReels(seenIds);
+  }
+
   return deduped;
 }
 
@@ -1211,7 +1228,6 @@ export async function recordReelView(
     if (cached) {
       const updatedReel = { ...cached, viewsCount: normalizedCount };
       sessionReelsCache.set(cleanReelId, updatedReel);
-      upsertPersistentReel(updatedReel);
     }
 
     if (previousCachedViews === undefined || previousCachedViews !== normalizedCount) {
@@ -1305,27 +1321,8 @@ export async function getSavedReels(): Promise<ReelItem[]> {
     console.warn("Failed to load saved reel details from database:", err);
   }
 
-  // Also check sessionReelsCache for any reel not returned from DB
-  const existingIds = new Set(reelRows.map((r) => r.id));
-  for (const id of reelIds) {
-    if (!existingIds.has(id) && sessionReelsCache.has(id)) {
-      const cached = sessionReelsCache.get(id)!;
-      reelRows.push({
-        id: cached.id,
-        creator_id: cached.creatorId,
-        video_url: cached.storagePath || cached.videoUrl,
-        caption: cached.caption,
-        audio_title: cached.audioTitle ?? null,
-        likes_count: cached.likesCount,
-        comments_count: cached.commentsCount,
-        shares_count: cached.sharesCount,
-        saves_count: cached.savesCount,
-        views_count: cached.viewsCount,
-        created_at: cached.createdAt,
-        tags: cached.tags ?? null,
-      });
-      existingIds.add(id);
-    }
+  if (reelRows.length === 0) {
+    return [];
   }
 
   const creatorIds = reelRows.map((r) => r.creator_id).filter(Boolean);
@@ -1533,7 +1530,7 @@ export async function addReel(
   };
 
   sessionReelsCache.set(created.id, created);
-  upsertPersistentReel(created);
+  clearLegacyPersistentReelsStorage();
 
   notifyUpdated();
   return created;
@@ -2264,8 +2261,7 @@ export async function deleteReel(reelId: string): Promise<void> {
     }
   }
 
-  // 3. Clear from local and session cache
-  sessionReelsCache.delete(reelId);
-  removePersistentReel(reelId);
+  // 3. Clear from all local and session caches
+  clearReelFromClientCache(reelId);
   notifyUpdated();
 }
