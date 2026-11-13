@@ -148,7 +148,6 @@ function ProfilePage() {
 
   const isUserBlocked = Boolean(profile && blockedIds.includes(profile.id));
 
-  // Load the selected profile's followers or following list.
   const {
     data: followList = [],
     isLoading: followListLoading,
@@ -161,9 +160,6 @@ function ProfilePage() {
     enabled: !!profile?.id && followListOpen,
   });
 
-  // Load the accounts followed by the currently signed-in user.
-  // This determines whether each person in the list should show
-  // Follow or Following.
   const {
     data: viewerFollowingIds = [],
     isLoading: viewerFollowingLoading,
@@ -434,9 +430,9 @@ function ProfilePage() {
       </div>
 
       {/* Profile Header Details */}
-      <div className="px-2 sm:px-4">
-        <div className="-mt-12 sm:-mt-16 flex flex-wrap items-end justify-between gap-3">
-          <div className="relative shrink-0">
+      <div className="relative z-10 px-2 sm:px-4">
+        <div className="relative z-20 -mt-12 sm:-mt-16 flex flex-wrap items-end justify-between gap-3">
+          <div className="relative shrink-0 z-20">
             <UserAvatar
               profile={viewedProfile}
               className="h-20 w-20 sm:h-28 sm:w-28 border-4 border-background text-2xl sm:text-3xl shadow-md ring-2 ring-[#E91E63]"
@@ -450,13 +446,13 @@ function ProfilePage() {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 pb-1">
+          <div className="relative z-30 flex flex-wrap items-center justify-end gap-2 pb-1">
             <Button
               variant="outline"
               size="icon"
               onClick={shareProfile}
               aria-label="Share profile"
-              className="rounded-lg h-10 w-10 border-border"
+              className="rounded-lg h-10 w-10 border-border shrink-0"
             >
               <Share2 className="h-4 w-4" />
             </Button>
@@ -465,7 +461,7 @@ function ProfilePage() {
               <Button
                 asChild
                 size="sm"
-                className="rounded-lg px-4 text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white shadow-sm"
+                className="rounded-lg px-4 text-xs font-semibold bg-[#E91E63] hover:bg-[#C2185B] text-white shadow-sm whitespace-nowrap"
               >
                 <Link to="/settings/profile">
                   <UserPen className="h-3.5 w-3.5 mr-1.5" />
@@ -617,7 +613,7 @@ function ProfilePage() {
             <div className="flex items-center gap-2 text-xs text-destructive font-medium">
               <UserX className="h-4 w-4 shrink-0" />
               <span>
-                You have blocked @{viewedProfile.username}. Their posts and activity are hidden.
+                You have blocked @{viewedProfile.username}. Their posts and activity are now hidden.
               </span>
             </div>
 
@@ -697,7 +693,6 @@ function ProfilePage() {
 
         {/* Active Tab Content */}
         <div className="mt-4">
-          {/* Posts Tab */}
           {activeTab === "posts" && (
             <div className="space-y-4">
               {userPostsLoading ? (
@@ -735,7 +730,6 @@ function ProfilePage() {
             </div>
           )}
 
-          {/* Reels Tab */}
           {activeTab === "reels" && (
             <div>
               {userReels.length === 0 ? (
@@ -786,7 +780,6 @@ function ProfilePage() {
             </div>
           )}
 
-          {/* Tagged Tab */}
           {activeTab === "tagged" && (
             <div className="space-y-4">
               {taggedPostsLoading ? (
@@ -823,7 +816,6 @@ function ProfilePage() {
             </div>
           )}
 
-          {/* Achievements Tab */}
           {activeTab === "achievements" && (
             <section className="rounded-xl p-5 border border-border bg-card shadow-sm">
               <h2 className="flex items-center gap-2 text-base font-semibold mb-3 text-foreground">
@@ -860,7 +852,6 @@ function ProfilePage() {
             </section>
           )}
 
-          {/* About Tab */}
           {activeTab === "about" && (
             <section className="rounded-xl p-5 space-y-3 border border-border bg-card shadow-sm">
               <h2 className="text-base font-semibold text-foreground">
