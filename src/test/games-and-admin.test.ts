@@ -48,6 +48,7 @@ import {
   adminDeleteContentItem,
   adminSaveGameConfig,
 } from "@/services/admin";
+import { GAMES_AND_ADMIN_MIGRATION_SQL } from "@/lib/sql/gamesAndAdminSchema";
 
 describe("VIDALORE Games Center & Admin Dashboard", () => {
   beforeEach(() => {
@@ -291,6 +292,23 @@ describe("VIDALORE Games Center & Admin Dashboard", () => {
         p_target_id: "post-1",
         p_reason: "Spam",
       });
+    });
+
+    it("exports pure PostgreSQL SQL migration without JS comments or transaction-wrapped ALTER TYPE", () => {
+      expect(GAMES_AND_ADMIN_MIGRATION_SQL.trimStart().startsWith("--")).toBe(true);
+      expect(GAMES_AND_ADMIN_MIGRATION_SQL).not.toMatch(/^\s*\/\//m);
+      expect(GAMES_AND_ADMIN_MIGRATION_SQL).not.toMatch(/^\s*BEGIN;/m);
+      expect(GAMES_AND_ADMIN_MIGRATION_SQL).toContain(
+        "ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'super_admin';",
+      );
+      const playersTableIdx = GAMES_AND_ADMIN_MIGRATION_SQL.indexOf(
+        "CREATE TABLE IF NOT EXISTS public.game_room_players",
+      );
+      const updatePolicyIdx = GAMES_AND_ADMIN_MIGRATION_SQL.indexOf(
+        'CREATE POLICY "Host or players update active room"',
+      );
+      expect(playersTableIdx).toBeGreaterThan(-1);
+      expect(updatePolicyIdx).toBeGreaterThan(playersTableIdx);
     });
   });
 });
