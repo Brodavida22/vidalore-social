@@ -117,15 +117,20 @@ export function AdminModerationPage() {
           </p>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          className="text-xs h-8 border-border self-start sm:self-auto"
-        >
-          <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Button asChild variant="outline" size="sm" className="text-xs h-8 border-border">
+            <Link to="/admin">Full Admin Console</Link>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            className="text-xs h-8 border-border"
+          >
+            <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Filter Tabs & Toolbar */}
@@ -364,6 +369,10 @@ function getTargetIcon(targetType: ReportTargetType) {
       return <MessageSquare className="h-3 w-3 mr-1" />;
     case "profile":
       return <User className="h-3 w-3 mr-1" />;
+    case "reel":
+      return <Flag className="h-3 w-3 mr-1" />;
+    case "meme":
+      return <Flag className="h-3 w-3 mr-1" />;
   }
 }
 
@@ -375,6 +384,10 @@ function getTargetBadge(targetType: ReportTargetType): string {
       return "bg-amber-500/10 text-amber-500";
     case "profile":
       return "bg-blue-500/10 text-blue-500";
+    case "reel":
+      return "bg-purple-500/10 text-purple-500";
+    case "meme":
+      return "bg-emerald-500/10 text-emerald-500";
   }
 }
 

@@ -19,9 +19,11 @@ import {
   Search,
   ShieldAlert,
   MessageSquarePlus,
+  Gamepad2,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
+import { startOnlinePresence } from "@/lib/onlinePresence";
 import { Logo } from "@/components/brand/Logo";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { myProfileQuery } from "@/services/profiles";
@@ -94,6 +96,12 @@ export function AppShell() {
     };
   }, [queryClient]);
 
+  // Global online presence tracker for Admin Overview & live activity
+  useEffect(() => {
+    if (!me?.id) return;
+    return startOnlinePresence({ id: me.id, username: me.username });
+  }, [me?.id, me?.username]);
+
   const unreadNotifs = dbUnreadCount;
 
   async function signOut() {
@@ -151,6 +159,12 @@ export function AppShell() {
           <Link to="/reels" className={linkCls} activeProps={activeCls}>
             <Clapperboard className="h-5 w-5" />
             Reels
+          </Link>
+
+          {/* GAMES CENTER */}
+          <Link to="/games" className={linkCls} activeProps={activeCls}>
+            <Gamepad2 className="h-5 w-5 text-[#E91E63]" />
+            Games
           </Link>
 
           {/* NOTIFICATIONS */}
@@ -231,9 +245,9 @@ export function AppShell() {
           </button>
 
           {isAdmin && (
-            <Link to="/admin/moderation" className={linkCls} activeProps={activeCls}>
+            <Link to="/admin" className={linkCls} activeProps={activeCls}>
               <ShieldAlert className="h-5 w-5 text-[#E91E63]" />
-              Moderation
+              Admin Console
             </Link>
           )}
         </nav>
@@ -284,6 +298,14 @@ export function AppShell() {
               aria-label="Search and explore"
             >
               <Search className="h-5 w-5" />
+            </Link>
+
+            <Link
+              to="/games"
+              className="rounded-lg p-2 text-muted-foreground hover:text-[#E91E63] hover:bg-secondary transition-colors"
+              aria-label="Games Center"
+            >
+              <Gamepad2 className="h-5 w-5" />
             </Link>
 
             <button
@@ -406,6 +428,15 @@ export function AppShell() {
                 Reels
               </Link>
 
+              <Link
+                to="/games"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
+              >
+                <Gamepad2 className="h-4 w-4 text-[#E91E63]" />
+                Games Center
+              </Link>
+
               <button
                 type="button"
                 onClick={() => {
@@ -500,12 +531,12 @@ export function AppShell() {
 
               {isAdmin && (
                 <Link
-                  to="/admin/moderation"
+                  to="/admin"
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary font-medium"
                 >
                   <ShieldAlert className="h-4 w-4 text-[#E91E63]" />
-                  Moderation
+                  Admin Console
                 </Link>
               )}
             </nav>

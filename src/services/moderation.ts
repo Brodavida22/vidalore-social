@@ -1,8 +1,9 @@
 import { queryOptions } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
-export type ReportTargetType = "post" | "comment" | "profile";
+export type ReportTargetType = "post" | "comment" | "profile" | "reel" | "meme";
 export type ReportStatus = "pending" | "reviewing" | "resolved" | "dismissed";
+export type AdminRole = "super_admin" | "admin" | "moderator";
 
 export interface ContentReport {
   id: string;
@@ -35,22 +36,38 @@ export const moderationKeys = {
   reports: (filter?: { status?: ReportStatus | "all"; type?: ReportTargetType | "all" }) =>
     ["moderation", "reports", filter?.status ?? "all", filter?.type ?? "all"] as const,
   isAdmin: () => ["moderation", "is-admin"] as const,
+  adminRole: () => ["moderation", "admin-role"] as const,
 };
 
-export async function isCurrentUserAdmin(): Promise<boolean> {
+const ROLE_PRIORITY: Record<string, number> = {
+  super_admin: 1,
+  admin: 2,
+  moderator: 3,
+  user: 4,
+};
+
+export async function getMyAdminRole(): Promise<AdminRole | null> {
   const { data: session } = await supabase.auth.getSession();
   const uid = session.session?.user.id;
-  if (!uid) return false;
+  if (!uid) return null;
 
-  const { data, error } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", uid)
-    .eq("role", "admin")
-    .maybeSingle();
+  const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", uid);
 
-  if (error || !data) return false;
-  return true;
+  if (error || !data || data.length === 0) return null;
+
+  const sorted = [...data].sort(
+    (a, b) => (ROLE_PRIORITY[String(a.role)] ?? 99) - (ROLE_PRIORITY[String(b.role)] ?? 99),
+  );
+  const top = String(sorted[0]?.role ?? "");
+  if (top === "super_admin" || top === "admin" || top === "moderator") {
+    return top;
+  }
+  return null;
+}
+
+export async function isCurrentUserAdmin(): Promise<boolean> {
+  const role = await getMyAdminRole();
+  return role !== null;
 }
 
 export async function submitContentReport(input: {
@@ -222,4 +239,10 @@ export const isAdminQuery = () =>
   queryOptions({
     queryKey: moderationKeys.isAdmin(),
     queryFn: isCurrentUserAdmin,
+  });
+
+export const adminRoleQuery = () =>
+  queryOptions({
+    queryKey: moderationKeys.adminRole(),
+    queryFn: getMyAdminRole,
   });
