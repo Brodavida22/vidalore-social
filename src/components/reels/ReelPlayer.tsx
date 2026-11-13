@@ -155,6 +155,7 @@ export function ReelPlayer({
   useEffect(() => {
     const viewerId = me?.id;
     const reelId = reel.id;
+    const viewKey = viewerId ? `${viewerId}:${reelId}` : null;
     if (
       !isActive ||
       !isPlaying ||
@@ -162,9 +163,9 @@ export function ReelPlayer({
       videoError ||
       isRepairing ||
       !isPageVisible ||
-      !viewerId ||
-      viewRecordedForRef.current === reelId ||
-      viewAttemptInFlightRef.current === reelId
+      !viewKey ||
+      viewRecordedForRef.current === viewKey ||
+      viewAttemptInFlightRef.current === viewKey
     ) {
       return;
     }
@@ -178,21 +179,21 @@ export function ReelPlayer({
       if (accumulatedWatchMsRef.current < REEL_VIEW_THRESHOLD_MS) return;
 
       clearInterval(intervalId);
-      if (viewRecordedForRef.current === reelId || viewAttemptInFlightRef.current === reelId) {
+      if (viewRecordedForRef.current === viewKey || viewAttemptInFlightRef.current === viewKey) {
         return;
       }
 
-      viewAttemptInFlightRef.current = reelId;
-      void recordReelView(reelId)
+      viewAttemptInFlightRef.current = viewKey;
+      void recordReelView(reelId, { watchedMs: accumulatedWatchMsRef.current })
         .then((viewsCount) => {
-          viewRecordedForRef.current = reelId;
+          viewRecordedForRef.current = viewKey;
           setReel((prev) => (prev.id === reelId ? { ...prev, viewsCount } : prev));
         })
         .catch((error) => {
           console.warn("Could not record reel view:", error);
         })
         .finally(() => {
-          if (viewAttemptInFlightRef.current === reelId) {
+          if (viewAttemptInFlightRef.current === viewKey) {
             viewAttemptInFlightRef.current = null;
           }
         });

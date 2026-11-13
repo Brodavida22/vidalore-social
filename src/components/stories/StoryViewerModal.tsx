@@ -54,6 +54,7 @@ export function StoryViewerModal({
   const [isAutoplaySoundBlocked, setIsAutoplaySoundBlocked] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const progressRef = useRef(0);
 
   const currentGroup = storyGroups[groupIndex];
   const currentStory: StoryItem | undefined = currentGroup?.stories[storyIndex];
@@ -80,6 +81,7 @@ export function StoryViewerModal({
   useEffect(() => {
     setGroupIndex(initialGroupIndex);
     setStoryIndex(0);
+    progressRef.current = 0;
     setProgress(0);
     setVideoLoading(true);
     setVideoError(false);
@@ -87,6 +89,7 @@ export function StoryViewerModal({
   }, [initialGroupIndex, open]);
 
   useEffect(() => {
+    progressRef.current = 0;
     setProgress(0);
     setVideoLoading(currentStory?.mediaType === "video");
     setVideoError(false);
@@ -106,10 +109,12 @@ export function StoryViewerModal({
 
     if (storyIndex < currentGroup.stories.length - 1) {
       setStoryIndex((prev) => prev + 1);
+      progressRef.current = 0;
       setProgress(0);
     } else if (groupIndex < storyGroups.length - 1) {
       setGroupIndex((prev) => prev + 1);
       setStoryIndex(0);
+      progressRef.current = 0;
       setProgress(0);
     } else {
       onClose();
@@ -119,11 +124,13 @@ export function StoryViewerModal({
   const handlePrev = useCallback(() => {
     if (storyIndex > 0) {
       setStoryIndex((prev) => prev - 1);
+      progressRef.current = 0;
       setProgress(0);
     } else if (groupIndex > 0) {
       const prevGroup = storyGroups[groupIndex - 1];
       setGroupIndex((prev) => prev - 1);
       setStoryIndex(prevGroup ? prevGroup.stories.length - 1 : 0);
+      progressRef.current = 0;
       setProgress(0);
     }
   }, [storyIndex, groupIndex, storyGroups]);
@@ -201,17 +208,18 @@ export function StoryViewerModal({
     const step = (interval / STORY_DURATION_MS) * 100;
 
     const timer = setInterval(() => {
-      setProgress((prev) => {
-        const next = prev + step;
+      const next = progressRef.current + step;
 
-        if (next >= 100) {
-          clearInterval(timer);
-          handleNext();
-          return 100;
-        }
+      if (next >= 100) {
+        clearInterval(timer);
+        progressRef.current = 100;
+        setProgress(100);
+        handleNext();
+        return;
+      }
 
-        return next;
-      });
+      progressRef.current = next;
+      setProgress(next);
     }, interval);
 
     return () => clearInterval(timer);
@@ -289,6 +297,7 @@ export function StoryViewerModal({
                   const v = e.currentTarget;
                   if (v.duration > 0) {
                     const pct = Math.min(100, (v.currentTime / v.duration) * 100);
+                    progressRef.current = pct;
                     setProgress(pct);
                   }
                 }}

@@ -884,10 +884,20 @@ export async function incrementReelShare(reelId: string): Promise<number> {
   return cached?.sharesCount ?? 1;
 }
 
-export async function recordReelView(reelId: string): Promise<number> {
+export async function recordReelView(
+  reelId: string,
+  options?: { watchedMs?: number },
+): Promise<number> {
   const cleanReelId = reelId.trim();
   if (!cleanReelId) {
     throw new Error("A valid Reel ID is required to record a view.");
+  }
+
+  if (
+    options?.watchedMs !== undefined &&
+    (!Number.isFinite(options.watchedMs) || options.watchedMs < REEL_VIEW_THRESHOLD_MS)
+  ) {
+    return Math.max(0, Number(sessionReelsCache.get(cleanReelId)?.viewsCount ?? 0));
   }
 
   const userId = await currentUserId();

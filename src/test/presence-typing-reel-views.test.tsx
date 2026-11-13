@@ -501,11 +501,16 @@ describe("Real-Time Presence, Typing Indicators, Delivery States & Reel Views", 
       // Rejects blank reel ID
       await expect(recordReelView("   ")).rejects.toThrow(/valid Reel ID/i);
 
+      // Sub-threshold watch duration must NOT invoke the RPC
+      const earlyResult = await recordReelView("reel-1", { watchedMs: 1999 });
+      expect(earlyResult).toBe(0);
+      expect(mockRpc).not.toHaveBeenCalled();
+
       // Concurrent calls coalesce into a single RPC invocation
       mockRpc.mockResolvedValueOnce({ data: 42, error: null });
       const [first, second] = await Promise.all([
-        recordReelView("reel-1"),
-        recordReelView("reel-1"),
+        recordReelView("reel-1", { watchedMs: 2000 }),
+        recordReelView("reel-1", { watchedMs: 2500 }),
       ]);
       expect(first).toBe(42);
       expect(second).toBe(42);
