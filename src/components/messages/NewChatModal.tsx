@@ -11,6 +11,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import {
+  useOnlinePresence,
+  seedProfileLastSeen,
+  extractProfileLastSeen,
+  getEffectiveLastSeen,
+} from "@/lib/onlinePresence";
+import { PresenceDot, PresenceStatusText } from "@/components/social/PresenceIndicator";
+import {
   searchProfiles,
   getOrCreateDirectConversation,
   type ConversationListItem,
@@ -32,6 +39,7 @@ export function NewChatModal({
   const [results, setResults] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(false);
   const [creatingWithUserId, setCreatingWithUserId] = useState<string | null>(null);
+  const { isOnline, nowMs } = useOnlinePresence();
 
   useEffect(() => {
     if (!open) {
@@ -49,6 +57,7 @@ export function NewChatModal({
         searchProfiles(search, currentUserId)
           .then((data) => {
             if (active) {
+              seedProfileLastSeen(data);
               setResults(data);
               setLoading(false);
             }
@@ -156,19 +165,41 @@ export function NewChatModal({
                     className="w-full flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-secondary transition-all text-left group border border-transparent hover:border-border disabled:opacity-50"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <UserAvatar
-                        profile={profile}
-                        className="h-10 w-10 shrink-0 ring-1 ring-border group-hover:ring-[#E91E63] transition-all"
-                      />
+                      <div className="relative shrink-0">
+                        <UserAvatar
+                          profile={profile}
+                          className="h-10 w-10 shrink-0 ring-1 ring-border group-hover:ring-[#E91E63] transition-all"
+                        />
+                        <PresenceDot
+                          isOnline={isOnline(profile.id)}
+                          lastSeenAt={getEffectiveLastSeen(
+                            profile.id,
+                            extractProfileLastSeen(profile),
+                          )}
+                          size="sm"
+                          className="absolute bottom-0 right-0"
+                        />
+                      </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-xs font-semibold text-foreground group-hover:text-[#E91E63] transition-colors truncate">
                             {profile.display_name || profile.username}
                           </p>
                         </div>
-                        <p className="text-[0.7rem] text-muted-foreground truncate">
-                          @{profile.username}
-                        </p>
+                        <div className="flex items-center gap-1.5 truncate">
+                          <p className="text-[0.7rem] text-muted-foreground truncate">
+                            @{profile.username}
+                          </p>
+                          <PresenceStatusText
+                            isOnline={isOnline(profile.id)}
+                            lastSeenAt={getEffectiveLastSeen(
+                              profile.id,
+                              extractProfileLastSeen(profile),
+                            )}
+                            nowMs={nowMs}
+                            className="text-[10px]"
+                          />
+                        </div>
                         {profile.bio && (
                           <p className="text-[0.68rem] text-muted-foreground truncate mt-0.5">
                             {profile.bio}

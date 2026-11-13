@@ -89,6 +89,15 @@ const REEL_BUCKET = "reel-videos";
 const STORY_BUCKET = "story-media";
 const MAX_REEL_BYTES = 100 * 1024 * 1024;
 const MAX_STORY_BYTES = 50 * 1024 * 1024;
+export const REEL_VIEW_THRESHOLD_MS = 2000;
+
+const sessionRecordedViews = new Map<string, number>();
+const inFlightReelViews = new Map<string, Promise<number>>();
+
+export function __resetRecordedReelViewsForTests(): void {
+  sessionRecordedViews.clear();
+  inFlightReelViews.clear();
+}
 
 export interface StoryCompressionResult {
   file: File;
@@ -876,37 +885,68 @@ export async function incrementReelShare(reelId: string): Promise<number> {
 }
 
 export async function recordReelView(reelId: string): Promise<number> {
-  await currentUserId();
-
-  const rpc = supabase.rpc as unknown as (
-    fn: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: unknown; error: unknown }>;
-
-  const { data, error } = await rpc("record_reel_view", {
-    _reel_id: reelId,
-  });
-
-  if (error) {
-    message(error, "Could not record reel view.");
+  const cleanReelId = reelId.trim();
+  if (!cleanReelId) {
+    throw new Error("A valid Reel ID is required to record a view.");
   }
 
-  const viewsCount = Number(data ?? 0);
+  const userId = await currentUserId();
+  const viewKey = `${userId}:${cleanReelId}`;
 
-  if (!Number.isFinite(viewsCount)) {
-    throw new Error("The Reel view count returned an invalid value.");
+  const alreadyRecordedCount = sessionRecordedViews.get(viewKey);
+  if (alreadyRecordedCount !== undefined) {
+    const cachedCount = sessionReelsCache.get(cleanReelId)?.viewsCount ?? 0;
+    return Math.max(alreadyRecordedCount, cachedCount);
   }
 
-  const cached = sessionReelsCache.get(reelId);
-
-  if (cached) {
-    const updatedReel = { ...cached, viewsCount };
-    sessionReelsCache.set(reelId, updatedReel);
-    upsertPersistentReel(updatedReel);
+  const existingPromise = inFlightReelViews.get(viewKey);
+  if (existingPromise) {
+    return existingPromise;
   }
 
-  notifyUpdated();
-  return viewsCount;
+  const promise = (async () => {
+    const rpc = supabase.rpc as unknown as (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: unknown }>;
+
+    const { data, error } = await rpc("record_reel_view", {
+      _reel_id: cleanReelId,
+    });
+
+    if (error) {
+      message(error, "Could not record reel view.");
+    }
+
+    const viewsCount = Number(data);
+    if (!Number.isFinite(viewsCount) || viewsCount < 0) {
+      throw new Error("The Reel view count returned an invalid value.");
+    }
+
+    const normalizedCount = Math.floor(viewsCount);
+    sessionRecordedViews.set(viewKey, normalizedCount);
+
+    const cached = sessionReelsCache.get(cleanReelId);
+    const previousCachedViews = cached?.viewsCount;
+    if (cached) {
+      const updatedReel = { ...cached, viewsCount: normalizedCount };
+      sessionReelsCache.set(cleanReelId, updatedReel);
+      upsertPersistentReel(updatedReel);
+    }
+
+    if (previousCachedViews === undefined || previousCachedViews !== normalizedCount) {
+      notifyUpdated();
+    }
+
+    return normalizedCount;
+  })();
+
+  inFlightReelViews.set(viewKey, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlightReelViews.delete(viewKey);
+  }
 }
 
 export async function getSavedReels(): Promise<ReelItem[]> {

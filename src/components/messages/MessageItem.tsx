@@ -13,6 +13,10 @@ import {
   ShieldCheck,
   Shield,
   Smile,
+  Clock,
+  AlertCircle,
+  RotateCcw,
+  X,
 } from "lucide-react";
 import type { MessageWithReadsAndReactions } from "@/services/messages";
 import { UserAvatar } from "@/components/profile/UserAvatar";
@@ -37,24 +41,30 @@ export function MessageItem({
   isGroup,
   isAdmin,
   senderRole,
+  peerLastReadAt,
   onReply,
   onEdit,
   onDelete,
   onForward,
   onToggleReaction,
   onLocateMessage,
+  onRetry,
+  onDismissFailed,
 }: {
   message: MessageWithReadsAndReactions;
   currentUserId: string;
   isGroup: boolean;
   isAdmin: boolean;
   senderRole?: "owner" | "admin" | "moderator" | "member";
+  peerLastReadAt?: string | null | undefined;
   onReply: (message: MessageWithReadsAndReactions) => void;
   onEdit: (message: MessageWithReadsAndReactions) => void;
   onDelete: (message: MessageWithReadsAndReactions) => void;
   onForward?: (message: MessageWithReadsAndReactions) => void;
   onToggleReaction: (messageId: string, emoji: string) => void;
   onLocateMessage?: (messageId: string) => void;
+  onRetry?: (message: MessageWithReadsAndReactions) => void;
+  onDismissFailed?: (messageId: string) => void;
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [swipeOffset, setSwipeOffset] = useState(0);
@@ -68,7 +78,15 @@ export function MessageItem({
 
   const isMine = message.sender_id === currentUserId;
   const isDeleted = Boolean(message.deleted_at);
-  const isReadByRecipient = (message.reads ?? []).some((r) => r.user_id !== currentUserId);
+  const isSendingLocal = message.localStatus === "sending";
+  const isFailedLocal = message.localStatus === "failed";
+  const isPendingOrFailed = isSendingLocal || isFailedLocal;
+  const isReadByRecipient =
+    !isPendingOrFailed &&
+    Boolean(
+      (message.reads ?? []).some((r) => r.user_id !== currentUserId) ||
+      (!isGroup && peerLastReadAt && Date.parse(peerLastReadAt) >= Date.parse(message.created_at)),
+    );
 
   // Clear timer on unmount
   useEffect(() => {
@@ -79,7 +97,7 @@ export function MessageItem({
 
   // Long press & Swipe gesture handlers
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (isDeleted) return;
+    if (isDeleted || isPendingOrFailed) return;
     const touch = e.touches[0];
     if (!touch) return;
 
@@ -106,7 +124,7 @@ export function MessageItem({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!touchStartRef.current || isDeleted) return;
+    if (!touchStartRef.current || isDeleted || isPendingOrFailed) return;
     const touch = e.touches[0];
     if (!touch) return;
 
@@ -148,7 +166,7 @@ export function MessageItem({
       return;
     }
 
-    if (swipeOffset >= 42 && !isDeleted) {
+    if (swipeOffset >= 42 && !isDeleted && !isPendingOrFailed) {
       if (typeof navigator !== "undefined" && navigator.vibrate) {
         try {
           navigator.vibrate(20);
@@ -167,7 +185,7 @@ export function MessageItem({
 
   // Right-click context menu handler for desktop
   const handleContextMenu = (e: React.MouseEvent) => {
-    if (isDeleted) return;
+    if (isDeleted || isPendingOrFailed) return;
     e.preventDefault();
     setMenuOpen(true);
   };
@@ -340,10 +358,10 @@ export function MessageItem({
             </>
           )}
 
-          {/* METADATA: Timestamp, Edited label & Read receipts */}
+          {/* METADATA: Timestamp, Edited label & Delivery / Read receipts */}
           <div
             className={`mt-1 flex items-center justify-end gap-1.5 text-[10px] select-none ${
-              isMine ? "text-white/80" : "text-muted-foreground"
+              isMine ? "text-white/85" : "text-muted-foreground"
             }`}
           >
             <span>
@@ -355,16 +373,58 @@ export function MessageItem({
 
             {message.edited_at && !isDeleted && <span className="italic opacity-80">· Edited</span>}
 
-            {/* Read receipt checkmarks */}
+            {/* Delivery status & read receipt */}
             {isMine && !isDeleted && (
-              <span
-                className="inline-flex items-center ml-0.5"
-                title={isReadByRecipient ? "Read by recipient" : "Delivered"}
-              >
-                {isReadByRecipient ? (
-                  <CheckCheck size={13} className="text-white drop-shadow-xs" />
+              <span className="inline-flex items-center gap-1 ml-0.5">
+                {isSendingLocal ? (
+                  <span className="inline-flex items-center gap-1 text-white/80">
+                    <Clock size={11} className="animate-pulse" />
+                    <span>Sending...</span>
+                  </span>
+                ) : isFailedLocal ? (
+                  <span
+                    className="inline-flex items-center gap-1 rounded bg-black/25 px-1.5 py-0.5 text-[10px] font-medium text-amber-200"
+                    title={message.localError || "Failed to send"}
+                  >
+                    <AlertCircle size={11} />
+                    <span>Failed to send</span>
+                    {onRetry && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRetry(message);
+                        }}
+                        className="ml-1 inline-flex items-center gap-0.5 underline font-semibold text-white hover:text-amber-100"
+                      >
+                        <RotateCcw size={10} />
+                        Retry
+                      </button>
+                    )}
+                    {onDismissFailed && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDismissFailed(message.id);
+                        }}
+                        aria-label="Dismiss failed message"
+                        className="ml-0.5 text-white/70 hover:text-white"
+                      >
+                        <X size={10} />
+                      </button>
+                    )}
+                  </span>
+                ) : isReadByRecipient ? (
+                  <span className="inline-flex items-center gap-0.5" title="Seen">
+                    <CheckCheck size={13} className="text-sky-200 drop-shadow-xs" />
+                    <span>Seen</span>
+                  </span>
                 ) : (
-                  <Check size={13} className="text-white/60" />
+                  <span className="inline-flex items-center gap-0.5 text-white/75" title="Sent">
+                    <Check size={13} />
+                    <span>Sent</span>
+                  </span>
                 )}
               </span>
             )}
@@ -402,7 +462,7 @@ export function MessageItem({
       </div>
 
       {/* FLOATING ACTION TOOLBAR ON DESKTOP HOVER */}
-      {!isDeleted && (
+      {!isDeleted && !isPendingOrFailed && (
         <div
           className={`absolute top-0 -translate-y-1/2 flex items-center gap-0.5 p-1 rounded-full bg-card border border-border shadow-md z-10 transition-opacity ${
             isMine ? "right-6" : "left-12"

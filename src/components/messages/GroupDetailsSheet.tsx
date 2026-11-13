@@ -45,6 +45,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import {
+  useOnlinePresence,
+  seedProfileLastSeen,
+  extractProfileLastSeen,
+  getEffectiveLastSeen,
+} from "@/lib/onlinePresence";
+import { PresenceDot, PresenceStatusText } from "@/components/social/PresenceIndicator";
+import {
   type ConversationListItem,
   type Profile,
   type GroupRole,
@@ -94,6 +101,7 @@ export function GroupDetailsSheet({
   const [searchResults, setSearchResults] = useState<Profile[]>([]);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+  const { isOnline, nowMs } = useOnlinePresence();
 
   // Role Change Confirmation Modal
   const [roleChangeTarget, setRoleChangeTarget] = useState<{
@@ -128,6 +136,7 @@ export function GroupDetailsSheet({
   // Keep local members synchronized with conversation prop changes
   useEffect(() => {
     setMembers(conversation.members);
+    seedProfileLastSeen(conversation.members.map((m) => m.profile));
   }, [conversation.members]);
 
   // When sheet opens, fetch fresh members from the database
@@ -136,6 +145,7 @@ export function GroupDetailsSheet({
       getGroupMembers(conversation.id)
         .then((fresh) => {
           if (fresh && fresh.length > 0) {
+            seedProfileLastSeen(fresh.map((m) => m.profile));
             setMembers(fresh);
           }
         })
@@ -572,16 +582,27 @@ export function GroupDetailsSheet({
                     className="flex items-center justify-between p-2 rounded-xl hover:bg-secondary/60 transition"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <UserAvatar
-                        profile={
-                          member.profile ?? {
-                            username: "member",
-                            display_name: null,
-                            avatar_url: null,
+                      <div className="relative shrink-0">
+                        <UserAvatar
+                          profile={
+                            member.profile ?? {
+                              username: "member",
+                              display_name: null,
+                              avatar_url: null,
+                            }
                           }
-                        }
-                        className="h-8 w-8 ring-1 ring-border"
-                      />
+                          className="h-8 w-8 ring-1 ring-border"
+                        />
+                        <PresenceDot
+                          isOnline={isOnline(member.user_id)}
+                          lastSeenAt={getEffectiveLastSeen(
+                            member.user_id,
+                            extractProfileLastSeen(member.profile),
+                          )}
+                          size="xs"
+                          className="absolute bottom-0 right-0"
+                        />
+                      </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-xs font-semibold text-foreground truncate">
@@ -591,9 +612,20 @@ export function GroupDetailsSheet({
                             <span className="text-[10px] text-muted-foreground">(You)</span>
                           )}
                         </div>
-                        <p className="text-[10px] text-muted-foreground truncate">
-                          @{member.profile?.username || "user"}
-                        </p>
+                        <div className="flex items-center gap-1.5 truncate">
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            @{member.profile?.username || "user"}
+                          </p>
+                          <PresenceStatusText
+                            isOnline={isOnline(member.user_id)}
+                            lastSeenAt={getEffectiveLastSeen(
+                              member.user_id,
+                              extractProfileLastSeen(member.profile),
+                            )}
+                            nowMs={nowMs}
+                            className="text-[10px]"
+                          />
+                        </div>
                       </div>
                     </div>
 

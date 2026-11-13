@@ -54,7 +54,23 @@ export function ChatComposer({
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTypingSentAtRef = useRef(0);
+  const isTypingActiveRef = useRef(false);
+  const onTypingRef = useRef(onTyping);
+  onTypingRef.current = onTyping;
+
+  const stopTypingImmediately = () => {
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    if (isTypingActiveRef.current) {
+      isTypingActiveRef.current = false;
+      lastTypingSentAtRef.current = 0;
+      onTypingRef.current(false);
+    }
+  };
 
   // Sync edit mode text
   useEffect(() => {
@@ -62,6 +78,20 @@ export function ChatComposer({
       setText(editingMessage.content || "");
     }
   }, [editingMessage]);
+
+  // Clear typing status when composer unmounts
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      if (isTypingActiveRef.current) {
+        isTypingActiveRef.current = false;
+        onTypingRef.current(false);
+      }
+    };
+  }, []);
 
   // Clean up object URLs
   useEffect(() => {
@@ -72,14 +102,25 @@ export function ChatComposer({
     };
   }, [attachment]);
 
-  // Typing debounce
+  // Throttled typing broadcast with inactivity auto-clear
   const handleTextChange = (value: string) => {
     setText(value);
 
-    onTyping(true);
+    if (!value.trim()) {
+      stopTypingImmediately();
+      return;
+    }
+
+    const now = Date.now();
+    if (!isTypingActiveRef.current || now - lastTypingSentAtRef.current >= 1500) {
+      isTypingActiveRef.current = true;
+      lastTypingSentAtRef.current = now;
+      onTyping(true);
+    }
+
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
-      onTyping(false);
+      stopTypingImmediately();
     }, 2500);
   };
 
@@ -136,8 +177,7 @@ export function ChatComposer({
     const clean = text.trim();
     if (!clean && !attachment) return;
 
-    onTyping(false);
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    stopTypingImmediately();
 
     try {
       if (attachment) {
@@ -349,6 +389,7 @@ export function ChatComposer({
               value={text}
               onChange={(e) => handleTextChange(e.target.value)}
               onKeyDown={handleKeyDown}
+              onBlur={stopTypingImmediately}
               placeholder={
                 editingMessage ? "Edit message..." : "Write a message... (Enter to send)"
               }

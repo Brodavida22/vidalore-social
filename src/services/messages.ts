@@ -20,11 +20,15 @@ export type MessageReaction = Tables<"message_reactions"> & {
   profile?: Profile | null;
 };
 
+export type MessageDeliveryStatus = "sending" | "sent" | "failed";
+
 export type MessageWithReadsAndReactions = Message & {
   reads?: MessageRead[];
   reactions?: MessageReaction[];
   replyToMessage?: Message | null;
   sender?: Profile | null;
+  localStatus?: MessageDeliveryStatus;
+  localError?: string;
 };
 
 // Backwards compatibility alias
@@ -1533,7 +1537,9 @@ export function subscribeToConversationChannel(
     onMessageDelete?: (messageId: string) => void;
     onReactionChange?: () => void;
     onReadReceipt?: (read: MessageRead) => void;
+    onMemberReadUpdate?: (data: { userId: string; lastReadAt: string }) => void;
     onTyping?: (data: { userId: string; username: string; isTyping: boolean }) => void;
+    onPeerLeave?: (userId: string) => void;
     onPresenceSync?: (onlineUserIds: Set<string>) => void;
   },
 ) {
@@ -1544,6 +1550,8 @@ export function subscribeToConversationChannel(
       broadcast: { ack: false },
     },
   });
+
+  let isSubscribed = false;
 
   channel
     // 1. New message inserted
@@ -1603,7 +1611,7 @@ export function subscribeToConversationChannel(
         handlers.onReactionChange?.();
       },
     )
-    // 5. Read receipts
+    // 5. Read receipts (per-message)
     .on(
       "postgres_changes",
       {
@@ -1617,6 +1625,25 @@ export function subscribeToConversationChannel(
         }
       },
     )
+    // 5b. Conversation member last_read_at updates (supports live Seen indicator)
+    .on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "conversation_members",
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      (payload) => {
+        const updated = payload.new as { user_id?: string; last_read_at?: string | null } | undefined;
+        if (updated?.user_id && updated.last_read_at && handlers.onMemberReadUpdate) {
+          handlers.onMemberReadUpdate({
+            userId: updated.user_id,
+            lastReadAt: updated.last_read_at,
+          });
+        }
+      },
+    )
     // 6. Broadcast: Typing indicator
     .on("broadcast", { event: "typing" }, (event) => {
       if (event["payload"] && handlers.onTyping) {
@@ -1625,35 +1652,62 @@ export function subscribeToConversationChannel(
         );
       }
     })
-    // 7. Presence: Online tracking
+    // 7. Presence: Online tracking & disconnect cleanup for typing
     .on("presence", { event: "sync" }, () => {
       if (handlers.onPresenceSync) {
         const state = channel.presenceState();
         const onlineIds = new Set<string>();
-        Object.keys(state).forEach((key) => onlineIds.add(key));
+        Object.keys(state).forEach((key) => {
+          if (Array.isArray(state[key]) && state[key].length > 0) {
+            onlineIds.add(key);
+          }
+        });
         handlers.onPresenceSync(onlineIds);
+      }
+    })
+    .on("presence", { event: "leave" }, ({ key }) => {
+      if (!key) return;
+      const state = channel.presenceState();
+      const remaining = state[key];
+      if ((!Array.isArray(remaining) || remaining.length === 0) && handlers.onPeerLeave) {
+        handlers.onPeerLeave(key);
       }
     });
 
   channel.subscribe(async (status) => {
+    isSubscribed = status === "SUBSCRIBED";
     if (status === "SUBSCRIBED" && currentUserId) {
-      await channel.track({
-        user_id: currentUserId,
-        online_at: new Date().toISOString(),
-      });
+      try {
+        await channel.track({
+          user_id: currentUserId,
+          online_at: new Date().toISOString(),
+        });
+      } catch {
+        // Non-fatal
+      }
     }
   });
 
   return {
     sendTyping: (isTyping: boolean, username: string) => {
-      void channel.send({
-        type: "broadcast",
-        event: "typing",
-        payload: { userId: currentUserId, username, isTyping },
-      });
+      if (!isSubscribed) return;
+      try {
+        void channel.send({
+          type: "broadcast",
+          event: "typing",
+          payload: { userId: currentUserId, username, isTyping },
+        });
+      } catch {
+        // Non-fatal
+      }
     },
     unsubscribe: () => {
-      void channel.untrack();
+      isSubscribed = false;
+      try {
+        void channel.untrack();
+      } catch {
+        // Ignore
+      }
       void supabase.removeChannel(channel);
     },
   };

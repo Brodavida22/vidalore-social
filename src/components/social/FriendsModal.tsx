@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Users, UserPlus, UserCheck, Search, Check, X, Loader2 } from "lucide-react";
@@ -8,6 +8,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/profile/UserAvatar";
+import {
+  useOnlinePresence,
+  seedProfileLastSeen,
+  extractProfileLastSeen,
+  getEffectiveLastSeen,
+} from "@/lib/onlinePresence";
+import { PresenceDot, PresenceStatusText } from "@/components/social/PresenceIndicator";
 
 import { communityProfilesQuery, type Profile } from "@/services/profiles";
 
@@ -33,6 +40,7 @@ interface PersonInfo {
   avatarUrl?: string | null | undefined;
   points: number;
   bio?: string | null | undefined;
+  lastSeenAt?: string | null | undefined;
   requestId?: string | undefined;
 }
 
@@ -49,6 +57,7 @@ export function FriendsModal({
   const [search, setSearch] = useState("");
 
   const queryClient = useQueryClient();
+  const { isOnline, nowMs } = useOnlinePresence();
 
   const refreshRelationships = async () => {
     await Promise.all([
@@ -96,6 +105,13 @@ export function FriendsModal({
     enabled: open,
   });
 
+  useEffect(() => {
+    const batch = [...dbProfiles, ...friends, ...following, ...followers];
+    if (batch.length > 0) {
+      seedProfileLastSeen(batch);
+    }
+  }, [dbProfiles, friends, following, followers]);
+
   const people = useMemo<PersonInfo[]>(
     () =>
       dbProfiles
@@ -107,6 +123,7 @@ export function FriendsModal({
           avatarUrl: profile.avatar_url,
           points: profile.points_balance,
           bio: profile.bio,
+          lastSeenAt: extractProfileLastSeen(profile),
         })),
     [dbProfiles, me?.id],
   );
@@ -119,6 +136,7 @@ export function FriendsModal({
       avatarUrl: profile.avatar_url,
       points: profile.points_balance,
       bio: profile.bio,
+      lastSeenAt: extractProfileLastSeen(profile),
     }));
 
   const friendIds = friends.map((person) => person.id);
@@ -349,21 +367,39 @@ export function FriendsModal({
                     onClick={() => onOpenChange(false)}
                     className="flex items-center gap-3 min-w-0 group"
                   >
-                    <UserAvatar
-                      profile={{
-                        avatar_url: person.avatarUrl ?? null,
-                        username: person.username,
-                        display_name: person.name,
-                      }}
-                      className="h-10 w-10 text-xs ring-1 ring-border shrink-0"
-                    />
+                    <div className="relative shrink-0">
+                      <UserAvatar
+                        profile={{
+                          avatar_url: person.avatarUrl ?? null,
+                          username: person.username,
+                          display_name: person.name,
+                        }}
+                        className="h-10 w-10 text-xs ring-1 ring-border shrink-0"
+                      />
+                      <PresenceDot
+                        isOnline={isOnline(person.id)}
+                        lastSeenAt={getEffectiveLastSeen(person.id, person.lastSeenAt)}
+                        size="sm"
+                        className="absolute bottom-0 right-0"
+                      />
+                    </div>
 
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-foreground truncate group-hover:text-[#E91E63] transition-colors">
                         {person.name}
                       </p>
 
-                      <p className="text-[0.65rem] text-muted-foreground">@{person.username}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-[0.65rem] text-muted-foreground truncate">
+                          @{person.username}
+                        </p>
+                        <PresenceStatusText
+                          isOnline={isOnline(person.id)}
+                          lastSeenAt={getEffectiveLastSeen(person.id, person.lastSeenAt)}
+                          nowMs={nowMs}
+                          className="text-[10px]"
+                        />
+                      </div>
 
                       {person.bio && (
                         <p className="text-[0.65rem] text-muted-foreground truncate mt-0.5">

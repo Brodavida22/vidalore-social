@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useMemo, type FormEvent } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   MessageCircle,
   RefreshCw,
@@ -44,6 +44,13 @@ import {
   type GroupRole,
 } from "@/services/messages";
 
+import {
+  useOnlinePresence,
+  seedProfileLastSeen,
+  extractProfileLastSeen,
+  getEffectiveLastSeen,
+} from "@/lib/onlinePresence";
+import { PresenceDot, PresenceStatusText } from "@/components/social/PresenceIndicator";
 import { ChatHeader } from "@/components/messages/ChatHeader";
 import { ChatComposer } from "@/components/messages/ChatComposer";
 import { MessageItem } from "@/components/messages/MessageItem";
@@ -166,10 +173,23 @@ function MessagesPage() {
     useState<MessageWithReadsAndReactions | null>(null);
 
   // Realtime Presence & Typing
-  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const { isOnline, nowMs } = useOnlinePresence();
   const [typingUsersMap, setTypingUsersMap] = useState<
     Map<string, { username: string; timestamp: number }>
   >(new Map());
+
+  // Optimistic / Failed message delivery state per conversation
+  type SendPayload = {
+    content?: string | undefined;
+    mediaFile?: File | Blob;
+    messageType?: "text" | "image" | "video" | "audio" | "file" | undefined;
+    replyToId?: string | undefined;
+  };
+  const [optimisticMessagesByConv, setOptimisticMessagesByConv] = useState<
+    Record<string, MessageWithReadsAndReactions[]>
+  >({});
+  const retryPayloadsRef = useRef<Map<string, SendPayload>>(new Map());
+  const [isEditingPending, setIsEditingPending] = useState(false);
 
   // Scroll to bottom / Scroll detection
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -238,8 +258,11 @@ function MessagesPage() {
   const conversations = useMemo(() => rawConversations ?? [], [rawConversations]);
   const selectedId = selectedConversation?.id ?? "";
 
-  // Keep selectedConversation in sync with fetched data
+  // Keep selectedConversation in sync with fetched data and seed last_seen_at values
   useEffect(() => {
+    if (conversations.length > 0) {
+      seedProfileLastSeen(conversations.flatMap((c) => c.members.map((m) => m.profile)));
+    }
     if (selectedId && conversations.length > 0) {
       const match = conversations.find((c) => c.id === selectedId);
       if (match) setSelectedConversation(match);
@@ -263,6 +286,13 @@ function MessagesPage() {
   });
 
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
+  const displayMessages = useMemo(() => {
+    const pendingForConv = optimisticMessagesByConv[selectedId] ?? [];
+    if (pendingForConv.length === 0) return messages;
+    const confirmedIds = new Set(messages.map((m) => m.id));
+    const remainingPending = pendingForConv.filter((m) => !confirmedIds.has(m.id));
+    return [...messages, ...remainingPending];
+  }, [messages, optimisticMessagesByConv, selectedId]);
 
   // Filter conversations
   const filteredConversations = useMemo(() => {
@@ -396,8 +426,30 @@ function MessagesPage() {
         });
       },
 
-      onPresenceSync: (onlineIds) => {
-        setOnlineUserIds(onlineIds);
+      onPeerLeave: (leftUserId) => {
+        setTypingUsersMap((prev) => {
+          if (!prev.has(leftUserId)) return prev;
+          const next = new Map(prev);
+          next.delete(leftUserId);
+          return next;
+        });
+      },
+
+      onMemberReadUpdate: ({ userId, lastReadAt }) => {
+        queryClient.setQueryData<ConversationListItem[]>(
+          ["messages", "conversations"],
+          (old = []) =>
+            old.map((c) =>
+              c.id === selectedId
+                ? {
+                    ...c,
+                    members: c.members.map((m) =>
+                      m.user_id === userId ? { ...m, last_read_at: lastReadAt } : m,
+                    ),
+                  }
+                : c,
+            ),
+        );
       },
     });
 
@@ -462,7 +514,7 @@ function MessagesPage() {
     // Reset scroll when opening a different conversation
     if (prevSelectedIdRef.current !== selectedId) {
       prevSelectedIdRef.current = selectedId;
-      prevMessagesCountRef.current = messages.length;
+      prevMessagesCountRef.current = displayMessages.length;
       isNearBottomRef.current = true;
       setShowScrollBottomBtn(false);
       requestAnimationFrame(() => {
@@ -472,8 +524,8 @@ function MessagesPage() {
     }
 
     // When message count changes in current conversation
-    if (messages.length > prevMessagesCountRef.current) {
-      const lastMsg = messages[messages.length - 1];
+    if (displayMessages.length > prevMessagesCountRef.current) {
+      const lastMsg = displayMessages[displayMessages.length - 1];
       const isMine = lastMsg?.sender_id === currentUserId;
 
       // Only auto-scroll if message was sent by me OR user was already at the bottom reading
@@ -482,9 +534,9 @@ function MessagesPage() {
           scrollToBottom(true);
         });
       }
-      prevMessagesCountRef.current = messages.length;
+      prevMessagesCountRef.current = displayMessages.length;
     }
-  }, [selectedId, messages, currentUserId]);
+  }, [selectedId, displayMessages, currentUserId]);
 
   // Keep latest message visible if user was reading at the bottom when mobile keyboard opens
   useEffect(() => {
@@ -576,57 +628,170 @@ function MessagesPage() {
     }
   };
 
-  /* 7. SEND MESSAGE MUTATION (Text, Media, Reply, Edit) */
-  const sendMutation = useMutation({
-    mutationFn: async (payload: {
-      content?: string | undefined;
-      mediaFile?: File | Blob;
-      messageType?: "text" | "image" | "video" | "audio" | "file" | undefined;
-      replyToId?: string | undefined;
-    }) => {
-      if (!selectedId) throw new Error("No conversation selected.");
-
-      // If in edit mode:
-      if (editingMessageState) {
-        if (!payload.content?.trim()) throw new Error("Edited message cannot be empty.");
-        return await editMessage(editingMessageState.id, payload.content);
-      }
-
+  /* 7. SEND MESSAGE (Optimistic Sending/Sent/Failed + Edit mode) */
+  const deliverOptimisticMessage = async (
+    targetConvId: string,
+    tempId: string,
+    payload: SendPayload,
+  ) => {
+    try {
       let mediaUrl: string | undefined;
       let mediaName: string | undefined;
 
-      // Handle media upload
       if (payload.mediaFile) {
-        const uploadResult = await uploadChatMedia(selectedId, payload.mediaFile, {
+        const uploadResult = await uploadChatMedia(targetConvId, payload.mediaFile, {
           fileName: payload.mediaFile instanceof File ? payload.mediaFile.name : undefined,
         });
         mediaUrl = uploadResult.mediaUrl;
         mediaName = uploadResult.mediaName;
       }
 
-      return await sendMessage(selectedId, {
+      const sentMsg = await sendMessage(targetConvId, {
         content: payload.content,
         messageType: payload.messageType || "text",
         mediaUrl,
         mediaName,
         replyToId: payload.replyToId,
       });
-    },
 
-    onSuccess: () => {
-      handleBroadcastTyping(false);
-      setReplyingTo(null);
-      setEditingMessageState(null);
-      queryClient.invalidateQueries({ queryKey: ["messages", selectedId] });
+      retryPayloadsRef.current.delete(tempId);
+      setOptimisticMessagesByConv((prev) => {
+        const currentList = prev[targetConvId];
+        if (!currentList) return prev;
+        return {
+          ...prev,
+          [targetConvId]: currentList.filter((m) => m.id !== tempId),
+        };
+      });
+
+      queryClient.setQueryData<MessageWithReadsAndReactions[]>(
+        ["messages", targetConvId],
+        (old = []) => {
+          if (old.some((m) => m.id === sentMsg.id)) return old;
+          return [
+            ...old,
+            {
+              ...sentMsg,
+              sender: currentProfile ?? undefined,
+              reads: [],
+              reactions: [],
+              localStatus: "sent",
+            },
+          ];
+        },
+      );
+
       queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
-      setTimeout(() => scrollToBottom(), 100);
-    },
-
-    onError: (err) => {
+      setTimeout(() => scrollToBottom(), 80);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Failed to send message.";
       console.error("SEND MESSAGE ERROR:", err);
-      toast.error(err instanceof Error ? err.message : "Failed to send message.");
-    },
-  });
+      setOptimisticMessagesByConv((prev) => {
+        const currentList = prev[targetConvId] ?? [];
+        return {
+          ...prev,
+          [targetConvId]: currentList.map((m) =>
+            m.id === tempId ? { ...m, localStatus: "failed", localError: errorMsg } : m,
+          ),
+        };
+      });
+      toast.error(errorMsg);
+    }
+  };
+
+  const handleSendMessage = async (payload: SendPayload) => {
+    if (!selectedId) throw new Error("No conversation selected.");
+
+    if (editingMessageState) {
+      if (!payload.content?.trim()) throw new Error("Edited message cannot be empty.");
+      setIsEditingPending(true);
+      try {
+        await editMessage(editingMessageState.id, payload.content);
+        handleBroadcastTyping(false);
+        setEditingMessageState(null);
+        queryClient.invalidateQueries({ queryKey: ["messages", selectedId] });
+        queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to edit message.");
+        throw err;
+      } finally {
+        setIsEditingPending(false);
+      }
+      return;
+    }
+
+    const tempId = `temp-${crypto.randomUUID()}`;
+    const targetConvId = selectedId;
+    const activeReply = replyingTo;
+
+    const optimisticMsg: MessageWithReadsAndReactions = {
+      id: tempId,
+      conversation_id: targetConvId,
+      sender_id: currentUserId,
+      content:
+        payload.content?.trim() ||
+        (payload.mediaFile
+          ? `[Sending ${payload.messageType === "audio" ? "voice note" : payload.messageType || "attachment"}...]`
+          : null),
+      message_type: payload.messageType || "text",
+      media_url: null,
+      media_name: payload.mediaFile instanceof File ? payload.mediaFile.name : null,
+      reply_to_id: payload.replyToId || null,
+      replyToMessage: activeReply
+        ? {
+            id: activeReply.id,
+            content: activeReply.content,
+            message_type: activeReply.message_type,
+            sender_id: activeReply.sender_id,
+            deleted_at: activeReply.deleted_at,
+          }
+        : null,
+      edited_at: null,
+      deleted_at: null,
+      created_at: new Date().toISOString(),
+      sender: currentProfile ?? undefined,
+      reads: [],
+      reactions: [],
+      localStatus: "sending",
+    };
+
+    retryPayloadsRef.current.set(tempId, payload);
+    setOptimisticMessagesByConv((prev) => ({
+      ...prev,
+      [targetConvId]: [...(prev[targetConvId] ?? []), optimisticMsg],
+    }));
+
+    handleBroadcastTyping(false);
+    setReplyingTo(null);
+    requestAnimationFrame(() => scrollToBottom(true));
+
+    void deliverOptimisticMessage(targetConvId, tempId, payload);
+  };
+
+  const handleRetryFailedMessage = (failedMsg: MessageWithReadsAndReactions) => {
+    const payload = retryPayloadsRef.current.get(failedMsg.id);
+    if (!payload) {
+      toast.error("Original message payload is no longer available.");
+      return;
+    }
+    const targetConvId = failedMsg.conversation_id;
+    setOptimisticMessagesByConv((prev) => ({
+      ...prev,
+      [targetConvId]: (prev[targetConvId] ?? []).map((m) =>
+        m.id === failedMsg.id ? { ...m, localStatus: "sending", localError: undefined } : m,
+      ),
+    }));
+    void deliverOptimisticMessage(targetConvId, failedMsg.id, payload);
+  };
+
+  const handleDismissFailedMessage = (messageId: string) => {
+    retryPayloadsRef.current.delete(messageId);
+    if (!selectedId) return;
+    setOptimisticMessagesByConv((prev) => ({
+      ...prev,
+      [selectedId]: (prev[selectedId] ?? []).filter((m) => m.id !== messageId),
+    }));
+  };
 
   /* 8. MESSAGE ACTIONS: Reaction, Delete For Me/Everyone, Forward, Clear Chat */
   const handleToggleReaction = async (messageId: string, emoji: string) => {
@@ -733,7 +898,7 @@ function MessagesPage() {
   const groupedMessages = useMemo(() => {
     const groups: Array<{ date: string; items: MessageWithReadsAndReactions[] }> = [];
 
-    messages.forEach((msg) => {
+    displayMessages.forEach((msg) => {
       const dateLabel = formatDateSeparator(msg.created_at);
       const lastGroup = groups[groups.length - 1];
       if (lastGroup && lastGroup.date === dateLabel) {
@@ -744,14 +909,25 @@ function MessagesPage() {
     });
 
     return groups;
-  }, [messages]);
+  }, [displayMessages]);
 
-  // Is direct conversation peer online?
-  const isDirectPeerOnline = useMemo(() => {
-    if (!selectedConversation || selectedConversation.kind === "group") return false;
-    const other = selectedConversation.members.find((m) => m.user_id !== currentUserId);
-    return Boolean(other && onlineUserIds.has(other.user_id));
-  }, [selectedConversation, currentUserId, onlineUserIds]);
+  const directPeer = useMemo(() => {
+    if (!selectedConversation || selectedConversation.kind === "group") return null;
+    return selectedConversation.members.find((m) => m.user_id !== currentUserId) ?? null;
+  }, [selectedConversation, currentUserId]);
+
+  const isDirectPeerOnline = Boolean(directPeer && isOnline(directPeer.user_id));
+
+  const directPeerLastSeen = directPeer
+    ? getEffectiveLastSeen(directPeer.user_id, extractProfileLastSeen(directPeer.profile))
+    : null;
+
+  const directPeerLastReadAt = directPeer?.last_read_at ?? null;
+
+  const groupOnlineCount = useMemo(() => {
+    if (!selectedConversation || selectedConversation.kind !== "group") return 0;
+    return selectedConversation.members.filter((m) => isOnline(m.user_id)).length;
+  }, [selectedConversation, isOnline]);
 
   const currentMemberRole: GroupRole = useMemo(() => {
     if (!selectedConversation) return "member";
@@ -959,7 +1135,17 @@ function MessagesPage() {
               const avatar = isGroup ? conv.image_url : otherMember?.profile?.avatar_url;
               const active = selectedConversation?.id === conv.id;
               const isPeerOnline =
-                !isGroup && Boolean(otherMember && onlineUserIds.has(otherMember.user_id));
+                !isGroup && Boolean(otherMember && isOnline(otherMember.user_id));
+              const peerLastSeen =
+                !isGroup && otherMember
+                  ? getEffectiveLastSeen(
+                      otherMember.user_id,
+                      extractProfileLastSeen(otherMember.profile),
+                    )
+                  : null;
+              const convGroupOnlineCount = isGroup
+                ? conv.members.filter((m) => isOnline(m.user_id)).length
+                : 0;
 
               // Format last message preview
               let lastMsgSnippet = "Start a conversation";
@@ -1007,8 +1193,13 @@ function MessagesPage() {
                         </div>
                       )}
 
-                      {isPeerOnline && (
-                        <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-[#22C55E] ring-2 ring-card" />
+                      {!isGroup && (
+                        <PresenceDot
+                          isOnline={isPeerOnline}
+                          lastSeenAt={peerLastSeen}
+                          size="md"
+                          className="absolute bottom-0 right-0"
+                        />
                       )}
                     </div>
 
@@ -1033,6 +1224,23 @@ function MessagesPage() {
                           </span>
                         )}
                       </div>
+
+                      {!isGroup ? (
+                        <div className="mt-0.5">
+                          <PresenceStatusText
+                            isOnline={isPeerOnline}
+                            lastSeenAt={peerLastSeen}
+                            nowMs={nowMs}
+                            className="text-[10px]"
+                          />
+                        </div>
+                      ) : (
+                        convGroupOnlineCount > 0 && (
+                          <p className="mt-0.5 text-[10px] text-[#22C55E] font-medium">
+                            {convGroupOnlineCount} online
+                          </p>
+                        )
+                      )}
                     </div>
                   </button>
 
@@ -1146,6 +1354,8 @@ function MessagesPage() {
                 conversation={selectedConversation}
                 currentUserId={currentUserId}
                 isOnline={isDirectPeerOnline}
+                lastSeenAt={directPeerLastSeen}
+                onlineMemberCount={groupOnlineCount}
                 typingUsers={activeTypingNames}
                 isOwner={currentMemberRole === "owner"}
                 onBack={handleBackFromChat}
@@ -1169,7 +1379,7 @@ function MessagesPage() {
                   </div>
                 )}
 
-                {!messagesQuery.isLoading && messages.length === 0 && (
+                {!messagesQuery.isLoading && displayMessages.length === 0 && (
                   <div className="py-16 text-center space-y-2">
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#E91E63]/10 text-[#E91E63]">
                       <Sparkles size={22} />
@@ -1209,6 +1419,7 @@ function MessagesPage() {
                               )
                             : undefined
                         }
+                        peerLastReadAt={directPeerLastReadAt}
                         onReply={(m) => {
                           setEditingMessageState(null);
                           setReplyingTo(m);
@@ -1227,6 +1438,8 @@ function MessagesPage() {
                         }}
                         onToggleReaction={handleToggleReaction}
                         onLocateMessage={handleLocateMessage}
+                        onRetry={handleRetryFailedMessage}
+                        onDismissFailed={handleDismissFailedMessage}
                       />
                     ))}
                   </div>
@@ -1241,11 +1454,13 @@ function MessagesPage() {
                       <span className="h-1.5 w-1.5 rounded-full bg-[#E91E63]"></span>
                     </div>
                     <span className="text-[11px] font-medium">
-                      {activeTypingNames.length === 1
-                        ? `${activeTypingNames[0]} is typing...`
-                        : activeTypingNames.length === 2
-                          ? `${activeTypingNames[0]} and ${activeTypingNames[1]} are typing...`
-                          : `${activeTypingNames[0]}, ${activeTypingNames[1]} and ${activeTypingNames.length - 2} others are typing...`}
+                      {selectedConversation.kind !== "group"
+                        ? "Typing..."
+                        : activeTypingNames.length === 1
+                          ? `${activeTypingNames[0]} is typing...`
+                          : activeTypingNames.length === 2
+                            ? `${activeTypingNames[0]} and ${activeTypingNames[1]} are typing...`
+                            : `${activeTypingNames[0]}, ${activeTypingNames[1]} and ${activeTypingNames.length - 2} others are typing...`}
                     </span>
                   </div>
                 )}
@@ -1267,15 +1482,13 @@ function MessagesPage() {
 
               {/* CHAT COMPOSER */}
               <ChatComposer
-                onSendMessage={async (data) => {
-                  await sendMutation.mutateAsync(data);
-                }}
+                onSendMessage={handleSendMessage}
                 onTyping={handleBroadcastTyping}
                 replyingTo={replyingTo}
                 onCancelReply={() => setReplyingTo(null)}
                 editingMessage={editingMessageState}
                 onCancelEdit={() => setEditingMessageState(null)}
-                isSending={sendMutation.isPending}
+                isSending={isEditingPending}
               />
 
               {/* GROUP DETAILS SHEET */}

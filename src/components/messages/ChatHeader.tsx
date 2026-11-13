@@ -11,6 +11,8 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import type { ConversationListItem } from "@/services/messages";
+import { formatLastSeen } from "@/lib/onlinePresence";
+import { PresenceDot } from "@/components/social/PresenceIndicator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,6 +35,8 @@ export function ChatHeader({
   conversation,
   currentUserId,
   isOnline,
+  lastSeenAt,
+  onlineMemberCount,
   typingUsers,
   isOwner,
   onBack,
@@ -45,6 +49,8 @@ export function ChatHeader({
   conversation: ConversationListItem;
   currentUserId: string;
   isOnline: boolean;
+  lastSeenAt?: string | null | undefined;
+  onlineMemberCount?: number | undefined;
   typingUsers: string[];
   isOwner?: boolean;
   onBack: () => void;
@@ -72,7 +78,7 @@ export function ChatHeader({
   const typingText = useMemo(() => {
     if (typingUsers.length === 0) return null;
     if (!isGroup) {
-      return `${typingUsers[0] || "User"} is typing...`;
+      return "Typing...";
     }
     if (typingUsers.length === 1) {
       return `${typingUsers[0]} is typing...`;
@@ -118,11 +124,13 @@ export function ChatHeader({
               </div>
             )}
 
-            {/* Online badge for direct conversations */}
-            {!isGroup && isOnline && (
-              <span
-                className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-[#22C55E] ring-2 ring-card"
-                title="Online"
+            {/* Online / Offline badge for direct conversations */}
+            {!isGroup && (
+              <PresenceDot
+                isOnline={isOnline}
+                lastSeenAt={lastSeenAt}
+                size="md"
+                className="absolute bottom-0 right-0"
               />
             )}
           </div>
@@ -146,12 +154,16 @@ export function ChatHeader({
                 <span className="text-[#E91E63] font-medium animate-pulse">{typingText}</span>
               ) : isGroup ? (
                 <span className="text-muted-foreground">
-                  {conversation.members.length} members · tap for info
+                  {conversation.members.length} members
+                  {onlineMemberCount && onlineMemberCount > 0
+                    ? ` · ${onlineMemberCount} online`
+                    : ""}
+                  {" · tap for info"}
                 </span>
               ) : isOnline ? (
                 <span className="text-[#22C55E] font-medium">Online</span>
               ) : (
-                <span className="text-muted-foreground">Direct message</span>
+                <span className="text-muted-foreground">{formatLastSeen(lastSeenAt)}</span>
               )}
             </div>
           </div>

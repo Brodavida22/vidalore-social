@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Search, Sparkles, TrendingUp, UserCheck, UserPlus } from "lucide-react";
@@ -6,6 +6,13 @@ import { Search, Sparkles, TrendingUp, UserCheck, UserPlus } from "lucide-react"
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/profile/UserAvatar";
+import {
+  useOnlinePresence,
+  seedProfileLastSeen,
+  extractProfileLastSeen,
+  getEffectiveLastSeen,
+} from "@/lib/onlinePresence";
+import { PresenceDot, PresenceStatusText } from "@/components/social/PresenceIndicator";
 import { communityProfilesQuery, type Profile } from "@/services/profiles";
 import { followUser, unfollowUser, isFollowing } from "@/services/relationships";
 
@@ -22,6 +29,13 @@ export function RightSidebar({ me }: { me?: Profile | null | undefined }) {
   const queryClient = useQueryClient();
 
   const { data: dbProfiles = [] } = useQuery(communityProfilesQuery(6));
+  const { isOnline, nowMs } = useOnlinePresence();
+
+  useEffect(() => {
+    if (dbProfiles.length > 0) {
+      seedProfileLastSeen(dbProfiles);
+    }
+  }, [dbProfiles]);
 
   const creators = dbProfiles.filter((profile) => profile.id !== me?.id).slice(0, 4);
 
@@ -90,6 +104,12 @@ export function RightSidebar({ me }: { me?: Profile | null | undefined }) {
                 <SuggestedCreator
                   key={creator.id}
                   creator={creator}
+                  creatorOnline={isOnline(creator.id)}
+                  creatorLastSeen={getEffectiveLastSeen(
+                    creator.id,
+                    extractProfileLastSeen(creator),
+                  )}
+                  nowMs={nowMs}
                   disabled={!me?.id || me.id === creator.id}
                   onFollowToggle={(userId, following) =>
                     followMutation.mutate({
@@ -200,11 +220,17 @@ export function RightSidebar({ me }: { me?: Profile | null | undefined }) {
 
 function SuggestedCreator({
   creator,
+  creatorOnline,
+  creatorLastSeen,
+  nowMs,
   disabled,
   pending,
   onFollowToggle,
 }: {
   creator: Profile;
+  creatorOnline: boolean;
+  creatorLastSeen: string | null;
+  nowMs: number;
   disabled: boolean;
   pending: boolean;
   onFollowToggle: (userId: string, following: boolean) => void;
@@ -223,24 +249,41 @@ function SuggestedCreator({
         params={{ username: creator.username! }}
         className="flex items-center gap-2.5 min-w-0 group"
       >
-        <UserAvatar
-          profile={{
-            avatar_url: creator.avatar_url ?? null,
-            username: creator.username!,
-            display_name: creator.display_name ?? null,
-          }}
-          className="h-8 w-8 text-xs ring-1 ring-border group-hover:ring-[#E91E63] transition-all shrink-0"
-        />
+        <div className="relative shrink-0">
+          <UserAvatar
+            profile={{
+              avatar_url: creator.avatar_url ?? null,
+              username: creator.username!,
+              display_name: creator.display_name ?? null,
+            }}
+            className="h-8 w-8 text-xs ring-1 ring-border group-hover:ring-[#E91E63] transition-all shrink-0"
+          />
+          <PresenceDot
+            isOnline={creatorOnline}
+            lastSeenAt={creatorLastSeen}
+            size="sm"
+            className="absolute bottom-0 right-0"
+          />
+        </div>
 
         <div className="min-w-0">
           <p className="text-xs font-semibold text-foreground group-hover:text-[#E91E63] transition-colors truncate">
             {creator.display_name || `@${creator.username}`}
           </p>
 
-          <p className="flex items-center gap-1 text-[0.65rem] text-muted-foreground">
-            <Sparkles className="h-2.5 w-2.5 text-[#E91E63]" />
-            <span>{creator.points_balance ?? 100} pts</span>
-          </p>
+          <div className="flex items-center gap-1.5 text-[0.65rem] text-muted-foreground">
+            <span className="flex items-center gap-0.5 shrink-0">
+              <Sparkles className="h-2.5 w-2.5 text-[#E91E63]" />
+              <span>{creator.points_balance ?? 100} pts</span>
+            </span>
+            <span>·</span>
+            <PresenceStatusText
+              isOnline={creatorOnline}
+              lastSeenAt={creatorLastSeen}
+              nowMs={nowMs}
+              className="text-[10px]"
+            />
+          </div>
         </div>
       </Link>
 

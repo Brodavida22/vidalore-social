@@ -47,6 +47,7 @@ import {
   toggleReelSave,
   incrementReelShare,
   recordReelView,
+  REEL_VIEW_THRESHOLD_MS,
   getFreshReelSignedUrl,
   updateReelVideo,
   transcodeExistingReel,
@@ -97,17 +98,108 @@ export function ReelPlayer({
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const viewRecordedForRef = useRef<string | null>(null);
+  const viewAttemptInFlightRef = useRef<string | null>(null);
+  const accumulatedWatchMsRef = useRef(0);
+  const lastSyncedReelIdRef = useRef(initialReel.id);
+  const [isPageVisible, setIsPageVisible] = useState(() =>
+    typeof document === "undefined" ? true : document.visibilityState !== "hidden",
+  );
 
-  // Sync internal reel & videoSrc when initialReel changes
-useEffect(() => {
-  setReel(initialReel);
-  setVideoSrc(initialReel.videoUrl || "");
-  setVideoError(false);
-  setErrorMessage("");
-  setIsLoading(true);
-  setIsBuffering(false);
-  viewRecordedForRef.current = null;
-}, [initialReel]);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const handleVisibility = () => {
+      setIsPageVisible(document.visibilityState !== "hidden");
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
+
+  // Reset player & view tracking strictly when switching to a different Reel ID,
+  // or sync updated engagement counts for the same Reel without interrupting playback
+  useEffect(() => {
+    if (lastSyncedReelIdRef.current !== initialReel.id) {
+      lastSyncedReelIdRef.current = initialReel.id;
+      setReel(initialReel);
+      setVideoSrc(initialReel.videoUrl || "");
+      setVideoError(false);
+      setErrorMessage("");
+      setIsLoading(true);
+      setIsBuffering(false);
+      setIsFollowing(initialReel.isFollowing ?? false);
+      setProgress(0);
+      accumulatedWatchMsRef.current = 0;
+      viewRecordedForRef.current = null;
+      viewAttemptInFlightRef.current = null;
+      return;
+    }
+
+    setReel((prev) => ({
+      ...prev,
+      caption: initialReel.caption,
+      audioTitle: initialReel.audioTitle,
+      likesCount: initialReel.likesCount,
+      commentsCount: initialReel.commentsCount,
+      sharesCount: initialReel.sharesCount,
+      savesCount: initialReel.savesCount,
+      viewsCount: Math.max(prev.viewsCount, initialReel.viewsCount),
+      hasLiked: initialReel.hasLiked ?? prev.hasLiked,
+      hasSaved: initialReel.hasSaved ?? prev.hasSaved,
+      isFollowing: initialReel.isFollowing ?? prev.isFollowing,
+    }));
+    if (!videoSrc && initialReel.videoUrl) {
+      setVideoSrc(initialReel.videoUrl);
+    }
+  }, [initialReel, videoSrc]);
+
+  // Accumulate active playback duration and record view once threshold is reached
+  useEffect(() => {
+    const viewerId = me?.id;
+    const reelId = reel.id;
+    if (
+      !isActive ||
+      !isPlaying ||
+      isBuffering ||
+      videoError ||
+      isRepairing ||
+      !isPageVisible ||
+      !viewerId ||
+      viewRecordedForRef.current === reelId ||
+      viewAttemptInFlightRef.current === reelId
+    ) {
+      return;
+    }
+
+    const TICK_MS = 200;
+    const intervalId = setInterval(() => {
+      const video = videoRef.current;
+      if (!video || video.paused || video.ended) return;
+
+      accumulatedWatchMsRef.current += TICK_MS;
+      if (accumulatedWatchMsRef.current < REEL_VIEW_THRESHOLD_MS) return;
+
+      clearInterval(intervalId);
+      if (viewRecordedForRef.current === reelId || viewAttemptInFlightRef.current === reelId) {
+        return;
+      }
+
+      viewAttemptInFlightRef.current = reelId;
+      void recordReelView(reelId)
+        .then((viewsCount) => {
+          viewRecordedForRef.current = reelId;
+          setReel((prev) => (prev.id === reelId ? { ...prev, viewsCount } : prev));
+        })
+        .catch((error) => {
+          console.warn("Could not record reel view:", error);
+        })
+        .finally(() => {
+          if (viewAttemptInFlightRef.current === reelId) {
+            viewAttemptInFlightRef.current = null;
+          }
+        });
+    }, TICK_MS);
+
+    return () => clearInterval(intervalId);
+  }, [isActive, isPlaying, isBuffering, videoError, isRepairing, isPageVisible, me?.id, reel.id]);
 
   // Handle active / inactive playback lifecycle
   useEffect(() => {
@@ -238,35 +330,12 @@ useEffect(() => {
     setIsBuffering(false);
   }
 
-    function handlePlaying() {
+  function handlePlaying() {
     setIsPlaying(true);
     setIsLoading(false);
     setIsBuffering(false);
     setIsAutoplayBlocked(false);
-
-    if (!isActive || viewRecordedForRef.current === reel.id) {
-      return;
-    }
-
-    const reelId = reel.id;
-    viewRecordedForRef.current = reelId;
-
-    void recordReelView(reelId)
-      .then((viewsCount) => {
-        setReel((prev) =>
-          prev.id === reelId
-            ? { ...prev, viewsCount }
-            : prev,
-        );
-      })
-      .catch((error) => {
-        if (viewRecordedForRef.current === reelId) {
-          viewRecordedForRef.current = null;
-        }
-
-        console.warn("Could not record reel view:", error);
-      });
-    }
+  }
 
   function handleWaiting() {
     setIsBuffering(true);

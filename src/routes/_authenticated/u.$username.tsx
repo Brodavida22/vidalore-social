@@ -54,6 +54,14 @@ import {
   sendFriendRequest as sendSupabaseFriendRequest,
   getFriendRequestStatus,
 } from "@/services/relationships";
+import {
+  useOnlinePresence,
+  seedProfileLastSeen,
+  extractProfileLastSeen,
+  getEffectiveLastSeen,
+  formatLastSeen,
+} from "@/lib/onlinePresence";
+import { PresenceDot, PresenceStatusText } from "@/components/social/PresenceIndicator";
 
 export const Route = createFileRoute("/_authenticated/u/$username")({
   head: ({ params }) => ({
@@ -86,6 +94,7 @@ function ProfilePage() {
   const { data: profile, isLoading, error, refetch } = useQuery(profileByUsernameQuery(username));
 
   const { data: me } = useQuery(myProfileQuery());
+  const { isOnline, nowMs } = useOnlinePresence();
 
   const { data: achievements } = useQuery({
     ...achievementsForUserQuery(profile?.id ?? ""),
@@ -190,6 +199,13 @@ function ProfilePage() {
     return () => window.removeEventListener("vidalore:reels-updated", handleUpdate);
   }, [queryClient]);
 
+  useEffect(() => {
+    const batch = [profile, ...followList].filter(Boolean);
+    if (batch.length > 0) {
+      seedProfileLastSeen(batch);
+    }
+  }, [profile, followList]);
+
   const {
     data: userPosts = [],
     isLoading: userPostsLoading,
@@ -267,6 +283,11 @@ function ProfilePage() {
   }
 
   const viewedProfile = profile;
+  const viewedOnline = isOnline(viewedProfile.id);
+  const viewedLastSeen = getEffectiveLastSeen(
+    viewedProfile.id,
+    extractProfileLastSeen(viewedProfile),
+  );
 
   const joined = new Date(viewedProfile.created_at).toLocaleDateString(undefined, {
     month: "long",
@@ -415,6 +436,12 @@ function ProfilePage() {
               profile={viewedProfile}
               className="h-24 w-24 sm:h-28 sm:w-28 border-4 border-background text-2xl sm:text-3xl shadow-md ring-2 ring-[#E91E63]"
             />
+            <PresenceDot
+              isOnline={viewedOnline}
+              lastSeenAt={viewedLastSeen}
+              size="lg"
+              className="absolute bottom-1.5 right-1.5"
+            />
           </div>
 
           {/* Action Buttons */}
@@ -539,7 +566,16 @@ function ProfilePage() {
             )}
           </div>
 
-          <p className="text-xs text-muted-foreground">@{viewedProfile.username}</p>
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <p className="text-xs text-muted-foreground">@{viewedProfile.username}</p>
+            <span className="text-muted-foreground/50 text-xs">·</span>
+            <PresenceStatusText
+              isOnline={viewedOnline}
+              lastSeenAt={viewedLastSeen}
+              nowMs={nowMs}
+              showDot
+            />
+          </div>
 
           {viewedProfile.bio && (
             <p className="mt-2 text-xs sm:text-sm text-foreground whitespace-pre-line leading-relaxed max-w-xl">
@@ -822,7 +858,13 @@ function ProfilePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div className="rounded-lg bg-secondary p-3 border border-border">
                   <p className="text-muted-foreground">Status</p>
-                  <p className="font-semibold text-foreground mt-0.5">Active Member</p>
+                  <p
+                    className={`font-semibold mt-0.5 ${
+                      viewedOnline ? "text-[#22C55E]" : "text-foreground"
+                    }`}
+                  >
+                    {viewedOnline ? "Online now" : formatLastSeen(viewedLastSeen, nowMs)}
+                  </p>
                 </div>
 
                 <div className="rounded-lg bg-secondary p-3 border border-border">
@@ -911,14 +953,38 @@ function ProfilePage() {
                       }}
                       className="flex min-w-0 flex-1 items-center gap-3 text-left"
                     >
-                      <UserAvatar profile={person} className="h-11 w-11 shrink-0" />
+                      <div className="relative shrink-0">
+                        <UserAvatar profile={person} className="h-11 w-11" />
+                        <PresenceDot
+                          isOnline={isOnline(person.id)}
+                          lastSeenAt={getEffectiveLastSeen(
+                            person.id,
+                            extractProfileLastSeen(person),
+                          )}
+                          size="sm"
+                          className="absolute bottom-0 right-0"
+                        />
+                      </div>
 
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-foreground truncate">
                           {person.display_name || person.username}
                         </p>
 
-                        <p className="text-xs text-muted-foreground truncate">@{person.username}</p>
+                        <div className="flex items-center gap-2 truncate">
+                          <p className="text-xs text-muted-foreground truncate">
+                            @{person.username}
+                          </p>
+                          <PresenceStatusText
+                            isOnline={isOnline(person.id)}
+                            lastSeenAt={getEffectiveLastSeen(
+                              person.id,
+                              extractProfileLastSeen(person),
+                            )}
+                            nowMs={nowMs}
+                            className="text-[10px]"
+                          />
+                        </div>
                       </div>
                     </button>
 
