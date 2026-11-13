@@ -10,12 +10,9 @@ describe("Video Upload and Playback Utilities", () => {
     expect(formatBytes(25.6 * 1024 * 1024, 2)).toBe("25.60 MB");
   });
 
-  it("handles non-video files without throwing", async () => {
+  it("rejects non-video files with a clear validation error", async () => {
     const textFile = new File(["hello world"], "test.txt", { type: "text/plain" });
-    const result = await compressVideoFile(textFile);
-    expect(result.compressed).toBe(false);
-    expect(result.file).toBe(textFile);
-    expect(result.convertedToH264).toBe(false);
+    await expect(compressVideoFile(textFile)).rejects.toThrow(/valid video file/i);
   });
 
   it("checks WebCodecs environment detection", () => {

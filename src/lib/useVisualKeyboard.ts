@@ -84,9 +84,9 @@ export function useVisualKeyboard(): void {
       root.style.setProperty("--keyboard-inset", `${metrics.keyboardInset}px`);
 
       if (metrics.isKeyboardOpen) {
-        body.dataset.keyboardOpen = "true";
+        body.dataset["keyboardOpen"] = "true";
       } else {
-        delete body.dataset.keyboardOpen;
+        delete body.dataset["keyboardOpen"];
       }
     };
 
@@ -125,7 +125,7 @@ export function useVisualKeyboard(): void {
       window.visualViewport?.removeEventListener("scroll", syncMetrics);
       document.removeEventListener("focusin", handleFocusIn);
       document.removeEventListener("focusout", handleFocusOut);
-      delete body.dataset.keyboardOpen;
+      delete body.dataset["keyboardOpen"];
       root.style.removeProperty("--app-vh");
       root.style.removeProperty("--keyboard-inset");
     };

@@ -1,7 +1,9 @@
 // VIDALORE SOCIAL Service Worker
-const CACHE_NAME = "vidalore-cache-v2";
+const CACHE_NAME = "vidalore-cache-v3";
 const STATIC_ASSETS = [
   "/",
+  "/icon.svg",
+  "/icon-maskable.svg",
   "/favicon.png",
   "/icon-192.png",
   "/icon-512.png",

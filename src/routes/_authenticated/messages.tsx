@@ -673,7 +673,7 @@ function MessagesPage() {
             ...old,
             {
               ...sentMsg,
-              sender: currentProfile ?? undefined,
+              sender: currentProfile ?? null,
               reads: [],
               reactions: [],
               localStatus: "sent",
@@ -741,16 +741,22 @@ function MessagesPage() {
       replyToMessage: activeReply
         ? {
             id: activeReply.id,
+            conversation_id: activeReply.conversation_id,
             content: activeReply.content,
             message_type: activeReply.message_type,
             sender_id: activeReply.sender_id,
+            media_url: activeReply.media_url,
+            media_name: activeReply.media_name,
+            reply_to_id: activeReply.reply_to_id,
+            edited_at: activeReply.edited_at,
             deleted_at: activeReply.deleted_at,
+            created_at: activeReply.created_at,
           }
         : null,
       edited_at: null,
       deleted_at: null,
       created_at: new Date().toISOString(),
-      sender: currentProfile ?? undefined,
+      sender: currentProfile ?? null,
       reads: [],
       reactions: [],
       localStatus: "sending",

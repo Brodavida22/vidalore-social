@@ -14,6 +14,7 @@ import {
   extractProfileLastSeen,
   getEffectiveLastSeen,
 } from "@/lib/onlinePresence";
+import { suppressOverlayHistoryBack } from "@/lib/useAndroidBackNavigation";
 import { PresenceDot, PresenceStatusText } from "@/components/social/PresenceIndicator";
 
 import { communityProfilesQuery, type Profile } from "@/services/profiles";
@@ -364,7 +365,10 @@ export function FriendsModal({
                   <Link
                     to="/u/$username"
                     params={{ username: person.username }}
-                    onClick={() => onOpenChange(false)}
+                    onClick={() => {
+                      suppressOverlayHistoryBack();
+                      onOpenChange(false);
+                    }}
                     className="flex items-center gap-3 min-w-0 group"
                   >
                     <div className="relative shrink-0">

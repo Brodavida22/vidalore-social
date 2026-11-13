@@ -243,6 +243,7 @@ export function GroupDetailsSheet({
           role: "member",
           joined_at: new Date().toISOString(),
           last_read_at: null,
+          is_muted: false,
           profile,
         },
       ]);

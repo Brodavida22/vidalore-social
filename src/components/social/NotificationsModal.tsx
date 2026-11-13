@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { supabase } from "@/integrations/supabase/client";
+import { suppressOverlayHistoryBack } from "@/lib/useAndroidBackNavigation";
 
 import {
   notificationsQuery,
@@ -131,6 +132,9 @@ export function NotificationsModal({
         });
       }
 
+      if (notification.actor?.username) {
+        suppressOverlayHistoryBack();
+      }
       onOpenChange(false);
 
       if (notification.actor?.username) {

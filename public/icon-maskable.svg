@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <defs>
+    <radialGradient id="maskBgGrad" cx="256" cy="248" r="245" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1B1318" />
+      <stop offset="55%" stop-color="#0B0B0E" />
+      <stop offset="100%" stop-color="#080808" />
+    </radialGradient>
+    <radialGradient id="maskAuraGrad" cx="256" cy="252" r="158" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#E91E63" stop-opacity="0.26" />
+      <stop offset="65%" stop-color="#E91E63" stop-opacity="0.06" />
+      <stop offset="100%" stop-color="#E91E63" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="maskLeftPetal" x1="102" y1="156" x2="256" y2="406" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF74A8" />
+      <stop offset="48%" stop-color="#E91E63" />
+      <stop offset="100%" stop-color="#AD1457" />
+    </linearGradient>
+    <linearGradient id="maskRightPetal" x1="410" y1="156" x2="256" y2="406" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F02E74" />
+      <stop offset="52%" stop-color="#C2185B" />
+      <stop offset="100%" stop-color="#880E4F" />
+    </linearGradient>
+    <linearGradient id="maskBudBase" x1="256" y1="106" x2="256" y2="285" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF5C97" />
+      <stop offset="55%" stop-color="#D81B60" />
+      <stop offset="100%" stop-color="#9C124B" />
+    </linearGradient>
+    <linearGradient id="maskBudLight" x1="214" y1="112" x2="256" y2="285" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF94BC" />
+      <stop offset="55%" stop-color="#FF4081" />
+      <stop offset="100%" stop-color="#D81B60" />
+    </linearGradient>
+  </defs>
+
+  <!-- Full-bleed solid obsidian background for adaptive maskable safe zone -->
+  <rect width="512" height="512" fill="url(#maskBgGrad)" />
+  <circle cx="256" cy="252" r="158" fill="url(#maskAuraGrad)" />
+
+  <!-- Centered emblem scaled strictly inside the central 80% safe zone -->
+  <g transform="translate(256 256) scale(0.8) translate(-256 -256)">
+    <path
+      d="M 102 156 C 146 156 178 178 198 218 L 256 332 L 256 406 C 188 364 118 262 102 156 Z"
+      fill="url(#maskLeftPetal)"
+    />
+    <path
+      d="M 410 156 C 366 156 334 178 314 218 L 256 332 L 256 406 C 324 364 394 262 410 156 Z"
+      fill="url(#maskRightPetal)"
+    />
+    <path
+      d="M 106 160 C 146 161 175 182 196 218 L 256 332 L 256 346 L 190 221 C 170 185 142 167 106 160 Z"
+      fill="#FFFFFF"
+      fill-opacity="0.18"
+    />
+    <path
+      d="M 256 106 C 296 144 314 190 290 240 C 279 263 267 276 256 285 C 245 276 233 263 222 240 C 198 190 216 144 256 106 Z"
+      fill="url(#maskBudBase)"
+    />
+    <path
+      d="M 256 106 C 232 148 232 198 256 285 C 245 276 233 263 222 240 C 198 190 216 144 256 106 Z"
+      fill="url(#maskBudLight)"
+    />
+  </g>
+</svg>

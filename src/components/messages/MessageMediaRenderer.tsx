@@ -12,9 +12,8 @@ type MessageMediaRendererProps = {
 
 const BUCKET = "chat-media";
 const WAVEFORM_BARS = [
-  10, 16, 23, 14, 30, 19, 37, 25, 15, 32, 22, 42, 27, 17, 35, 24,
-  44, 29, 18, 36, 25, 48, 31, 20, 39, 26, 45, 33, 17, 38, 24, 43,
-  29, 15, 34, 22, 46, 30, 18, 40, 26, 49, 32, 19, 37, 25, 43, 28,
+  10, 16, 23, 14, 30, 19, 37, 25, 15, 32, 22, 42, 27, 17, 35, 24, 44, 29, 18, 36, 25, 48, 31, 20,
+  39, 26, 45, 33, 17, 38, 24, 43, 29, 15, 34, 22, 46, 30, 18, 40, 26, 49, 32, 19, 37, 25, 43, 28,
   16, 35, 23, 41, 27, 14, 33, 21, 39, 26, 45, 30, 18, 36, 24, 42,
 ];
 
@@ -53,12 +52,15 @@ async function resolveMediaUrl(value: string): Promise<string> {
   const path = extractStoragePath(value);
   if (!path) {
     if (value.startsWith("blob:")) {
-      throw new Error("This attachment is no longer available. Please ask the sender to upload it again.");
+      throw new Error(
+        "This attachment is no longer available. Please ask the sender to upload it again.",
+      );
     }
     throw new Error("The attachment link is invalid.");
   }
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 60);
-  if (error || !data?.signedUrl) throw new Error(error?.message || "Could not load this attachment.");
+  if (error || !data?.signedUrl)
+    throw new Error(error?.message || "Could not load this attachment.");
   return data.signedUrl;
 }
 
@@ -81,8 +83,10 @@ export function MessageMediaRenderer({
 
   const kind = (messageType || "").toLowerCase();
   const isAudio = ["audio", "voice", "voice_note", "voicenote"].includes(kind);
-  const isImage = kind === "image" || /\.(jpe?g|png|gif|webp|avif)(\?|$)/i.test(mediaName || mediaUrl || "");
-  const isVideo = kind === "video" || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(mediaName || mediaUrl || "");
+  const isImage =
+    kind === "image" || /\.(jpe?g|png|gif|webp|avif)(\?|$)/i.test(mediaName || mediaUrl || "");
+  const isVideo =
+    kind === "video" || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(mediaName || mediaUrl || "");
   const isPdf = kind === "file" && /\.pdf$/i.test(mediaName || mediaUrl || "");
 
   const loadMedia = useCallback(async () => {
@@ -115,7 +119,8 @@ export function MessageMediaRenderer({
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    const updateTime = () => setCurrentTime(Number.isFinite(audio.currentTime) ? audio.currentTime : 0);
+    const updateTime = () =>
+      setCurrentTime(Number.isFinite(audio.currentTime) ? audio.currentTime : 0);
     const updateDuration = () => setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
@@ -141,7 +146,10 @@ export function MessageMediaRenderer({
   }, [resolvedUrl]);
 
   const progress = useMemo(
-    () => duration > 0 && Number.isFinite(duration) ? Math.min(1, Math.max(0, currentTime / duration)) : 0,
+    () =>
+      duration > 0 && Number.isFinite(duration)
+        ? Math.min(1, Math.max(0, currentTime / duration))
+        : 0,
     [currentTime, duration],
   );
 
@@ -172,11 +180,27 @@ export function MessageMediaRenderer({
   if (!mediaUrl) return null;
 
   if (loading && !resolvedUrl) {
-    return <div className="flex min-h-20 items-center justify-center gap-2 rounded-xl bg-muted/70 px-4 py-5 text-sm text-muted-foreground"><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" />Loading attachment…</div>;
+    return (
+      <div className="flex min-h-20 items-center justify-center gap-2 rounded-xl bg-muted/70 px-4 py-5 text-sm text-muted-foreground">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" />
+        Loading attachment…
+      </div>
+    );
   }
 
   if (loadError) {
-    return <div className="flex flex-col gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm"><span className="text-destructive">{loadError}</span><button type="button" onClick={() => void loadMedia()} className="w-fit rounded-lg bg-background px-3 py-1.5 font-medium shadow-sm">Try again</button></div>;
+    return (
+      <div className="flex flex-col gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">
+        <span className="text-destructive">{loadError}</span>
+        <button
+          type="button"
+          onClick={() => void loadMedia()}
+          className="w-fit rounded-lg bg-background px-3 py-1.5 font-medium shadow-sm"
+        >
+          Try again
+        </button>
+      </div>
+    );
   }
 
   if (!resolvedUrl) return null;
@@ -184,18 +208,41 @@ export function MessageMediaRenderer({
   if (isAudio) {
     const shownTime = duration > 0 ? (playing ? currentTime : duration) : currentTime;
     return (
-      <div className={`flex w-full min-w-[230px] max-w-[330px] items-center gap-3 rounded-2xl px-3 py-3 ${isMine ? "bg-primary-foreground/10" : "bg-muted/80"}`}>
+      <div
+        className={`flex w-full min-w-[230px] max-w-[330px] items-center gap-3 rounded-2xl px-3 py-3 ${isMine ? "bg-primary-foreground/10" : "bg-muted/80"}`}
+      >
         <audio ref={audioRef} src={resolvedUrl} preload="metadata" />
-        <button type="button" onClick={() => void toggleAudio()} aria-label={playing ? "Pause voice note" : "Play voice note"} className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg ${isMine ? "bg-primary-foreground text-primary" : "bg-primary text-primary-foreground"}`}>
+        <button
+          type="button"
+          onClick={() => void toggleAudio()}
+          aria-label={playing ? "Pause voice note" : "Play voice note"}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg ${isMine ? "bg-primary-foreground text-primary" : "bg-primary text-primary-foreground"}`}
+        >
           {playing ? "Ⅱ" : "▶"}
         </button>
         <div className="min-w-0 flex-1">
-          <div className="flex h-9 items-center gap-[2px]" role="slider" aria-label="Voice note progress" aria-valuemin={0} aria-valuemax={duration || 0} aria-valuenow={currentTime} tabIndex={0} onClick={seekAudio} onKeyDown={(event) => {
-            if (event.key === "ArrowRight" && audioRef.current && duration > 0) audioRef.current.currentTime = Math.min(duration, currentTime + 5);
-            if (event.key === "ArrowLeft" && audioRef.current) audioRef.current.currentTime = Math.max(0, currentTime - 5);
-          }}>
+          <div
+            className="flex h-9 items-center gap-[2px]"
+            role="slider"
+            aria-label="Voice note progress"
+            aria-valuemin={0}
+            aria-valuemax={duration || 0}
+            aria-valuenow={currentTime}
+            tabIndex={0}
+            onClick={seekAudio}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight" && audioRef.current && duration > 0)
+                audioRef.current.currentTime = Math.min(duration, currentTime + 5);
+              if (event.key === "ArrowLeft" && audioRef.current)
+                audioRef.current.currentTime = Math.max(0, currentTime - 5);
+            }}
+          >
             {WAVEFORM_BARS.map((height, index) => (
-              <span key={index} className={`flex-1 rounded-full ${index / WAVEFORM_BARS.length <= progress ? (isMine ? "bg-primary-foreground" : "bg-primary") : (isMine ? "bg-primary-foreground/35" : "bg-muted-foreground/35")}`} style={{ height: `${height}%`, minWidth: 2 }} />
+              <span
+                key={index}
+                className={`flex-1 rounded-full ${index / WAVEFORM_BARS.length <= progress ? (isMine ? "bg-primary-foreground" : "bg-primary") : isMine ? "bg-primary-foreground/35" : "bg-muted-foreground/35"}`}
+                style={{ height: `${height}%`, minWidth: 2 }}
+              />
             ))}
           </div>
           <div className="mt-1 flex items-center justify-between text-[11px] tabular-nums opacity-75">
@@ -224,7 +271,10 @@ export function MessageMediaRenderer({
             className="block max-h-[360px] max-w-full rounded-2xl object-contain transition-opacity group-active:opacity-90"
             onError={() => setLoadError("Image could not be displayed. Tap to retry.")}
           />
-          <span className="absolute bottom-2 right-2 rounded-full bg-black/60 p-2 text-white opacity-90" aria-hidden="true">
+          <span
+            className="absolute bottom-2 right-2 rounded-full bg-black/60 p-2 text-white opacity-90"
+            aria-hidden="true"
+          >
             <Maximize2 size={16} />
           </span>
         </button>
@@ -295,7 +345,9 @@ export function MessageMediaRenderer({
               type="button"
               aria-label="Close video viewer"
               onClick={() => {
-                const player = document.getElementById("vidalore-fullscreen-chat-video") as HTMLVideoElement | null;
+                const player = document.getElementById(
+                  "vidalore-fullscreen-chat-video",
+                ) as HTMLVideoElement | null;
                 player?.pause();
                 setPreviewOpen(false);
               }}
@@ -320,13 +372,22 @@ export function MessageMediaRenderer({
   }
 
   return (
-    <a href={resolvedUrl} target="_blank" rel="noreferrer" download={mediaName || undefined} className="flex max-w-full items-center gap-3 rounded-xl bg-muted/80 p-3 text-sm hover:bg-muted">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-background text-lg">{isPdf ? "📄" : "📎"}</span>
-      <span className="min-w-0 flex-1 truncate font-medium">{mediaName || "Download attachment"}</span>
+    <a
+      href={resolvedUrl}
+      target="_blank"
+      rel="noreferrer"
+      download={mediaName || undefined}
+      className="flex max-w-full items-center gap-3 rounded-xl bg-muted/80 p-3 text-sm hover:bg-muted"
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-background text-lg">
+        {isPdf ? "📄" : "📎"}
+      </span>
+      <span className="min-w-0 flex-1 truncate font-medium">
+        {mediaName || "Download attachment"}
+      </span>
       <span aria-hidden="true">↓</span>
     </a>
   );
 }
-
 
 export default MessageMediaRenderer;

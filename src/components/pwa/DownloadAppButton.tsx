@@ -1,13 +1,5 @@
 import { useState } from "react";
-import {
-  CheckCircle2,
-  Download,
-  Loader2,
-  Share,
-  Smartphone,
-  MoreVertical,
-  PlusSquare,
-} from "lucide-react";
+import { CheckCircle2, Download, Loader2, Share, MoreVertical, PlusSquare } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -101,9 +93,13 @@ export function DownloadAppButton({
       <Dialog open={guideOpen} onOpenChange={setGuideOpen}>
         <DialogContent className="sm:max-w-md rounded-2xl border border-border bg-card p-5">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
-              <Smartphone className="h-5 w-5 text-[#E91E63]" />
-              Install VIDALORE SOCIAL App
+            <DialogTitle className="flex items-center gap-2.5 text-base font-bold text-foreground">
+              <img
+                src="/icon.svg"
+                alt="VIDALORE SOCIAL app icon"
+                className="h-8 w-8 rounded-lg shrink-0"
+              />
+              <span>Install VIDALORE SOCIAL App</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
               Add VIDALORE SOCIAL to your home screen for instant full-screen access, no app store

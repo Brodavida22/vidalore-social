@@ -24,12 +24,12 @@ export type MessageReaction = Tables<"message_reactions"> & {
 export type MessageDeliveryStatus = "sending" | "sent" | "failed";
 
 export type MessageWithReadsAndReactions = Message & {
-  reads?: MessageRead[];
-  reactions?: MessageReaction[];
-  replyToMessage?: Message | null;
-  sender?: Profile | null;
-  localStatus?: MessageDeliveryStatus;
-  localError?: string;
+  reads?: MessageRead[] | undefined;
+  reactions?: MessageReaction[] | undefined;
+  replyToMessage?: Message | null | undefined;
+  sender?: Profile | null | undefined;
+  localStatus?: MessageDeliveryStatus | undefined;
+  localError?: string | undefined;
 };
 
 // Backwards compatibility alias
@@ -59,6 +59,32 @@ type ConversationSettings = {
   hidden_at: string | null;
 };
 
+type ConversationMembersSettingsQuery = {
+  from: (table: "conversation_members") => {
+    select: (cols: string) => {
+      eq: (
+        col: string,
+        val: string,
+      ) => {
+        eq: (
+          col: string,
+          val: string,
+        ) => {
+          maybeSingle: () => Promise<{ data: unknown; error: { message: string } | null }>;
+        };
+      };
+    };
+    update: (values: Record<string, unknown>) => {
+      eq: (
+        col: string,
+        val: string,
+      ) => {
+        eq: (col: string, val: string) => Promise<{ error: { message: string } | null }>;
+      };
+    };
+  };
+};
+
 /**
  * Read the signed-in user's own clear/hide settings for one conversation.
  */
@@ -67,7 +93,7 @@ async function getMyConversationSettings(
 ): Promise<ConversationSettings | null> {
   const user = await getCurrentUser();
 
-  const { data, error } = await (supabase as any)
+  const { data, error } = await (supabase as unknown as ConversationMembersSettingsQuery)
     .from("conversation_members")
     .select("cleared_at, hidden_at")
     .eq("conversation_id", conversationId)
@@ -87,7 +113,7 @@ async function updateMyConversationSettings(
 ): Promise<void> {
   const user = await getCurrentUser();
 
-  const { error } = await (supabase as any)
+  const { error } = await (supabase as unknown as ConversationMembersSettingsQuery)
     .from("conversation_members")
     .update(settings)
     .eq("conversation_id", conversationId)
@@ -981,12 +1007,15 @@ export async function uploadChatMedia(
     `media-${Date.now()}`;
 
   // Never allow user-provided path separators to create nested storage paths.
-  const name =
-    suppliedName
-      .replace(/[\/]+/g, "-")
-      .replace(/[\u0000-\u001f\u007f]/g, "")
-      .trim()
-      .slice(0, 180) || `media-${Date.now()}`;
+  const sanitizedFileName = Array.from(suppliedName.replace(/[/]+/g, "-"))
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code >= 0x20 && code !== 0x7f;
+    })
+    .join("")
+    .trim()
+    .slice(0, 180);
+  const name = sanitizedFileName || `media-${Date.now()}`;
 
   const extension = name.includes(".") ? name.split(".").pop()?.toLowerCase() : "";
   const mimeByExtension: Record<string, string> = {
@@ -1008,15 +1037,11 @@ export async function uploadChatMedia(
   // Browsers often report recorder MIME types with codec parameters,
   // for example "audio/webm;codecs=opus" or "audio/ogg;codecs=opus".
   // Supabase's bucket allowlist and our validator expect the base MIME type.
-  const contentType = (
-    options.contentType ||
-    file.type ||
-    (extension ? mimeByExtension[extension] : "") ||
-    ""
-  )
-    .toLowerCase()
-    .split(";")[0]
-    .trim();
+  const baseMime =
+    (options.contentType || file.type || (extension ? mimeByExtension[extension] : "") || "")
+      .toLowerCase()
+      .split(";")[0] ?? "";
+  const contentType = baseMime.trim();
 
   const allowedContentType =
     /^image\/(jpeg|png|webp|gif)$/.test(contentType) ||
@@ -1537,6 +1562,14 @@ export function subscribeToConversationChannel(
   },
 ) {
   const channelName = `conv-room-${conversationId}`;
+  if (typeof supabase.getChannels === "function") {
+    supabase
+      .getChannels()
+      .filter((ch) => ch.topic === `realtime:${channelName}`)
+      .forEach((ch) => {
+        void supabase.removeChannel(ch);
+      });
+  }
   const channel = supabase.channel(channelName, {
     config: {
       presence: { key: currentUserId },
@@ -1712,8 +1745,17 @@ export function subscribeToMessages(
   conversationId: string,
   onNewMessage: (message: Message) => void,
 ) {
+  const channelName = `conversation-${conversationId}`;
+  if (typeof supabase.getChannels === "function") {
+    supabase
+      .getChannels()
+      .filter((ch) => ch.topic === `realtime:${channelName}`)
+      .forEach((ch) => {
+        void supabase.removeChannel(ch);
+      });
+  }
   const channel = supabase
-    .channel(`conversation-${conversationId}`)
+    .channel(channelName)
     .on(
       "postgres_changes",
       {

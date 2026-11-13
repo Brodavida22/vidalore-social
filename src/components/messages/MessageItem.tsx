@@ -182,16 +182,16 @@ export function MessageItem({
   currentUserId: string;
   isGroup: boolean;
   isAdmin: boolean;
-  senderRole?: "owner" | "admin" | "moderator" | "member";
+  senderRole?: "owner" | "admin" | "moderator" | "member" | undefined;
   peerLastReadAt?: string | null | undefined;
   onReply: (message: MessageWithReadsAndReactions) => void;
   onEdit: (message: MessageWithReadsAndReactions) => void;
   onDelete: (message: MessageWithReadsAndReactions) => void;
-  onForward?: (message: MessageWithReadsAndReactions) => void;
+  onForward?: ((message: MessageWithReadsAndReactions) => void) | undefined;
   onToggleReaction: (messageId: string, emoji: string) => void;
-  onLocateMessage?: (messageId: string) => void;
-  onRetry?: (message: MessageWithReadsAndReactions) => void;
-  onDismissFailed?: (messageId: string) => void;
+  onLocateMessage?: ((messageId: string) => void) | undefined;
+  onRetry?: ((message: MessageWithReadsAndReactions) => void) | undefined;
+  onDismissFailed?: ((messageId: string) => void) | undefined;
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [swipeOffset, setSwipeOffset] = useState(0);

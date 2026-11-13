@@ -17,6 +17,7 @@ import { UserAvatar } from "@/components/profile/UserAvatar";
 import { savedPostsQuery, setPostSaved, postsKeys } from "@/services/posts";
 import { getSavedReels, removeSavedReel } from "@/services/reelsAndStories";
 import type { Profile } from "@/services/profiles";
+import { suppressOverlayHistoryBack } from "@/lib/useAndroidBackNavigation";
 
 export function SavedPostsModal({
   open,
@@ -78,6 +79,7 @@ export function SavedPostsModal({
   }
 
   function handlePlayReel(reelId: string) {
+    suppressOverlayHistoryBack();
     onOpenChange(false);
     void navigate({ to: "/reels", search: { reelId } });
   }
@@ -149,7 +151,10 @@ export function SavedPostsModal({
                     <Link
                       to="/u/$username"
                       params={{ username: post.authorUsername }}
-                      onClick={() => onOpenChange(false)}
+                      onClick={() => {
+                        suppressOverlayHistoryBack();
+                        onOpenChange(false);
+                      }}
                       className="flex items-center gap-2"
                     >
                       <UserAvatar
@@ -219,7 +224,10 @@ export function SavedPostsModal({
                     <Link
                       to="/u/$username"
                       params={{ username: reel.creatorUsername }}
-                      onClick={() => onOpenChange(false)}
+                      onClick={() => {
+                        suppressOverlayHistoryBack();
+                        onOpenChange(false);
+                      }}
                       className="flex items-center gap-2 min-w-0"
                     >
                       <UserAvatar

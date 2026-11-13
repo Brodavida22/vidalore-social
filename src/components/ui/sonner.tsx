@@ -4,7 +4,9 @@ import { AlertTriangle, CheckCircle2, Info, Loader2, XCircle } from "lucide-reac
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
-export function getResponsiveToastPosition(isDesktop: boolean): ToasterProps["position"] {
+export function getResponsiveToastPosition(
+  isDesktop: boolean,
+): NonNullable<ToasterProps["position"]> {
   return isDesktop ? "top-right" : "top-center";
 }
 

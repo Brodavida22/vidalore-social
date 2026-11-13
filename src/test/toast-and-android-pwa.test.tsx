@@ -203,27 +203,51 @@ describe("Android WebAPK & PWA Configuration", () => {
     __resetPWAInstallStateForTests();
   });
 
-  it("ships a valid standalone manifest.json with maskable icons and app shortcuts", () => {
+  it("ships a valid standalone manifest.json with clean SVG + maskable icons and app shortcuts", () => {
     const manifestPath = path.resolve(process.cwd(), "public/manifest.json");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
       name: string;
       short_name: string;
       display: string;
-      icons: Array<{ purpose?: string; sizes?: string }>;
+      icons: Array<{ src?: string; type?: string; purpose?: string; sizes?: string }>;
       shortcuts?: Array<{ name: string; url: string }>;
     };
 
     expect(manifest.display).toBe("standalone");
     expect(manifest.short_name.length).toBeLessThanOrEqual(12);
-    expect(manifest.icons.some((i) => i.purpose?.includes("any"))).toBe(true);
-    expect(manifest.icons.some((i) => i.purpose?.includes("maskable"))).toBe(true);
+    expect(
+      manifest.icons.some(
+        (i) => i.src === "/icon.svg" && i.type === "image/svg+xml" && i.purpose === "any",
+      ),
+    ).toBe(true);
+    expect(
+      manifest.icons.some(
+        (i) =>
+          i.src === "/icon-maskable.svg" && i.type === "image/svg+xml" && i.purpose === "maskable",
+      ),
+    ).toBe(true);
+    expect(manifest.icons.some((i) => i.purpose === "any")).toBe(true);
+    expect(manifest.icons.some((i) => i.purpose === "maskable")).toBe(true);
+    expect(manifest.icons.every((i) => i.purpose !== "any maskable")).toBe(true);
     expect(Array.isArray(manifest.shortcuts) && manifest.shortcuts.length).toBeGreaterThan(0);
+
+    const iconSvg = fs.readFileSync(path.resolve(process.cwd(), "public/icon.svg"), "utf8");
+    const maskSvg = fs.readFileSync(
+      path.resolve(process.cwd(), "public/icon-maskable.svg"),
+      "utf8",
+    );
+    expect(iconSvg).toContain("<svg");
+    expect(iconSvg).toContain('viewBox="0 0 512 512"');
+    expect(maskSvg).toContain("<svg");
+    expect(maskSvg).toContain("scale(0.8)");
   });
 
-  it("configures Service Worker with branded offline fallback and Supabase/range bypass", () => {
+  it("configures Service Worker with branded offline fallback, SVG icon precache, and Supabase/range bypass", () => {
     const swPath = path.resolve(process.cwd(), "public/sw.js");
     const swSource = fs.readFileSync(swPath, "utf8");
 
+    expect(swSource).toContain("/icon.svg");
+    expect(swSource).toContain("/icon-maskable.svg");
     expect(swSource).toContain("OFFLINE_HTML");
     expect(swSource).toContain("/rest/v1/");
     expect(swSource).toContain("/auth/v1/");

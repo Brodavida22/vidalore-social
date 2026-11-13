@@ -70,6 +70,15 @@ export async function compressVideoFile(
     throw new Error("Please select a valid video file.");
   }
 
+  const isQuickTime =
+    file.type.toLowerCase().includes("quicktime") || file.name.toLowerCase().endsWith(".mov");
+
+  if (isQuickTime && !isWebCodecsSupported()) {
+    throw new Error(
+      "This video is in QuickTime format, which requires conversion to H.264 MP4, and this browser does not support video conversion. Please upload an H.264 MP4 video.",
+    );
+  }
+
   let detectedCodec = "unknown";
   let hasAudioTrack = false;
   let isAlreadyH264 = false;
@@ -96,36 +105,30 @@ export async function compressVideoFile(
     const codec = await videoTrack.getCodec();
     const internalId = await videoTrack.getInternalCodecId();
 
-    const internalCodec =
-      typeof internalId === "string"
-        ? internalId.toLowerCase()
-        : "";
+    const internalCodec = typeof internalId === "string" ? internalId.toLowerCase() : "";
 
     detectedCodec = codec || internalCodec || "unknown";
 
-    isAlreadyH264 =
-      codec === "avc" || internalCodec.startsWith("avc1");
+    isAlreadyH264 = codec === "avc" || internalCodec.startsWith("avc1");
 
-    isMp4 =
-      file.type.toLowerCase().includes("mp4") ||
-      file.name.toLowerCase().endsWith(".mp4");
+    isMp4 = file.type.toLowerCase().includes("mp4") || file.name.toLowerCase().endsWith(".mp4");
 
     isAlreadyAac =
       !hasAudioTrack ||
-      (await Promise.all(
-        audioTracks.map(async (track) => {
-          return (await track.getCodec()) === "aac";
-        }),
-      )).every(Boolean);
+      (
+        await Promise.all(
+          audioTracks.map(async (track) => {
+            return (await track.getCodec()) === "aac";
+          }),
+        )
+      ).every(Boolean);
 
     // Only skip conversion when the file is already a compatible
     // MP4 containing decodable H.264 and AAC tracks.
     if (isAlreadyH264 && isAlreadyAac && isMp4) {
       const videoCanDecode = await videoTrack.canDecode();
 
-      const audioCanDecode = await Promise.all(
-        audioTracks.map((track) => track.canDecode()),
-      );
+      const audioCanDecode = await Promise.all(audioTracks.map((track) => track.canDecode()));
 
       if (videoCanDecode && audioCanDecode.every(Boolean)) {
         onProgress?.(100);
@@ -150,6 +153,12 @@ export async function compressVideoFile(
   }
 
   // 2. Convert to MP4 using H.264 video and AAC audio.
+  if (!isWebCodecsSupported()) {
+    throw new Error(
+      `This video (${detectedCodec}) requires conversion to H.264 MP4, and this browser does not support video conversion. Please upload an H.264 MP4 video.`,
+    );
+  }
+
   let conversion: Conversion | undefined;
 
   try {
@@ -176,36 +185,25 @@ export async function compressVideoFile(
         quality: new Quality("medium"),
         hardwareAcceleration: "no-preference",
       },
-      ...(hasAudioTrack
-        ? { audio: { codec: "aac" as const } }
-        : {}),
+      ...(hasAudioTrack ? { audio: { codec: "aac" as const } } : {}),
     });
 
     // Check that the required tracks can actually be converted.
-    const usableVideo = conversion.utilizedTracks.some(
-      (track) => track.type === "video",
-    );
+    const usableVideo = conversion.utilizedTracks.some((track) => track.type === "video");
 
     const usableAudio =
-      !hasAudioTrack ||
-      conversion.utilizedTracks.some(
-        (track) => track.type === "audio",
-      );
+      !hasAudioTrack || conversion.utilizedTracks.some((track) => track.type === "audio");
 
     if (!conversion.isValid || !usableVideo || !usableAudio) {
       const reasons = conversion.discardedTracks
         .map((item) => `${item.track.type}: ${item.reason}`)
         .join(", ");
 
-      throw new Error(
-        `This device cannot convert the video into the required format. ${reasons}`,
-      );
+      throw new Error(`This device cannot convert the video into the required format. ${reasons}`);
     }
 
     conversion.onProgress = (progress) => {
-      onProgress?.(
-        Math.max(0, Math.min(99, Math.round(progress * 100))),
-      );
+      onProgress?.(Math.max(0, Math.min(99, Math.round(progress * 100))));
     };
 
     await conversion.execute();
@@ -222,14 +220,10 @@ export async function compressVideoFile(
 
     const cleanName = file.name.replace(/\.[^.]+$/, "");
 
-    const convertedFile = new File(
-      [convertedBlob],
-      `${cleanName}.mp4`,
-      {
-        type: "video/mp4",
-        lastModified: Date.now(),
-      },
-    );
+    const convertedFile = new File([convertedBlob], `${cleanName}.mp4`, {
+      type: "video/mp4",
+      lastModified: Date.now(),
+    });
 
     // 3. Verify the resulting MP4 before allowing it to upload.
     const verifyInput = new Input({
@@ -237,37 +231,30 @@ export async function compressVideoFile(
       source: new BlobSource(convertedFile),
     });
 
-    const verifiedVideo =
-      await verifyInput.getPrimaryVideoTrack();
+    const verifiedVideo = await verifyInput.getPrimaryVideoTrack();
 
     if (!verifiedVideo) {
       throw new Error("The converted MP4 has no video track.");
     }
 
-    const verifiedVideoCodec =
-      await verifiedVideo.getCodec();
+    const verifiedVideoCodec = await verifiedVideo.getCodec();
 
     if (verifiedVideoCodec !== "avc") {
-      throw new Error(
-        `Expected H.264 video, but received ${verifiedVideoCodec || "unknown"}.`,
-      );
+      throw new Error(`Expected H.264 video, but received ${verifiedVideoCodec || "unknown"}.`);
     }
 
     const verifiedAudio = await verifyInput.getAudioTracks();
 
     if (hasAudioTrack) {
-      if (verifiedAudio.length === 0) {
-        throw new Error(
-          "The converted video lost its original audio track.",
-        );
+      const primaryAudio = verifiedAudio[0];
+      if (!primaryAudio) {
+        throw new Error("The converted video lost its original audio track.");
       }
 
-      const audioCodec = await verifiedAudio[0].getCodec();
+      const audioCodec = await primaryAudio.getCodec();
 
       if (audioCodec !== "aac") {
-        throw new Error(
-          `Expected AAC audio, but received ${audioCodec || "unknown"}.`,
-        );
+        throw new Error(`Expected AAC audio, but received ${audioCodec || "unknown"}.`);
       }
     }
 
@@ -284,10 +271,7 @@ export async function compressVideoFile(
   } catch (error) {
     console.error("Required video conversion failed:", error);
 
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unknown conversion error.";
+    const message = error instanceof Error ? error.message : "Unknown conversion error.";
 
     throw new Error(
       `Video conversion failed: ${message}. Please try another video or upload a standard H.264 MP4.`,

@@ -24,7 +24,10 @@ import {
 
 import { supabase } from "@/integrations/supabase/client";
 import { startOnlinePresence } from "@/lib/onlinePresence";
-import { useAndroidBackNavigation } from "@/lib/useAndroidBackNavigation";
+import {
+  suppressOverlayHistoryBack,
+  useAndroidBackNavigation,
+} from "@/lib/useAndroidBackNavigation";
 import { Logo } from "@/components/brand/Logo";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { myProfileQuery } from "@/services/profiles";
@@ -52,9 +55,14 @@ export function AppShell() {
 
   const [pendingRequests, setPendingRequests] = useState(0);
   const [isInActiveChat, setIsInActiveChat] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   useAndroidBackNavigation(mobileMenuOpen, () => setMobileMenuOpen(false), "mobileMenu");
-  useAndroidBackNavigation(notificationsOpen, () => setNotificationsOpen(false), "notificationsModal");
+  useAndroidBackNavigation(
+    notificationsOpen,
+    () => setNotificationsOpen(false),
+    "notificationsModal",
+  );
   useAndroidBackNavigation(friendsOpen, () => setFriendsOpen(false), "friendsModal");
   useAndroidBackNavigation(savedOpen, () => setSavedOpen(false), "savedModal");
   useAndroidBackNavigation(feedbackOpen, () => setFeedbackOpen(false), "feedbackModal");
@@ -83,7 +91,7 @@ export function AppShell() {
 
     // Realtime notifications count listener
     const channel = supabase
-      .channel("appshell-notifications-counter")
+      .channel(`appshell-notifications-counter-${crypto.randomUUID()}`)
       .on(
         "postgres_changes",
         {
@@ -111,11 +119,42 @@ export function AppShell() {
 
   const unreadNotifs = dbUnreadCount;
 
+  function handleMobileLinkClick(
+    e: React.MouseEvent<HTMLAnchorElement>,
+    navigateFn: () => Promise<unknown> | unknown,
+  ) {
+    if (e.metaKey || e.altKey || e.ctrlKey || e.shiftKey || e.button !== 0) {
+      return;
+    }
+    e.preventDefault();
+    suppressOverlayHistoryBack();
+    setMobileMenuOpen(false);
+    void navigateFn();
+  }
+
+  function openMobileModal(openFn: () => void) {
+    suppressOverlayHistoryBack();
+    setMobileMenuOpen(false);
+    openFn();
+  }
+
   async function signOut() {
-    await queryClient.cancelQueries();
-    queryClient.clear();
-    await supabase.auth.signOut();
-    navigate({ to: "/", replace: true });
+    if (signingOut) return;
+    setSigningOut(true);
+    suppressOverlayHistoryBack();
+    setMobileMenuOpen(false);
+    try {
+      await queryClient.cancelQueries();
+      queryClient.clear();
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        await supabase.auth.signOut({ scope: "local" });
+      }
+    } finally {
+      setSigningOut(false);
+      await navigate({ to: "/", replace: true });
+    }
   }
 
   const linkCls =
@@ -367,19 +406,23 @@ export function AppShell() {
           role="dialog"
           aria-modal="true"
           aria-label="Mobile Navigation Menu"
-          className="fixed inset-0 z-50 flex animate-fade-in bg-black/70 backdrop-blur-sm md:hidden"
-          onClick={() => setMobileMenuOpen(false)}
+          className="fixed inset-0 z-50 flex md:hidden"
         >
+          {/* Backdrop */}
           <div
-            className="flex h-full w-4/5 max-w-xs flex-col space-y-4 border-r border-border bg-background px-5 pt-[max(env(safe-area-inset-top),1.25rem)] pb-[max(env(safe-area-inset-bottom),1.25rem)] shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+            aria-hidden="true"
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+
+          {/* Drawer Panel */}
+          <div className="relative z-10 flex h-full w-4/5 max-w-xs flex-col space-y-4 border-r border-border bg-background px-5 pt-[max(env(safe-area-inset-top),1.25rem)] pb-[max(env(safe-area-inset-bottom),1.25rem)] shadow-2xl">
             <div className="flex items-center justify-between border-b border-border pb-3">
               <Logo size="sm" />
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary active:scale-95 transition-all"
+                className="flex h-11 w-11 touch-manipulation cursor-pointer items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary active:scale-95 transition-all"
                 aria-label="Close menu"
               >
                 <X className="h-5 w-5" />
@@ -402,8 +445,8 @@ export function AppShell() {
             <nav className="flex-1 space-y-1 overflow-y-auto overscroll-contain">
               <Link
                 to="/home"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
+                onClick={(e) => handleMobileLinkClick(e, () => navigate({ to: "/home" }))}
+                className="flex min-h-[44px] touch-manipulation cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary active:bg-secondary/80"
               >
                 <Home className="h-4 w-4 text-[#E91E63]" />
                 Home
@@ -411,8 +454,8 @@ export function AppShell() {
 
               <Link
                 to="/explore"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
+                onClick={(e) => handleMobileLinkClick(e, () => navigate({ to: "/explore" }))}
+                className="flex min-h-[44px] touch-manipulation cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary active:bg-secondary/80"
               >
                 <Compass className="h-4 w-4" />
                 Explore
@@ -420,8 +463,8 @@ export function AppShell() {
 
               <Link
                 to="/messages"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
+                onClick={(e) => handleMobileLinkClick(e, () => navigate({ to: "/messages" }))}
+                className="flex min-h-[44px] touch-manipulation cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary active:bg-secondary/80"
               >
                 <MessageSquare className="h-4 w-4 text-[#E91E63]" />
                 Inbox
@@ -429,8 +472,8 @@ export function AppShell() {
 
               <Link
                 to="/reels"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
+                onClick={(e) => handleMobileLinkClick(e, () => navigate({ to: "/reels" }))}
+                className="flex min-h-[44px] touch-manipulation cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary active:bg-secondary/80"
               >
                 <Clapperboard className="h-4 w-4" />
                 Reels
@@ -438,8 +481,8 @@ export function AppShell() {
 
               <Link
                 to="/games"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
+                onClick={(e) => handleMobileLinkClick(e, () => navigate({ to: "/games" }))}
+                className="flex min-h-[44px] touch-manipulation cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary active:bg-secondary/80"
               >
                 <Gamepad2 className="h-4 w-4 text-[#E91E63]" />
                 Games Center
@@ -447,11 +490,8 @@ export function AppShell() {
 
               <button
                 type="button"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setNotificationsOpen(true);
-                }}
-                className="flex min-h-[44px] w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-secondary"
+                onClick={() => openMobileModal(() => setNotificationsOpen(true))}
+                className="flex min-h-[44px] w-full touch-manipulation cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-secondary active:bg-secondary/80"
               >
                 <span className="flex items-center gap-3">
                   <Bell className="h-4 w-4" />
@@ -466,11 +506,8 @@ export function AppShell() {
 
               <button
                 type="button"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setFriendsOpen(true);
-                }}
-                className="flex min-h-[44px] w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-secondary"
+                onClick={() => openMobileModal(() => setFriendsOpen(true))}
+                className="flex min-h-[44px] w-full touch-manipulation cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-secondary active:bg-secondary/80"
               >
                 <span className="flex items-center gap-3">
                   <Users className="h-4 w-4" />
@@ -485,11 +522,8 @@ export function AppShell() {
 
               <button
                 type="button"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setSavedOpen(true);
-                }}
-                className="flex min-h-[44px] w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-secondary"
+                onClick={() => openMobileModal(() => setSavedOpen(true))}
+                className="flex min-h-[44px] w-full touch-manipulation cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-secondary active:bg-secondary/80"
               >
                 <Bookmark className="h-4 w-4" />
                 Saved Posts
@@ -497,8 +531,8 @@ export function AppShell() {
 
               <Link
                 to="/points"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
+                onClick={(e) => handleMobileLinkClick(e, () => navigate({ to: "/points" }))}
+                className="flex min-h-[44px] touch-manipulation cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary active:bg-secondary/80"
               >
                 <Sparkles className="h-4 w-4 text-[#E91E63]" />
                 Points
@@ -508,8 +542,12 @@ export function AppShell() {
                 <Link
                   to="/u/$username"
                   params={{ username: me.username }}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
+                  onClick={(e) =>
+                    handleMobileLinkClick(e, () =>
+                      navigate({ to: "/u/$username", params: { username: me.username } }),
+                    )
+                  }
+                  className="flex min-h-[44px] touch-manipulation cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary active:bg-secondary/80"
                 >
                   <User className="h-4 w-4" />
                   Profile
@@ -518,8 +556,10 @@ export function AppShell() {
 
               <Link
                 to="/settings/profile"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary"
+                onClick={(e) =>
+                  handleMobileLinkClick(e, () => navigate({ to: "/settings/profile" }))
+                }
+                className="flex min-h-[44px] touch-manipulation cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary active:bg-secondary/80"
               >
                 <Settings className="h-4 w-4" />
                 Settings
@@ -527,11 +567,8 @@ export function AppShell() {
 
               <button
                 type="button"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setFeedbackOpen(true);
-                }}
-                className="flex min-h-[44px] w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-secondary"
+                onClick={() => openMobileModal(() => setFeedbackOpen(true))}
+                className="flex min-h-[44px] w-full touch-manipulation cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-secondary active:bg-secondary/80"
               >
                 <MessageSquarePlus className="h-4 w-4 text-[#E91E63]" />
                 Beta Feedback
@@ -540,8 +577,8 @@ export function AppShell() {
               {isAdmin && (
                 <Link
                   to="/admin"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary font-medium"
+                  onClick={(e) => handleMobileLinkClick(e, () => navigate({ to: "/admin" }))}
+                  className="flex min-h-[44px] touch-manipulation cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-secondary active:bg-secondary/80 font-medium"
                 >
                   <ShieldAlert className="h-4 w-4 text-[#E91E63]" />
                   Admin Console
@@ -551,11 +588,12 @@ export function AppShell() {
 
             <button
               type="button"
-              onClick={signOut}
-              className="flex min-h-[44px] items-center gap-3 rounded-lg p-2.5 text-sm text-destructive hover:bg-destructive/10"
+              disabled={signingOut}
+              onClick={() => void signOut()}
+              className="flex min-h-[44px] w-full touch-manipulation cursor-pointer items-center gap-3 rounded-lg p-2.5 text-sm text-destructive hover:bg-destructive/10 active:bg-destructive/15 disabled:opacity-60"
             >
               <LogOut className="h-4 w-4" />
-              Sign out
+              {signingOut ? "Signing out..." : "Sign out"}
             </button>
           </div>
         </div>
