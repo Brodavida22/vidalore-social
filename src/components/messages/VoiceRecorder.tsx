@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Mic, Square, Trash2, Send, Play, Pause, AlertCircle, RefreshCw, X } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export function VoiceRecorder({
   onSendVoice,

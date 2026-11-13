@@ -640,5 +640,89 @@ describe("Real-Time Presence, Typing Indicators, Delivery States & Reel Views", 
       );
       expect(mockRpc).toHaveBeenCalledTimes(1);
     });
+
+    it("falls back cleanly when record_reel_view RPC is unavailable and records views when me profile is still loading", async () => {
+      vi.useFakeTimers();
+      const { recordReelView, __resetRecordedReelViewsForTests } =
+        await import("@/services/reelsAndStories");
+
+      // Simulate missing Postgres function (PGRST202)
+      mockRpc.mockResolvedValueOnce({
+        data: null,
+        error: { code: "PGRST202", message: "Could not find the function record_reel_view" },
+      });
+
+      const fallbackCount = await recordReelView("reel-fallback-1", { watchedMs: 2500 });
+      expect(fallbackCount).toBe(1);
+
+      // Re-calling in same session preserves deduplicated fallback count
+      const repeatFallbackCount = await recordReelView("reel-fallback-1", { watchedMs: 3000 });
+      expect(repeatFallbackCount).toBe(1);
+
+      __resetRecordedReelViewsForTests();
+
+      // Now verify ReelPlayer records view using auth session even if `me` prop is null/unhydrated
+      mockRpc.mockResolvedValue({ data: 7, error: null });
+      Object.defineProperty(HTMLMediaElement.prototype, "play", {
+        configurable: true,
+        value: function play(this: HTMLMediaElement) {
+          Object.defineProperty(this, "paused", { configurable: true, value: false });
+          return Promise.resolve();
+        },
+      });
+
+      const { ReelPlayer } = await import("@/components/reels/ReelPlayer");
+      const sampleReel = {
+        id: "reel-no-me-1",
+        creatorId: "creator-1",
+        creatorName: "Creator",
+        creatorUsername: "creator",
+        videoUrl: "https://example.com/video.mp4",
+        caption: "Testing view without hydrated me",
+        likesCount: 0,
+        commentsCount: 0,
+        sharesCount: 0,
+        savesCount: 0,
+        viewsCount: 6,
+        createdAt: "2026-05-10T10:00:00.000Z",
+      };
+
+      const { container } = render(
+        <ReelPlayer
+          reel={sampleReel}
+          isActive={true}
+          isMuted={true}
+          onToggleMute={vi.fn()}
+          me={null}
+        />,
+      );
+
+      // Flush getSession microtask
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const video = container.querySelector("video")!;
+      Object.defineProperty(video, "paused", { configurable: true, value: false });
+      Object.defineProperty(video, "ended", { configurable: true, value: false });
+      Object.defineProperty(video, "readyState", { configurable: true, value: 2 });
+
+      fireEvent.playing(video);
+      // Spurious stalled event at readyState === 2 must NOT stop view accumulation
+      fireEvent.stalled(video);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2200);
+      });
+
+      expect(mockRpc).toHaveBeenCalledWith("record_reel_view", {
+        _reel_id: "reel-no-me-1",
+      });
+
+      vi.useRealTimers();
+      await waitFor(() => {
+        expect(screen.getByText("7")).toBeInTheDocument();
+      });
+    });
   });
 });

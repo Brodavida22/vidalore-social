@@ -20,7 +20,8 @@ import {
   BadgeCheck,
   AlertCircle,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
+import { useAndroidBackNavigation } from "@/lib/useAndroidBackNavigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,6 +64,12 @@ export function PostCard({
   const [reportOpen, setReportOpen] = useState(false);
   const [activeMediaModal, setActiveMediaModal] = useState<PostMedia | null>(null);
   const [heartBurst, setHeartBurst] = useState(false);
+
+  useAndroidBackNavigation(
+    Boolean(activeMediaModal),
+    () => setActiveMediaModal(null),
+    "postMediaLightbox",
+  );
 
   // Sync internal state if prop changes
   if (initialPost.id !== post.id || initialPost.reactionsCount !== post.reactionsCount) {
@@ -388,7 +395,7 @@ export function PostCard({
         <button
           type="button"
           onClick={handleReaction}
-          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
+          className={`flex min-h-[40px] items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors ${
             post.hasReacted
               ? "text-[#E91E63] bg-[#E91E63]/10"
               : "text-muted-foreground hover:bg-secondary hover:text-foreground"
@@ -407,7 +414,7 @@ export function PostCard({
         <button
           type="button"
           onClick={() => setShowComments(!showComments)}
-          className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
+          className={`flex min-h-[40px] items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors ${
             showComments
               ? "bg-secondary text-foreground"
               : "text-muted-foreground hover:bg-secondary hover:text-foreground"
@@ -421,7 +428,7 @@ export function PostCard({
         <button
           type="button"
           onClick={() => setShareOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+          className="flex min-h-[40px] items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
         >
           <Repeat className="h-4 w-4" />
           <span>{post.sharesCount > 0 ? post.sharesCount : "Share"}</span>
@@ -431,7 +438,7 @@ export function PostCard({
         <button
           type="button"
           onClick={handleSave}
-          className={`rounded-lg p-2 text-xs transition-colors ${
+          className={`flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg p-2 text-xs transition-colors ${
             post.hasSaved
               ? "text-[#E91E63] hover:text-[#C2185B]"
               : "text-muted-foreground hover:bg-secondary hover:text-foreground"
@@ -484,7 +491,7 @@ export function PostCard({
           <button
             type="button"
             onClick={() => setActiveMediaModal(null)}
-            className="absolute top-4 right-4 z-50 rounded-lg bg-white/10 p-2 text-white hover:bg-white/20 transition-colors"
+            className="absolute top-[max(env(safe-area-inset-top),1rem)] right-4 z-50 flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 text-white hover:bg-white/25 transition-colors"
             aria-label="Close modal"
           >
             ✕

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
-import { Heart, Send, MessageSquare, Loader2, RotateCcw } from "lucide-react";
-import { toast } from "sonner";
+import { Heart, Send, MessageSquare, Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { toast } from "@/lib/toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/profile/UserAvatar";
@@ -9,7 +9,9 @@ import type { Profile } from "@/services/profiles";
 import {
   getReelComments,
   addReelComment,
+  deleteReelComment,
   toggleCommentReaction,
+  subscribeToReelEngagement,
   type ReelComment,
 } from "@/services/reelsAndStories";
 
@@ -21,12 +23,14 @@ export function ReelCommentsDrawer({
   onOpenChange,
   me,
   onCommentAdded,
+  onCommentDeleted,
 }: {
   reelId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   me?: Profile | null | undefined;
   onCommentAdded?: () => void;
+  onCommentDeleted?: () => void;
 }) {
   const [comments, setComments] = useState<ReelComment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -50,10 +54,33 @@ export function ReelCommentsDrawer({
   }, [reelId]);
 
   useEffect(() => {
-    if (open) {
-      void loadComments();
+    if (!open) return;
+    void loadComments();
+    const unsubscribe = subscribeToReelEngagement(reelId, {
+      onCommentInserted: () => {
+        void loadComments();
+      },
+      onCommentDeleted: () => {
+        void loadComments();
+      },
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [open, reelId, loadComments]);
+
+  async function handleDeleteComment(commentId: string) {
+    const previous = comments;
+    setComments((prev) => prev.filter((c) => c.id !== commentId));
+    try {
+      await deleteReelComment(commentId, reelId);
+      toast.success("Comment deleted");
+      onCommentDeleted?.();
+    } catch (error) {
+      setComments(previous);
+      toast.error(error instanceof Error ? error.message : "Could not delete comment.");
     }
-  }, [open, loadComments]);
+  }
 
   async function handleSend() {
     const clean = text.trim();
@@ -223,7 +250,7 @@ export function ReelCommentsDrawer({
                   <p className="mt-1 text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap break-words">
                     {c.content}
                   </p>
-                  <div className="mt-1.5 flex items-center gap-2 text-[0.65rem] text-muted-foreground">
+                  <div className="mt-1.5 flex items-center justify-between gap-2 text-[0.65rem] text-muted-foreground">
                     <button
                       type="button"
                       onClick={() => handleLike(c.id)}
@@ -236,6 +263,18 @@ export function ReelCommentsDrawer({
                       />
                       {c.reactionsCount > 0 && <span>{c.reactionsCount}</span>}
                     </button>
+
+                    {me?.id === c.authorId && !c.id.startsWith("temp-") && (
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteComment(c.id)}
+                        className="inline-flex items-center gap-1 text-muted-foreground hover:text-destructive transition-colors"
+                        aria-label="Delete comment"
+                      >
+                        <Trash2 className="h-2.5 w-2.5" />
+                        <span>Delete</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

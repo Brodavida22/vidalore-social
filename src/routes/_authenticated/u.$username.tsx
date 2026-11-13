@@ -19,8 +19,10 @@ import {
   UserX,
   BadgeCheck,
   MessageSquare,
+  Play,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
+import { prefetchVideoUrl } from "@/lib/videoPrefetch";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -430,28 +432,28 @@ function ProfilePage() {
 
       {/* Profile Header Details */}
       <div className="px-2 sm:px-4">
-        <div className="-mt-12 sm:-mt-16 flex items-end justify-between gap-3">
-          <div className="relative">
+        <div className="-mt-12 sm:-mt-16 flex flex-wrap items-end justify-between gap-3">
+          <div className="relative shrink-0">
             <UserAvatar
               profile={viewedProfile}
-              className="h-24 w-24 sm:h-28 sm:w-28 border-4 border-background text-2xl sm:text-3xl shadow-md ring-2 ring-[#E91E63]"
+              className="h-20 w-20 sm:h-28 sm:w-28 border-4 border-background text-2xl sm:text-3xl shadow-md ring-2 ring-[#E91E63]"
             />
             <PresenceDot
               isOnline={viewedOnline}
               lastSeenAt={viewedLastSeen}
               size="lg"
-              className="absolute bottom-1.5 right-1.5"
+              className="absolute bottom-1 right-1 sm:bottom-1.5 sm:right-1.5"
             />
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2 pb-1">
+          <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 pb-1">
             <Button
               variant="outline"
               size="icon"
               onClick={shareProfile}
               aria-label="Share profile"
-              className="rounded-lg h-9 w-9 border-border"
+              className="rounded-lg h-10 w-10 border-border"
             >
               <Share2 className="h-4 w-4" />
             </Button>
@@ -475,7 +477,7 @@ function ProfilePage() {
                   variant={isFollowing ? "outline" : "default"}
                   disabled={isFollowingLoading}
                   onClick={handleFollowToggle}
-                  className={`rounded-lg px-4 text-xs font-semibold ${
+                  className={`h-10 rounded-lg px-3.5 sm:px-4 text-xs font-semibold ${
                     isFollowing
                       ? "border-border text-foreground hover:bg-secondary"
                       : "bg-[#E91E63] hover:bg-[#C2185B] text-white shadow-sm"
@@ -499,7 +501,7 @@ function ProfilePage() {
                   size="sm"
                   variant="outline"
                   onClick={() => navigate({ to: "/messages" })}
-                  className="rounded-lg px-3.5 text-xs border-border"
+                  className="h-10 rounded-lg px-3 sm:px-3.5 text-xs border-border"
                 >
                   <MessageSquare className="h-3.5 w-3.5 mr-1.5 text-[#E91E63]" />
                   Message
@@ -512,7 +514,7 @@ function ProfilePage() {
                     variant="outline"
                     disabled={hasSentFriendRequest}
                     onClick={handleFriendRequest}
-                    className="rounded-lg px-3 text-xs border-border hidden sm:inline-flex"
+                    className="h-10 rounded-lg px-3 text-xs border-border hidden sm:inline-flex"
                   >
                     {hasSentFriendRequest ? "Requested" : "+ Friend"}
                   </Button>
@@ -523,7 +525,8 @@ function ProfilePage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-9 w-9 rounded-lg text-muted-foreground hover:bg-secondary"
+                      aria-label="More profile options"
+                      className="h-10 w-10 rounded-lg text-muted-foreground hover:bg-secondary"
                     >
                       <MoreVertical className="h-4 w-4" />
                     </Button>
@@ -747,7 +750,9 @@ function ProfilePage() {
                   {userReels.map((reel) => (
                     <div
                       key={reel.id}
-                      onClick={() => navigate({ to: "/reels" })}
+                      onMouseEnter={() => prefetchVideoUrl(reel.videoUrl)}
+                      onTouchStart={() => prefetchVideoUrl(reel.videoUrl)}
+                      onClick={() => navigate({ to: "/reels", search: { reelId: reel.id } })}
                       className="aspect-[9/16] rounded-xl overflow-hidden bg-black relative border border-border cursor-pointer group"
                     >
                       <video
@@ -761,6 +766,10 @@ function ProfilePage() {
                           e.currentTarget.style.display = "none";
                         }}
                       />
+
+                      <span className="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm border border-white/15">
+                        <Play className="h-3.5 w-3.5 ml-0.5 fill-current" />
+                      </span>
 
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex items-end p-2.5">
                         <span className="text-[0.65rem] text-white font-medium line-clamp-1">

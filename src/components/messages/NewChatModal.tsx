@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Search, Loader2, Sparkles, X, MessageSquarePlus } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   Dialog,
   DialogContent,

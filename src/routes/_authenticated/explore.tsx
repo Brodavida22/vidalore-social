@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Compass, Search, Sparkles, UserPlus, UserCheck } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -174,7 +174,7 @@ function ExplorePage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search keywords, topics, or creators..."
-            className="h-10 rounded-xl bg-secondary pl-10 text-xs border-border focus-visible:ring-primary"
+            className="h-11 rounded-xl bg-secondary pl-10 text-sm sm:text-xs border-border focus-visible:ring-primary"
           />
         </div>
 
@@ -185,7 +185,7 @@ function ExplorePage() {
               key={cat}
               type="button"
               onClick={() => setSelectedCategory(cat)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+              className={`min-h-[38px] rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
                 selectedCategory === cat
                   ? "bg-[#E91E63] text-white font-semibold"
                   : "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground"

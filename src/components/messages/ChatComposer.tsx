@@ -12,10 +12,11 @@ import {
   AlertCircle,
   Edit2,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { COMMON_EMOJIS } from "./ReactionPicker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { formatMessageTextForPreview } from "@/lib/storyReplyPayload";
 import type { MessageWithReadsAndReactions } from "@/services/messages";
 
 export interface PendingMediaAttachment {
@@ -235,7 +236,9 @@ export function ChatComposer({
                 {replyingTo.sender?.display_name || replyingTo.sender?.username || "message"}:{" "}
               </span>
               <span className="text-muted-foreground truncate">
-                {replyingTo.content || `[${replyingTo.message_type}]`}
+                {replyingTo.content
+                  ? formatMessageTextForPreview(replyingTo.content)
+                  : `[${replyingTo.message_type}]`}
               </span>
             </div>
           </div>

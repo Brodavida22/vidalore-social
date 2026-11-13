@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Check,
   CheckCheck,
@@ -12,13 +13,20 @@ import {
   Crown,
   ShieldCheck,
   Shield,
-  Smile,
   Clock,
   AlertCircle,
   RotateCcw,
   X,
+  Play,
+  Sparkles,
 } from "lucide-react";
 import type { MessageWithReadsAndReactions } from "@/services/messages";
+import {
+  parseStoryReplyMessage,
+  formatMessageTextForPreview,
+  resolveStoryPreview,
+  type StoryReplyReference,
+} from "@/lib/storyReplyPayload";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { MessageMediaRenderer } from "./MessageMediaRenderer";
 import { ReactionPicker } from "./ReactionPicker";
@@ -31,9 +39,128 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+function StoryReplyCard({ storyRef, isMine }: { storyRef: StoryReplyReference; isMine: boolean }) {
+  const [viewerOpen, setViewerOpen] = useState(false);
+
+  const { data: preview, isLoading } = useQuery({
+    queryKey: ["story-preview", storyRef.storyId],
+    queryFn: () => resolveStoryPreview(storyRef),
+    staleTime: 60_000,
+  });
+
+  const isAvailable = Boolean(preview?.available && preview.mediaUrl);
+  const statusLabel =
+    preview?.reason === "expired"
+      ? "Story expired"
+      : preview?.reason === "deleted"
+        ? "Story removed"
+        : "Story unavailable";
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={!isAvailable}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (isAvailable) setViewerOpen(true);
+        }}
+        className={`mb-1.5 flex w-full items-center gap-2.5 rounded-xl border p-2 text-left transition ${
+          isMine
+            ? "bg-black/20 border-white/20 text-white hover:bg-black/30 disabled:hover:bg-black/20"
+            : "bg-secondary/70 border-border text-foreground hover:bg-secondary disabled:hover:bg-secondary/70"
+        } ${isAvailable ? "cursor-pointer" : "cursor-default opacity-80"}`}
+      >
+        <div className="relative h-12 w-9 shrink-0 overflow-hidden rounded-lg bg-black/50 flex items-center justify-center border border-white/10">
+          {isLoading ? (
+            <span className="h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+          ) : isAvailable && preview?.mediaUrl ? (
+            preview.mediaType === "video" ? (
+              <>
+                <video
+                  src={preview.mediaUrl}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  className="h-full w-full object-cover"
+                />
+                <span className="absolute inset-0 flex items-center justify-center bg-black/30">
+                  <Play className="h-3.5 w-3.5 text-white fill-current" />
+                </span>
+              </>
+            ) : (
+              <img
+                src={preview.mediaUrl}
+                alt={`@${storyRef.ownerUsername}'s story`}
+                className="h-full w-full object-cover"
+              />
+            )
+          ) : (
+            <Sparkles className="h-3.5 w-3.5 opacity-60" />
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p
+            className={`text-[10px] font-semibold uppercase tracking-wide ${
+              isMine ? "text-white/80" : "text-[#E91E63]"
+            }`}
+          >
+            Replied to @{storyRef.ownerUsername}&apos;s story
+          </p>
+          <p
+            className={`text-[11px] truncate ${isMine ? "text-white/90" : "text-muted-foreground"}`}
+          >
+            {isLoading
+              ? "Loading story..."
+              : isAvailable
+                ? preview?.caption ||
+                  (preview?.mediaType === "video" ? "Tap to view video story" : "Tap to view story")
+                : statusLabel}
+          </p>
+        </div>
+      </button>
+
+      {isAvailable && preview?.mediaUrl && (
+        <Dialog open={viewerOpen} onOpenChange={setViewerOpen}>
+          <DialogContent className="sm:max-w-sm bg-black border border-white/15 p-0 overflow-hidden rounded-2xl">
+            <DialogHeader className="p-3 border-b border-white/10">
+              <DialogTitle className="text-xs font-semibold text-white">
+                @{storyRef.ownerUsername}&apos;s story
+              </DialogTitle>
+            </DialogHeader>
+            <div className="relative bg-black flex items-center justify-center max-h-[75vh]">
+              {preview.mediaType === "video" ? (
+                <video
+                  src={preview.mediaUrl}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="max-h-[70vh] w-full object-contain"
+                />
+              ) : (
+                <img
+                  src={preview.mediaUrl}
+                  alt={`@${storyRef.ownerUsername}'s story`}
+                  className="max-h-[70vh] w-full object-contain"
+                />
+              )}
+            </div>
+            {preview.caption && (
+              <p className="p-3 text-xs text-white/90 bg-black/80 border-t border-white/10">
+                {preview.caption}
+              </p>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  );
+}
 
 export function MessageItem({
   message,
@@ -183,6 +310,8 @@ export function MessageItem({
     isHorizontalSwipeRef.current = null;
   };
 
+  const parsedStoryReply = parseStoryReplyMessage(message.content);
+
   // Right-click context menu handler for desktop
   const handleContextMenu = (e: React.MouseEvent) => {
     if (isDeleted || isPendingOrFailed) return;
@@ -192,7 +321,9 @@ export function MessageItem({
 
   const handleCopy = () => {
     if (!message.content) return;
-    navigator.clipboard.writeText(message.content);
+    const textToCopy = parsedStoryReply ? parsedStoryReply.replyText : message.content;
+    if (!textToCopy) return;
+    navigator.clipboard.writeText(textToCopy);
     toast.success("Message copied to clipboard.");
     setMenuOpen(false);
   };
@@ -317,7 +448,9 @@ export function MessageItem({
             <span className="truncate text-[11px]">
               {message.replyToMessage.deleted_at
                 ? "Quoted message was deleted"
-                : message.replyToMessage.content || `[${message.replyToMessage.message_type}]`}
+                : message.replyToMessage.content
+                  ? formatMessageTextForPreview(message.replyToMessage.content)
+                  : `[${message.replyToMessage.message_type}]`}
             </span>
           </button>
         )}
@@ -339,6 +472,11 @@ export function MessageItem({
             </p>
           ) : (
             <>
+              {/* Story Reply Reference Card (if this message was sent from a Story) */}
+              {parsedStoryReply && (
+                <StoryReplyCard storyRef={parsedStoryReply.storyRef} isMine={isMine} />
+              )}
+
               {/* Media rendering (Image, Video, Voice note) */}
               {message.media_url && (
                 <MessageMediaRenderer
@@ -350,10 +488,18 @@ export function MessageItem({
               )}
 
               {/* Text content */}
-              {message.content && (
-                <p className="whitespace-pre-wrap break-words text-xs leading-relaxed mt-0.5 select-text">
-                  {message.content}
-                </p>
+              {parsedStoryReply ? (
+                parsedStoryReply.replyText ? (
+                  <p className="whitespace-pre-wrap break-words text-xs leading-relaxed mt-0.5 select-text">
+                    {parsedStoryReply.replyText}
+                  </p>
+                ) : null
+              ) : (
+                message.content && (
+                  <p className="whitespace-pre-wrap break-words text-xs leading-relaxed mt-0.5 select-text">
+                    {message.content}
+                  </p>
+                )
               )}
             </>
           )}
@@ -576,7 +722,7 @@ export function MessageItem({
               </button>
             )}
 
-            {isMine && message.message_type === "text" && !isDeleted && (
+            {isMine && message.message_type === "text" && !isDeleted && !parsedStoryReply && (
               <button
                 type="button"
                 onClick={() => {

@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useContext } from "react";
 import { Link } from "@tanstack/react-router";
+import { QueryClientContext } from "@tanstack/react-query";
 import { X, Send, Loader2, AlertCircle, Volume2, VolumeX, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { Input } from "@/components/ui/input";
+import { useVideoAudioPreference } from "@/lib/videoAudioPreference";
+import { useAndroidBackNavigation } from "@/lib/useAndroidBackNavigation";
+import { sendStoryReplyDM } from "@/services/messages";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,19 +42,24 @@ export function StoryViewerModal({
   onClose: () => void;
   me?: Profile | null | undefined;
 }) {
+  const queryClient = useContext(QueryClientContext);
+  useAndroidBackNavigation(open, onClose, "storyViewer");
   const [groupIndex, setGroupIndex] = useState(initialGroupIndex);
   const [storyIndex, setStoryIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [isHolding, setIsHolding] = useState(false);
+  const [isReplyInputFocused, setIsReplyInputFocused] = useState(false);
+  const [isSendingReply, setIsSendingReply] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const isPaused = isHolding || confirmDeleteOpen || deleting;
+  const isPaused =
+    isHolding || isReplyInputFocused || isSendingReply || confirmDeleteOpen || deleting;
   const [replyText, setReplyText] = useState("");
   const [videoLoading, setVideoLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
 
-  // Audio preference state: remembered across stories
-  const [isMuted, setIsMuted] = useState(false);
+  // Audio preference state: remembered across stories and videos
+  const { preferredMuted: isMuted, setPreferredMuted: setIsMuted } = useVideoAudioPreference();
   const [isAutoplaySoundBlocked, setIsAutoplaySoundBlocked] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -73,10 +82,10 @@ export function StoryViewerModal({
   // Synchronize muted attribute whenever isMuted changes
   useEffect(() => {
     const video = videoRef.current;
-    if (video) {
+    if (video && !isAutoplaySoundBlocked) {
       video.muted = isMuted;
     }
-  }, [isMuted]);
+  }, [isMuted, isAutoplaySoundBlocked]);
 
   useEffect(() => {
     setGroupIndex(initialGroupIndex);
@@ -188,9 +197,18 @@ export function StoryViewerModal({
 
   function handleToggleMute(e: React.MouseEvent) {
     e.stopPropagation();
+    if (isAutoplaySoundBlocked) {
+      setIsAutoplaySoundBlocked(false);
+      setIsMuted(false);
+      const video = videoRef.current;
+      if (video) {
+        video.muted = false;
+        video.play().catch(() => {});
+      }
+      return;
+    }
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
-    setIsAutoplaySoundBlocked(false);
     const video = videoRef.current;
     if (video) {
       video.muted = nextMuted;
@@ -225,15 +243,45 @@ export function StoryViewerModal({
     return () => clearInterval(timer);
   }, [open, isPaused, currentStory?.id, currentStory?.mediaType, handleNext]);
 
-  function handleSendReply() {
-    if (!replyText.trim()) return;
+  async function submitStoryReply(rawText: string) {
+    const clean = rawText.trim();
+    if (!clean || !currentStory || !currentGroup || isSendingReply) return;
 
-    toast.success(`Reply sent to @${currentGroup?.username}`);
-    setReplyText("");
+    setIsSendingReply(true);
+    try {
+      const { conversation } = await sendStoryReplyDM({
+        storyId: currentStory.id,
+        ownerId: currentStory.userId,
+        ownerUsername: currentGroup.username,
+        mediaType: currentStory.mediaType,
+        mediaPath: currentStory.mediaPath,
+        caption: currentStory.caption,
+        expiresAt: currentStory.expiresAt,
+        replyText: clean,
+      });
+
+      if (queryClient) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["messages", "conversations"] }),
+          queryClient.invalidateQueries({ queryKey: ["messages", conversation.id] }),
+        ]);
+      }
+
+      setReplyText("");
+      toast.success(`Reply sent to @${currentGroup.username}'s messages`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not send story reply.");
+    } finally {
+      setIsSendingReply(false);
+    }
+  }
+
+  function handleSendReply() {
+    void submitStoryReply(replyText);
   }
 
   function handleQuickReaction(emoji: string) {
-    toast.success(`Sent ${emoji} to @${currentGroup?.username}`);
+    void submitStoryReply(emoji);
   }
 
   async function handleDeleteStory() {
@@ -389,7 +437,7 @@ export function StoryViewerModal({
         />
 
         {/* Top Header & Progress Bar */}
-        <div className="relative z-20 p-4 space-y-3 pointer-events-auto">
+        <div className="relative z-20 px-4 pt-[max(env(safe-area-inset-top),0.875rem)] pb-3 space-y-3 pointer-events-auto">
           <div className="flex gap-1 items-center">
             {currentGroup.stories.map((s, idx) => {
               const isPast = idx < storyIndex;
@@ -434,18 +482,18 @@ export function StoryViewerModal({
               </div>
             </Link>
 
-            <div className="flex items-center gap-2">
-              {/* Sound toggle button for video stories */}
+            <div className="flex items-center gap-1.5">
+              {/* Sound toggle button for video stories (always visible & honest about blocked audio) */}
               {currentStory.mediaType === "video" && (
                 <button
                   type="button"
                   onClick={handleToggleMute}
-                  className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
-                  aria-label={isMuted ? "Unmute video" : "Mute video"}
-                  title={isMuted ? "Unmute" : "Mute"}
+                  className="flex h-11 w-11 items-center justify-center rounded-full bg-black/60 border border-white/15 text-white hover:bg-black/80 active:scale-95 transition-all"
+                  aria-label={isMuted || isAutoplaySoundBlocked ? "Unmute video" : "Mute video"}
+                  title={isMuted || isAutoplaySoundBlocked ? "Unmute" : "Mute"}
                 >
-                  {isMuted ? (
-                    <VolumeX className="h-4 w-4 text-white/80" />
+                  {isMuted || isAutoplaySoundBlocked ? (
+                    <VolumeX className="h-4 w-4 text-white/90" />
                   ) : (
                     <Volume2 className="h-4 w-4 text-[#E91E63]" />
                   )}
@@ -459,7 +507,7 @@ export function StoryViewerModal({
                     e.stopPropagation();
                     setConfirmDeleteOpen(true);
                   }}
-                  className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+                  className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/80 active:scale-95 transition-all"
                   aria-label="Delete story"
                   title="Delete story"
                 >
@@ -470,7 +518,7 @@ export function StoryViewerModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-full bg-black/50 p-1.5 text-white hover:bg-black/80 transition-colors"
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/80 active:scale-95 transition-all"
                 aria-label="Close stories"
               >
                 <X className="h-4 w-4" />
@@ -486,42 +534,69 @@ export function StoryViewerModal({
           </div>
         )}
 
-        {/* Bottom Reaction & Reply Bar */}
-        <div className="relative z-20 p-4 space-y-2.5 pointer-events-auto">
-          <div className="flex items-center justify-center gap-2">
-            {QUICK_REACTIONS.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                onClick={() => handleQuickReaction(emoji)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-sm hover:scale-115 transition-transform"
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
+        {/* Bottom Reaction & Reply Bar (hidden on user's own story) */}
+        <div
+          className="relative z-20 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),1rem)] space-y-2.5 pointer-events-auto"
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+        >
+          {isOwnStory ? (
+            <p className="text-center text-[11px] text-white/65 py-1">
+              Viewing your own story · {currentStory.seenBy.length} view
+              {currentStory.seenBy.length === 1 ? "" : "s"}
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center justify-center gap-2">
+                {QUICK_REACTIONS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    disabled={isSendingReply}
+                    onClick={() => handleQuickReaction(emoji)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-sm hover:scale-115 transition-transform disabled:opacity-50"
+                    aria-label={`React with ${emoji}`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
 
-          <div className="flex items-center gap-2">
-            <Input
-              value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSendReply();
-              }}
-              placeholder={`Reply to ${currentGroup.displayName}...`}
-              className="h-9 rounded-lg bg-black/60 border-white/20 text-white placeholder:text-white/50 text-xs focus-visible:ring-primary"
-            />
+              <div className="flex items-center gap-2">
+                <Input
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  onFocus={() => setIsReplyInputFocused(true)}
+                  onBlur={() => setIsReplyInputFocused(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendReply();
+                    }
+                  }}
+                  disabled={isSendingReply}
+                  placeholder={`Reply to ${currentGroup.displayName}...`}
+                  className="h-9 rounded-lg bg-black/60 border-white/20 text-white placeholder:text-white/50 text-xs focus-visible:ring-primary"
+                />
 
-            <button
-              type="button"
-              onClick={handleSendReply}
-              disabled={!replyText.trim()}
-              className="rounded-lg bg-[#E91E63] hover:bg-[#C2185B] p-2 text-white disabled:opacity-40 transition-colors"
-              aria-label="Send reply"
-            >
-              <Send className="h-4 w-4" />
-            </button>
-          </div>
+                <button
+                  type="button"
+                  onClick={handleSendReply}
+                  disabled={!replyText.trim() || isSendingReply}
+                  className="rounded-lg bg-[#E91E63] hover:bg-[#C2185B] p-2 text-white disabled:opacity-40 transition-colors"
+                  aria-label="Send reply"
+                >
+                  {isSendingReply ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

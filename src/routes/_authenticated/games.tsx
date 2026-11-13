@@ -14,7 +14,7 @@ import {
   Search,
   Lock,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -465,19 +465,19 @@ function GamesCenterPage() {
             e.preventDefault();
             if (roomCodeInput.trim()) void handleJoinRoom(roomCodeInput);
           }}
-          className="flex items-center gap-2"
+          className="flex w-full sm:w-auto items-center gap-2"
         >
           <Input
             value={roomCodeInput}
             onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
             placeholder="Enter Room Code..."
             maxLength={8}
-            className="h-9 w-44 font-mono text-xs uppercase tracking-wider bg-secondary"
+            className="h-10 w-full sm:w-44 min-w-0 flex-1 font-mono text-xs uppercase tracking-wider bg-secondary"
           />
           <Button
             type="submit"
             disabled={joiningCode || !roomCodeInput.trim()}
-            className="h-9 bg-[#E91E63] hover:bg-[#C2185B] text-white text-xs whitespace-nowrap shrink-0"
+            className="h-10 bg-[#E91E63] hover:bg-[#C2185B] text-white text-xs whitespace-nowrap shrink-0"
           >
             <DoorOpen className="h-3.5 w-3.5 mr-1.5" />
             {joiningCode ? "Joining..." : "Join Room"}
@@ -487,7 +487,7 @@ function GamesCenterPage() {
 
       {/* Player Profile & Stats Strip */}
       <section className="grid grid-cols-2 sm:grid-cols-5 gap-3 rounded-xl border border-border bg-card p-4 tabular-nums">
-        <div className="col-span-2 sm:col-span-1 flex items-center gap-3">
+        <div className="col-span-2 sm:col-span-1 flex items-center gap-3 pb-1 sm:pb-0">
           {me && <UserAvatar profile={me} className="h-10 w-10 ring-1 ring-border shrink-0" />}
           <div className="min-w-0">
             <p className="text-xs font-bold text-foreground truncate">
@@ -499,19 +499,19 @@ function GamesCenterPage() {
           </div>
         </div>
 
-        <div className="border-l border-border/60 pl-3">
+        <div className="border-t sm:border-t-0 sm:border-l border-border/60 pt-2.5 sm:pt-0 sm:pl-3">
           <p className="text-[11px] text-muted-foreground">Matches Played</p>
           <p className="mt-0.5 font-display text-lg font-bold">{gameProfile?.gamesPlayed ?? 0}</p>
         </div>
 
-        <div className="border-l border-border/60 pl-3">
+        <div className="border-t sm:border-t-0 border-l border-border/60 pt-2.5 sm:pt-0 pl-3">
           <p className="text-[11px] text-muted-foreground">Win Rate</p>
           <p className="mt-0.5 font-display text-lg font-bold text-emerald-500">
             {gameProfile?.winRate ?? 0}%
           </p>
         </div>
 
-        <div className="border-l border-border/60 pl-3">
+        <div className="border-t sm:border-t-0 sm:border-l border-border/60 pt-2.5 sm:pt-0 sm:pl-3">
           <p className="text-[11px] text-muted-foreground">Win Streak</p>
           <p className="mt-0.5 font-display text-lg font-bold flex items-center gap-1">
             <Flame className="h-4 w-4 text-amber-500" />
@@ -519,7 +519,7 @@ function GamesCenterPage() {
           </p>
         </div>
 
-        <div className="border-l border-border/60 pl-3">
+        <div className="border-t sm:border-t-0 border-l border-border/60 pt-2.5 sm:pt-0 pl-3">
           <p className="text-[11px] text-muted-foreground">VIDA Balance</p>
           <p className="mt-0.5 font-display text-lg font-bold text-[#E91E63]">
             {me?.points_balance ?? 0} pts

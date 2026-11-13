@@ -28,7 +28,7 @@ import {
   Upload,
   Trash2,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import { ReelCommentsDrawer } from "@/components/reels/ReelCommentsDrawer";
 import {
@@ -52,8 +52,10 @@ import {
   updateReelVideo,
   transcodeExistingReel,
   deleteReel,
+  subscribeToReelEngagement,
   type ReelItem,
 } from "@/services/reelsAndStories";
+import { supabase } from "@/integrations/supabase/client";
 import type { Profile } from "@/services/profiles";
 
 export function ReelPlayer({
@@ -61,20 +63,23 @@ export function ReelPlayer({
   isActive,
   isMuted,
   onToggleMute,
+  onEnableSound,
   me,
 }: {
   reel: ReelItem;
   isActive: boolean;
   isMuted: boolean;
   onToggleMute: () => void;
+  onEnableSound?: (() => void) | undefined;
   me?: Profile | null | undefined;
 }) {
   const [reel, setReel] = useState<ReelItem>(initialReel);
   const [videoSrc, setVideoSrc] = useState<string>(initialReel.videoUrl || "");
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(Boolean(initialReel.videoUrl));
   const [isBuffering, setIsBuffering] = useState(false);
   const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
+  const [soundBlockedByBrowser, setSoundBlockedByBrowser] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [showPlayIcon, setShowPlayIcon] = useState(false);
@@ -100,10 +105,31 @@ export function ReelPlayer({
   const viewRecordedForRef = useRef<string | null>(null);
   const viewAttemptInFlightRef = useRef<string | null>(null);
   const accumulatedWatchMsRef = useRef(0);
+  const lastPlaybackTimeRef = useRef(0);
   const lastSyncedReelIdRef = useRef(initialReel.id);
+  const [authViewerId, setAuthViewerId] = useState<string | null>(null);
   const [isPageVisible, setIsPageVisible] = useState(() =>
     typeof document === "undefined" ? true : document.visibilityState !== "hidden",
   );
+
+  useEffect(() => {
+    if (me?.id) {
+      setAuthViewerId(me.id);
+      return;
+    }
+    let cancelled = false;
+    void supabase.auth
+      ?.getSession?.()
+      .then((res) => {
+        if (!cancelled) {
+          setAuthViewerId(res?.data?.session?.user?.id ?? null);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [me?.id]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -123,11 +149,13 @@ export function ReelPlayer({
       setVideoSrc(initialReel.videoUrl || "");
       setVideoError(false);
       setErrorMessage("");
-      setIsLoading(true);
+      setIsLoading((videoRef.current?.readyState ?? 0) < 2);
       setIsBuffering(false);
+      setSoundBlockedByBrowser(false);
       setIsFollowing(initialReel.isFollowing ?? false);
       setProgress(0);
       accumulatedWatchMsRef.current = 0;
+      lastPlaybackTimeRef.current = 0;
       viewRecordedForRef.current = null;
       viewAttemptInFlightRef.current = null;
       return;
@@ -151,15 +179,35 @@ export function ReelPlayer({
     }
   }, [initialReel, videoSrc]);
 
-  // Accumulate active playback duration and record view once threshold is reached
+  // Live multi-user engagement count sync
   useEffect(() => {
-    const viewerId = me?.id;
+    const unsubscribe = subscribeToReelEngagement(reel.id, {
+      onLikesCountChange: (count) =>
+        setReel((prev) => (prev.id === reel.id ? { ...prev, likesCount: count } : prev)),
+      onCommentsCountChange: (count) =>
+        setReel((prev) => (prev.id === reel.id ? { ...prev, commentsCount: count } : prev)),
+      onSavesCountChange: (count) =>
+        setReel((prev) => (prev.id === reel.id ? { ...prev, savesCount: count } : prev)),
+      onViewsCountChange: (count) =>
+        setReel((prev) =>
+          prev.id === reel.id ? { ...prev, viewsCount: Math.max(prev.viewsCount, count) } : prev,
+        ),
+      onSharesCountChange: (count) =>
+        setReel((prev) =>
+          prev.id === reel.id ? { ...prev, sharesCount: Math.max(prev.sharesCount, count) } : prev,
+        ),
+    });
+    return () => unsubscribe();
+  }, [reel.id]);
+
+  // Accumulate active playback duration and record view once threshold is reached
+  const effectiveViewerId = me?.id ?? authViewerId;
+  useEffect(() => {
     const reelId = reel.id;
-    const viewKey = viewerId ? `${viewerId}:${reelId}` : null;
+    const viewKey = effectiveViewerId ? `${effectiveViewerId}:${reelId}` : null;
     if (
       !isActive ||
       !isPlaying ||
-      isBuffering ||
       videoError ||
       isRepairing ||
       !isPageVisible ||
@@ -175,19 +223,29 @@ export function ReelPlayer({
       const video = videoRef.current;
       if (!video || video.paused || video.ended) return;
 
+      const timeAdvanced = video.currentTime > lastPlaybackTimeRef.current;
+      lastPlaybackTimeRef.current = video.currentTime;
+
+      // Skip buffering intervals only when frames are not advancing
+      if (isBuffering && !timeAdvanced) return;
+
       accumulatedWatchMsRef.current += TICK_MS;
       if (accumulatedWatchMsRef.current < REEL_VIEW_THRESHOLD_MS) return;
-
-      clearInterval(intervalId);
       if (viewRecordedForRef.current === viewKey || viewAttemptInFlightRef.current === viewKey) {
+        clearInterval(intervalId);
         return;
       }
 
       viewAttemptInFlightRef.current = viewKey;
       void recordReelView(reelId, { watchedMs: accumulatedWatchMsRef.current })
         .then((viewsCount) => {
+          clearInterval(intervalId);
           viewRecordedForRef.current = viewKey;
-          setReel((prev) => (prev.id === reelId ? { ...prev, viewsCount } : prev));
+          setReel((prev) =>
+            prev.id === reelId
+              ? { ...prev, viewsCount: Math.max(prev.viewsCount, viewsCount) }
+              : prev,
+          );
         })
         .catch((error) => {
           console.warn("Could not record reel view:", error);
@@ -200,39 +258,61 @@ export function ReelPlayer({
     }, TICK_MS);
 
     return () => clearInterval(intervalId);
-  }, [isActive, isPlaying, isBuffering, videoError, isRepairing, isPageVisible, me?.id, reel.id]);
+  }, [
+    isActive,
+    isPlaying,
+    isBuffering,
+    videoError,
+    isRepairing,
+    isPageVisible,
+    effectiveViewerId,
+    reel.id,
+  ]);
 
-  // Handle active / inactive playback lifecycle
+  // Handle active / inactive playback lifecycle immediately when active & videoSrc ready
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    if (isActive && !videoError && !isRepairing) {
+    if (isActive && videoSrc && !videoError && !isRepairing) {
+      video.muted = isMuted;
       const playPromise = video.play();
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
             setIsPlaying(true);
             setIsAutoplayBlocked(false);
+            setSoundBlockedByBrowser(false);
+            if (video.readyState >= 2) {
+              setIsLoading(false);
+              setIsBuffering(false);
+            }
           })
           .catch((err) => {
             console.warn("Autoplay rejected or blocked by browser:", err);
-            // If blocked due to unmuted audio policy, try muted autoplay
+            // If blocked due to unmuted audio policy, fall back to immediate muted autoplay
             if (!video.muted) {
               video.muted = true;
+              setSoundBlockedByBrowser(true);
               video
                 .play()
                 .then(() => {
                   setIsPlaying(true);
                   setIsAutoplayBlocked(false);
+                  if (video.readyState >= 2) {
+                    setIsLoading(false);
+                    setIsBuffering(false);
+                  }
                 })
                 .catch(() => {
                   setIsPlaying(false);
                   setIsAutoplayBlocked(true);
+                  setIsLoading(false);
                 });
             } else {
               setIsPlaying(false);
               setIsAutoplayBlocked(true);
+              setIsLoading(false);
             }
           });
       }
@@ -242,14 +322,46 @@ export function ReelPlayer({
       }
       setIsPlaying(false);
     }
-  }, [isActive, videoError, isRepairing]);
+  }, [isActive, videoSrc, videoError, isRepairing, isMuted]);
 
   // Synchronize mute attribute
   useEffect(() => {
-    if (videoRef.current) {
+    if (videoRef.current && !soundBlockedByBrowser) {
       videoRef.current.muted = isMuted;
     }
-  }, [isMuted]);
+  }, [isMuted, soundBlockedByBrowser]);
+
+  const effectiveMuted = isMuted || soundBlockedByBrowser;
+
+  const handleSoundButtonClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const video = videoRef.current;
+
+      if (soundBlockedByBrowser) {
+        setSoundBlockedByBrowser(false);
+        if (video) {
+          video.muted = false;
+          video.play().catch(() => {});
+        }
+        if (isMuted) {
+          if (onEnableSound) onEnableSound();
+          else onToggleMute();
+        }
+        return;
+      }
+
+      const nextMuted = !isMuted;
+      if (video) {
+        video.muted = nextMuted;
+        if (!nextMuted && video.paused) {
+          video.play().catch(() => {});
+        }
+      }
+      onToggleMute();
+    },
+    [soundBlockedByBrowser, isMuted, onEnableSound, onToggleMute],
+  );
 
   // Retry playback with fresh signed URL
   const handleRetry = useCallback(async () => {
@@ -317,8 +429,17 @@ export function ReelPlayer({
 
   function handleTimeUpdate() {
     const video = videoRef.current;
-    if (video && video.duration > 0) {
+    if (!video) return;
+    if (video.duration > 0) {
       setProgress((video.currentTime / video.duration) * 100);
+    }
+    if (!video.paused && !video.ended) {
+      setIsLoading(false);
+      setIsBuffering(false);
+      setIsPlaying(true);
+    } else if (video.readyState >= 2) {
+      setIsLoading(false);
+      setIsBuffering(false);
     }
   }
 
@@ -339,11 +460,17 @@ export function ReelPlayer({
   }
 
   function handleWaiting() {
-    setIsBuffering(true);
+    const video = videoRef.current;
+    if (video && video.readyState < 3) {
+      setIsBuffering(true);
+    }
   }
 
   function handleStalled() {
-    setIsBuffering(true);
+    const video = videoRef.current;
+    if (video && video.readyState < 2) {
+      setIsBuffering(true);
+    }
   }
 
   function handleEnded() {
@@ -408,9 +535,7 @@ export function ReelPlayer({
         description: "The video has been converted to H.264 MP4 and is now ready for playback.",
       });
 
-      setTimeout(() => {
-        handleRetry();
-      }, 200);
+      void handleRetry();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not update reel video.");
     } finally {
@@ -439,9 +564,7 @@ export function ReelPlayer({
         description: "Re-encoded to H.264 MP4 with AAC audio.",
       });
 
-      setTimeout(() => {
-        handleRetry();
-      }, 200);
+      void handleRetry();
     } catch (err) {
       toast.error(
         err instanceof Error
@@ -612,7 +735,7 @@ export function ReelPlayer({
   }
 
   return (
-    <div className="relative h-full w-full max-w-md mx-auto aspect-[9/16] rounded-2xl overflow-hidden bg-black select-none shadow-xl border border-white/10 group">
+    <div className="relative h-full max-h-[calc(100dvh-10rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] md:max-h-[calc(100dvh-5.5rem)] w-full max-w-md mx-auto aspect-[9/16] rounded-2xl overflow-hidden bg-black select-none shadow-xl border border-white/10 group">
       {/* Hidden File Input for Reel Video Repair */}
       <input
         ref={repairFileInputRef}
@@ -629,13 +752,15 @@ export function ReelPlayer({
         className="h-full w-full object-cover cursor-pointer"
         loop
         playsInline
-        preload="auto"
-        muted={isMuted}
+        preload={isActive ? "auto" : "metadata"}
+        muted={effectiveMuted}
         onClick={handleVideoClick}
         onDoubleClick={handleDoubleTap}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
+        onLoadedData={handleCanPlay}
         onCanPlay={handleCanPlay}
+        onCanPlayThrough={handleCanPlay}
         onPlaying={handlePlaying}
         onWaiting={handleWaiting}
         onStalled={handleStalled}
@@ -745,29 +870,41 @@ export function ReelPlayer({
         </div>
       )}
 
-      {/* Top Controls */}
-      <div className="absolute top-4 inset-x-4 flex items-center justify-between z-20 pointer-events-auto">
-        <div className="flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[0.7rem] text-white/90 backdrop-blur-sm">
+      {/* Top Controls (Sound button stays persistently visible) */}
+      <div className="absolute top-4 inset-x-4 flex items-center justify-between z-30 pointer-events-auto">
+        <div className="flex items-center gap-1.5 rounded-full bg-black/65 px-2.5 py-1 text-[0.7rem] text-white/95 backdrop-blur-sm border border-white/10">
           <Eye className="h-3 w-3" />
           <span>{reel.viewsCount.toLocaleString()}</span>
         </div>
 
-        <button
-          type="button"
-          onClick={onToggleMute}
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm hover:bg-black/80 transition-colors"
-          aria-label={isMuted ? "Unmute audio" : "Mute audio"}
-        >
-          {isMuted ? (
-            <VolumeX className="h-4 w-4" />
-          ) : (
-            <Volume2 className="h-4 w-4 text-[#E91E63]" />
+        <div className="flex items-center gap-2">
+          {soundBlockedByBrowser && (
+            <button
+              type="button"
+              onClick={handleSoundButtonClick}
+              className="rounded-full bg-black/75 border border-[#E91E63]/60 px-2.5 py-1 text-[11px] font-semibold text-white shadow-md backdrop-blur-sm hover:bg-black/90 transition-colors"
+            >
+              Tap for sound
+            </button>
           )}
-        </button>
+          <button
+            type="button"
+            onClick={handleSoundButtonClick}
+            data-testid="reel-sound-toggle"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-black/70 border border-white/15 text-white backdrop-blur-sm hover:bg-black/90 active:scale-95 transition-all shadow-md"
+            aria-label={effectiveMuted ? "Unmute audio" : "Mute audio"}
+          >
+            {effectiveMuted ? (
+              <VolumeX className="h-4.5 w-4.5" />
+            ) : (
+              <Volume2 className="h-4.5 w-4.5 text-[#E91E63]" />
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Right-Side Vertical Action Column */}
-      <div className="absolute right-3 bottom-16 flex flex-col items-center gap-3.5 z-20 pointer-events-auto">
+      <div className="absolute right-3 bottom-16 flex flex-col items-center gap-3 z-20 pointer-events-auto">
         {/* Creator Avatar with Follow Button */}
         <div className="relative mb-1">
           <Link to="/u/$username" params={{ username: reel.creatorUsername }}>
@@ -777,7 +914,7 @@ export function ReelPlayer({
                 username: reel.creatorUsername,
                 display_name: reel.creatorName,
               }}
-              className="h-10 w-10 ring-2 ring-[#E91E63]"
+              className="h-11 w-11 ring-2 ring-[#E91E63]"
             />
           </Link>
           {me?.id !== reel.creatorId && (
@@ -785,16 +922,12 @@ export function ReelPlayer({
               type="button"
               onClick={handleFollowToggle}
               disabled={isFollowPending}
-              className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 flex h-5 w-5 items-center justify-center rounded-full border border-background shadow transition-transform active:scale-90 ${
+              className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 flex h-6 w-6 items-center justify-center rounded-full border border-background shadow transition-transform active:scale-90 ${
                 isFollowing ? "bg-card text-foreground" : "bg-[#E91E63] text-white"
               }`}
               title={isFollowing ? "Following" : "Follow"}
             >
-              {isFollowing ? (
-                <UserCheck className="h-2.5 w-2.5" />
-              ) : (
-                <UserPlus className="h-2.5 w-2.5" />
-              )}
+              {isFollowing ? <UserCheck className="h-3 w-3" /> : <UserPlus className="h-3 w-3" />}
             </button>
           )}
         </div>
@@ -808,7 +941,7 @@ export function ReelPlayer({
           aria-label={reel.hasLiked ? "Unlike reel" : "Like reel"}
         >
           <span
-            className={`flex h-10 w-10 items-center justify-center rounded-full bg-black/60 backdrop-blur-sm transition-transform active:scale-125 ${
+            className={`flex h-11 w-11 items-center justify-center rounded-full bg-black/60 backdrop-blur-sm transition-transform active:scale-125 ${
               reel.hasLiked ? "text-[#E91E63]" : "text-white"
             }`}
           >
@@ -826,7 +959,7 @@ export function ReelPlayer({
           className="flex flex-col items-center gap-0.5"
           aria-label="Comments"
         >
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm hover:bg-black/80 transition-transform active:scale-110">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm hover:bg-black/80 transition-transform active:scale-110">
             <MessageCircle className="h-5 w-5" />
           </span>
           <span className="text-[0.65rem] font-semibold text-white drop-shadow">
@@ -841,7 +974,7 @@ export function ReelPlayer({
           className="flex flex-col items-center gap-0.5"
           aria-label="Share"
         >
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm hover:bg-black/80 transition-transform active:scale-110">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm hover:bg-black/80 transition-transform active:scale-110">
             <Share2 className="h-5 w-5" />
           </span>
           <span className="text-[0.65rem] font-semibold text-white drop-shadow">
@@ -858,7 +991,7 @@ export function ReelPlayer({
           aria-label="Save"
         >
           <span
-            className={`flex h-10 w-10 items-center justify-center rounded-full bg-black/60 backdrop-blur-sm transition-transform active:scale-110 ${
+            className={`flex h-11 w-11 items-center justify-center rounded-full bg-black/60 backdrop-blur-sm transition-transform active:scale-110 ${
               reel.hasSaved ? "text-[#E91E63]" : "text-white hover:bg-black/80"
             }`}
           >
@@ -878,7 +1011,7 @@ export function ReelPlayer({
             aria-label="Delete reel"
             title="Delete your reel"
           >
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white/90 backdrop-blur-sm hover:bg-destructive/80 hover:text-white transition-colors active:scale-110">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white/90 backdrop-blur-sm hover:bg-destructive/80 hover:text-white transition-colors active:scale-110">
               <Trash2 className="h-4 w-4" />
             </span>
             <span className="text-[0.65rem] font-semibold text-white drop-shadow">Delete</span>
@@ -936,6 +1069,9 @@ export function ReelPlayer({
         me={me}
         onCommentAdded={() => {
           setReel((prev) => ({ ...prev, commentsCount: prev.commentsCount + 1 }));
+        }}
+        onCommentDeleted={() => {
+          setReel((prev) => ({ ...prev, commentsCount: Math.max(0, prev.commentsCount - 1) }));
         }}
       />
 

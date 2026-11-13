@@ -68,6 +68,7 @@ import {
   removeSavedReel,
   getReelComments,
   addReelComment,
+  deleteReelComment,
   toggleCommentReaction,
   addStory,
   addReel,
@@ -105,28 +106,22 @@ describe("Reels & Stories Social Systems", () => {
         }),
       });
       const mockInsert = vi.fn().mockResolvedValue({ error: null });
-      const mockCount = vi.fn().mockReturnValue({
-        eq: vi.fn().mockResolvedValue({ count: 1, error: null }),
-      });
-      const mockUpdate = vi.fn().mockReturnValue({
+      const mockSelectReel = vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
-          then: vi.fn(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: { likes_count: 1 }, error: null }),
         }),
       });
 
       vi.mocked(supabase.from).mockImplementation((table: string) => {
         if (table === "reel_likes") {
           return {
-            select: vi.fn().mockImplementation((_cols, opts) => {
-              if (opts?.count === "exact") return mockCount();
-              return mockSelect();
-            }),
+            select: mockSelect,
             insert: mockInsert,
             delete: vi.fn(),
           } as unknown as ReturnType<typeof supabase.from>;
         }
         if (table === "reels") {
-          return { update: mockUpdate } as unknown as ReturnType<typeof supabase.from>;
+          return { select: mockSelectReel } as unknown as ReturnType<typeof supabase.from>;
         }
         return {} as unknown as ReturnType<typeof supabase.from>;
       });
@@ -151,28 +146,22 @@ describe("Reels & Stories Social Systems", () => {
           eq: vi.fn().mockResolvedValue({ error: null }),
         }),
       });
-      const mockCount = vi.fn().mockReturnValue({
-        eq: vi.fn().mockResolvedValue({ count: 0, error: null }),
-      });
-      const mockUpdate = vi.fn().mockReturnValue({
+      const mockSelectReel = vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
-          then: vi.fn(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: { likes_count: 0 }, error: null }),
         }),
       });
 
       vi.mocked(supabase.from).mockImplementation((table: string) => {
         if (table === "reel_likes") {
           return {
-            select: vi.fn().mockImplementation((_cols, opts) => {
-              if (opts?.count === "exact") return mockCount();
-              return mockSelect();
-            }),
+            select: mockSelect,
             insert: vi.fn(),
             delete: mockDelete,
           } as unknown as ReturnType<typeof supabase.from>;
         }
         if (table === "reels") {
-          return { update: mockUpdate } as unknown as ReturnType<typeof supabase.from>;
+          return { select: mockSelectReel } as unknown as ReturnType<typeof supabase.from>;
         }
         return {} as unknown as ReturnType<typeof supabase.from>;
       });
@@ -185,10 +174,22 @@ describe("Reels & Stories Social Systems", () => {
 
   describe("2. Reel Comments", () => {
     it("adds a comment and returns author details", async () => {
-      const mockInsert = vi.fn().mockResolvedValue({ error: null });
-      const mockUpdate = vi.fn().mockReturnValue({
+      const insertedRow = {
+        id: "comment-99",
+        reel_id: "reel-1",
+        author_id: "user-123",
+        content: "Amazing reel! 🌹",
+        created_at: new Date().toISOString(),
+        reactions_count: 0,
+      };
+      const mockInsert = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: insertedRow, error: null }),
+        }),
+      });
+      const mockSelectReel = vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
-          then: vi.fn(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: { comments_count: 1 }, error: null }),
         }),
       });
 
@@ -196,22 +197,46 @@ describe("Reels & Stories Social Systems", () => {
         if (table === "reel_comments") {
           return {
             insert: mockInsert,
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 1, error: null }),
-            }),
           } as unknown as ReturnType<typeof supabase.from>;
         }
         if (table === "reels") {
-          return { update: mockUpdate } as unknown as ReturnType<typeof supabase.from>;
+          return { select: mockSelectReel } as unknown as ReturnType<typeof supabase.from>;
         }
         return {} as unknown as ReturnType<typeof supabase.from>;
       });
 
       const comment = await addReelComment(mockMe, "reel-1", "Amazing reel! 🌹");
+      expect(comment.id).toBe("comment-99");
       expect(comment.content).toBe("Amazing reel! 🌹");
       expect(comment.authorId).toBe("user-123");
       expect(comment.authorUsername).toBe("vidalore_user");
       expect(mockInsert).toHaveBeenCalled();
+    });
+
+    it("deletes own comment and refreshes comment count", async () => {
+      const mockDelete = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+        }),
+      });
+      const mockSelectReel = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({ data: { comments_count: 0 }, error: null }),
+        }),
+      });
+
+      vi.mocked(supabase.from).mockImplementation((table: string) => {
+        if (table === "reel_comments") {
+          return { delete: mockDelete } as unknown as ReturnType<typeof supabase.from>;
+        }
+        if (table === "reels") {
+          return { select: mockSelectReel } as unknown as ReturnType<typeof supabase.from>;
+        }
+        return {} as unknown as ReturnType<typeof supabase.from>;
+      });
+
+      await deleteReelComment("comment-99", "reel-1");
+      expect(mockDelete).toHaveBeenCalled();
     });
 
     it("toggles reaction on a reel comment", async () => {
@@ -405,10 +430,46 @@ describe("Reels & Stories Social Systems", () => {
       }
     });
 
+    it("toggles save and returns authoritative savesCount", async () => {
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+          }),
+        }),
+      });
+      const mockInsert = vi.fn().mockResolvedValue({ error: null });
+      const mockSelectReel = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({ data: { saves_count: 4 }, error: null }),
+        }),
+      });
+
+      vi.mocked(supabase.from).mockImplementation((table: string) => {
+        if (table === "reel_saves") {
+          return { select: mockSelect, insert: mockInsert } as unknown as ReturnType<
+            typeof supabase.from
+          >;
+        }
+        if (table === "reels") {
+          return { select: mockSelectReel } as unknown as ReturnType<typeof supabase.from>;
+        }
+        return {} as unknown as ReturnType<typeof supabase.from>;
+      });
+
+      const result = await toggleReelSave("reel-1");
+      expect(result).toEqual({ hasSaved: true, savesCount: 4 });
+    });
+
     it("removes a reel from saved collection", async () => {
       const mockDelete = vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
           eq: vi.fn().mockResolvedValue({ error: null }),
+        }),
+      });
+      const mockSelectReel = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({ data: { saves_count: 0 }, error: null }),
         }),
       });
 
@@ -416,18 +477,11 @@ describe("Reels & Stories Social Systems", () => {
         if (table === "reel_saves") {
           return {
             delete: mockDelete,
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ count: 0, error: null }),
-            }),
           } as unknown as ReturnType<typeof supabase.from>;
         }
         if (table === "reels") {
           return {
-            update: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                then: vi.fn(),
-              }),
-            }),
+            select: mockSelectReel,
           } as unknown as ReturnType<typeof supabase.from>;
         }
         return {} as unknown as ReturnType<typeof supabase.from>;

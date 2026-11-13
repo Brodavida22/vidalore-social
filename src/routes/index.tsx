@@ -1,12 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, type FormEvent } from "react";
-import { Check, Loader2, X } from "lucide-react";
-import { toast } from "sonner";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Check, CheckCircle2, Loader2, LogIn, MailCheck, X } from "lucide-react";
+import { toast } from "@/lib/toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/brand/Logo";
+import { DownloadAppButton } from "@/components/pwa/DownloadAppButton";
 import { checkUsernameAvailable, friendlyAuthError } from "@/services/profiles";
 
 export const Route = createFileRoute("/")({
@@ -26,26 +27,45 @@ export const Route = createFileRoute("/")({
   component: LandingPage,
 });
 
-type Mode = "signin" | "signup" | "forgot" | "check-email";
+type Mode = "signin" | "signup" | "forgot" | "registered";
 
-function LandingPage() {
+interface RegistrationInfo {
+  email: string;
+  displayName: string;
+  username: string;
+  needsEmailVerification: boolean;
+}
+
+export function LandingPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>("signin");
-  const [sentTo, setSentTo] = useState("");
+  const [registrationInfo, setRegistrationInfo] = useState<RegistrationInfo | null>(null);
+  const suppressAutoRedirectRef = useRef(false);
 
   useEffect(() => {
+    let active = true;
     supabase.auth.getSession().then(({ data }) => {
+      if (!active || suppressAutoRedirectRef.current) return;
       if (data.session) navigate({ to: "/home", replace: true });
     });
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (suppressAutoRedirectRef.current) return;
       if (event === "SIGNED_IN" && session) navigate({ to: "/home", replace: true });
     });
-    return () => data.subscription.unsubscribe();
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
   }, [navigate]);
 
+  function handleProceedToLogin() {
+    suppressAutoRedirectRef.current = false;
+    setMode("signin");
+  }
+
   return (
-    <main className="relative flex min-h-dvh items-center justify-center bg-secondary/40 px-5 py-12">
-      <div className="relative z-10 grid w-full max-w-5xl items-center gap-12 lg:grid-cols-2">
+    <main className="relative flex min-h-dvh items-center justify-center bg-secondary/40 px-4 sm:px-5 py-8 sm:py-12">
+      <div className="relative z-10 grid w-full max-w-5xl items-center gap-8 sm:gap-12 lg:grid-cols-2">
         <section className="text-center lg:text-left space-y-6">
           <Logo size="lg" className="justify-center lg:justify-start" />
           <div className="space-y-3">
@@ -76,14 +96,19 @@ function LandingPage() {
         </section>
 
         <section className="mx-auto w-full max-w-md rounded-xl border border-border bg-card p-6 sm:p-8 shadow-sm">
-          {mode !== "check-email" && mode !== "forgot" && (
+          {mode !== "registered" && mode !== "forgot" && (
             <div role="tablist" className="mb-6 grid grid-cols-2 rounded-lg bg-secondary p-1">
               {(["signin", "signup"] as const).map((m) => (
                 <button
                   key={m}
                   role="tab"
                   aria-selected={mode === m}
-                  onClick={() => setMode(m)}
+                  onClick={() => {
+                    if (m === "signin") {
+                      suppressAutoRedirectRef.current = false;
+                    }
+                    setMode(m);
+                  }}
                   className={`rounded-md py-2 text-xs font-semibold transition-all ${
                     mode === m
                       ? "bg-card text-foreground shadow-sm"
@@ -96,32 +121,32 @@ function LandingPage() {
             </div>
           )}
           <div key={mode}>
-            {mode === "signin" && <SignInForm onForgot={() => setMode("forgot")} />}
+            {mode === "signin" && (
+              <SignInForm
+                onForgot={() => setMode("forgot")}
+                onBeforeSignIn={() => {
+                  suppressAutoRedirectRef.current = false;
+                }}
+              />
+            )}
             {mode === "signup" && (
               <SignUpForm
-                onDone={(email) => {
-                  setSentTo(email);
-                  setMode("check-email");
+                onBeforeSignUp={() => {
+                  suppressAutoRedirectRef.current = true;
+                }}
+                onSignUpFailed={() => {
+                  suppressAutoRedirectRef.current = false;
+                }}
+                onDone={(info) => {
+                  suppressAutoRedirectRef.current = true;
+                  setRegistrationInfo(info);
+                  setMode("registered");
                 }}
               />
             )}
             {mode === "forgot" && <ForgotForm onBack={() => setMode("signin")} />}
-            {mode === "check-email" && (
-              <div className="text-center py-4">
-                <h2 className="text-xl font-bold text-foreground">Check your inbox</h2>
-                <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-                  We sent a confirmation link to{" "}
-                  <strong className="text-foreground">{sentTo}</strong>. Open it to activate your
-                  account — your 100 points bonus is waiting.
-                </p>
-                <Button
-                  variant="outline"
-                  className="mt-6 text-xs rounded-lg"
-                  onClick={() => setMode("signin")}
-                >
-                  Back to sign in
-                </Button>
-              </div>
+            {mode === "registered" && registrationInfo && (
+              <RegistrationSuccessView info={registrationInfo} onGoToLogin={handleProceedToLogin} />
             )}
           </div>
         </section>
@@ -130,7 +155,77 @@ function LandingPage() {
   );
 }
 
-function SignInForm({ onForgot }: { onForgot: () => void }) {
+function RegistrationSuccessView({
+  info,
+  onGoToLogin,
+}: {
+  info: RegistrationInfo;
+  onGoToLogin: () => void;
+}) {
+  const friendlyName = info.displayName || `@${info.username}`;
+
+  return (
+    <div className="space-y-5 py-2 text-center">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#22C55E]/15 text-[#22C55E] ring-1 ring-[#22C55E]/30">
+        <CheckCircle2 className="h-7 w-7" />
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-[#E91E63]">
+          Registration Successful
+        </p>
+        <h2 className="text-xl sm:text-2xl font-bold text-foreground font-display">
+          Welcome to VIDALORE SOCIAL, {friendlyName}!
+        </h2>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Your account has been created and your 100 welcome VIDA points are ready.
+        </p>
+      </div>
+
+      {info.needsEmailVerification ? (
+        <div className="flex items-start gap-2.5 rounded-xl border border-border bg-secondary/60 p-3.5 text-left">
+          <MailCheck className="h-4 w-4 text-[#E91E63] shrink-0 mt-0.5" />
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            We sent a verification link to <strong className="text-foreground">{info.email}</strong>
+            . Please confirm your email address, then log in manually below.
+          </p>
+        </div>
+      ) : (
+        <div className="flex items-start gap-2.5 rounded-xl border border-border bg-secondary/60 p-3.5 text-left">
+          <LogIn className="h-4 w-4 text-[#E91E63] shrink-0 mt-0.5" />
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Your account <strong className="text-foreground">{info.email}</strong> is ready. For
+            your security, please sign in manually with your email and password when you&apos;re
+            ready.
+          </p>
+        </div>
+      )}
+
+      <div className="space-y-2.5 pt-1">
+        <DownloadAppButton label="Download VIDALORE SOCIAL App" />
+
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          onClick={onGoToLogin}
+          className="w-full rounded-xl text-xs sm:text-sm font-semibold h-11 border-border"
+        >
+          <LogIn className="h-4 w-4 mr-2 text-[#E91E63]" />
+          Login to your account
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function SignInForm({
+  onForgot,
+  onBeforeSignIn,
+}: {
+  onForgot: () => void;
+  onBeforeSignIn: () => void;
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -138,6 +233,7 @@ function SignInForm({ onForgot }: { onForgot: () => void }) {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    onBeforeSignIn();
     setBusy(true);
     setError("");
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
@@ -187,7 +283,15 @@ function SignInForm({ onForgot }: { onForgot: () => void }) {
   );
 }
 
-function SignUpForm({ onDone }: { onDone: (email: string) => void }) {
+function SignUpForm({
+  onBeforeSignUp,
+  onSignUpFailed,
+  onDone,
+}: {
+  onBeforeSignUp: () => void;
+  onSignUpFailed: () => void;
+  onDone: (info: RegistrationInfo) => void;
+}) {
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -225,18 +329,50 @@ function SignUpForm({ onDone }: { onDone: (email: string) => void }) {
       setStatus("taken");
       return setError("That username was just taken. Try another.");
     }
-    const { error } = await supabase.auth.signUp({
-      email: email.trim(),
+
+    onBeforeSignUp();
+    const trimmedEmail = email.trim();
+    const trimmedDisplayName = displayName.trim();
+
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email: trimmedEmail,
       password,
       options: {
         emailRedirectTo: window.location.origin,
-        data: { username: normalized, display_name: displayName.trim() },
+        data: { username: normalized, display_name: trimmedDisplayName },
       },
     });
+
+    if (signUpError) {
+      setBusy(false);
+      onSignUpFailed();
+      return setError(friendlyAuthError(signUpError.message));
+    }
+
+    const needsEmailVerification = !data.session;
+
+    // Never leave the newly registered user logged in automatically
+    if (data.session) {
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutErr) {
+        console.warn("Could not clear auto-created session after registration:", signOutErr);
+      }
+    } else {
+      const { data: current } = await supabase.auth.getSession();
+      if (current.session) {
+        await supabase.auth.signOut().catch(() => {});
+      }
+    }
+
     setBusy(false);
-    if (error) return setError(friendlyAuthError(error.message));
-    toast.success("Account created! Check your email to continue.");
-    onDone(email.trim());
+    toast.success("Registration complete! Download the app or log in to continue.");
+    onDone({
+      email: trimmedEmail,
+      displayName: trimmedDisplayName,
+      username: normalized,
+      needsEmailVerification,
+    });
   }
 
   const hint = {

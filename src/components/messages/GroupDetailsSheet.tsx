@@ -17,7 +17,7 @@ import {
   AlertTriangle,
   Trash2,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   Sheet,
   SheetContent,

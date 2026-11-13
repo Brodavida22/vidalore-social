@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { encodeStoryReplyContent } from "@/lib/storyReplyPayload";
 import type { Tables } from "@/integrations/supabase/types";
 
 type SupabaseRpcCaller = {
@@ -208,10 +209,10 @@ export async function getMyConversations(): Promise<ConversationListItem[]> {
 
   // Read this user's settings from their own conversation membership rows.
   const settingsMap = new Map<string, ConversationSettings>(
-    (memberships ?? []).map((membership) => [
-      membership.conversation_id,
-      membership as unknown as ConversationSettings,
-    ] as const),
+    (memberships ?? []).map(
+      (membership) =>
+        [membership.conversation_id, membership as unknown as ConversationSettings] as const,
+    ),
   );
 
   // Keep hidden conversations out of this user's list until a newer message arrives.
@@ -220,8 +221,7 @@ export async function getMyConversations(): Promise<ConversationListItem[]> {
     if (!hiddenAt) return true;
     if (!conv.last_message_at) return false;
 
-    return new Date(conv.last_message_at).getTime() >
-      new Date(hiddenAt).getTime();
+    return new Date(conv.last_message_at).getTime() > new Date(hiddenAt).getTime();
   });
 
   const activeConvIds = activeConversations.map((c) => c.id);
@@ -267,10 +267,7 @@ export async function getMyConversations(): Promise<ConversationListItem[]> {
     if (deletedForMe.has(message.id)) continue;
 
     const clearedAt = settingsMap.get(message.conversation_id)?.cleared_at;
-    if (
-      clearedAt &&
-      new Date(message.created_at).getTime() <= new Date(clearedAt).getTime()
-    ) {
+    if (clearedAt && new Date(message.created_at).getTime() <= new Date(clearedAt).getTime()) {
       continue;
     }
 
@@ -333,17 +330,11 @@ export async function getConversationMessages(
   if (!rawMessages || rawMessages.length === 0) return [];
 
   // Filter messages for this user based on Delete For Me and database-backed Clear Chat.
-  const deletedForMe = user
-    ? getPerUserDeletedMessageIds(user.id)
-    : new Set<string>();
+  const deletedForMe = user ? getPerUserDeletedMessageIds(user.id) : new Set<string>();
 
-  const settings = user
-    ? await getMyConversationSettings(conversationId)
-    : null;
+  const settings = user ? await getMyConversationSettings(conversationId) : null;
 
-  const clearedAt = settings?.cleared_at
-    ? new Date(settings.cleared_at).getTime()
-    : 0;
+  const clearedAt = settings?.cleared_at ? new Date(settings.cleared_at).getTime() : 0;
 
   const messages = rawMessages.filter((m) => {
     if (deletedForMe.has(m.id)) return false;
@@ -644,7 +635,8 @@ export async function updateGroupConversation(
     .eq("id", conversationId)
     .single();
 
-  if (fetchError || !data) throw fetchError || new Error("Group updated but could not be reloaded.");
+  if (fetchError || !data)
+    throw fetchError || new Error("Group updated but could not be reloaded.");
   return data;
 }
 
@@ -922,9 +914,11 @@ export async function leaveGroupConversation(
 
   // A group owner must transfer ownership before leaving while members remain.
   if (userRole === "owner" && otherMembers.length > 0) {
-    const successor = successorUserId || [...otherMembers].sort(
-      (a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime(),
-    )[0]?.user_id;
+    const successor =
+      successorUserId ||
+      [...otherMembers].sort(
+        (a, b) => new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime(),
+      )[0]?.user_id;
 
     if (!successor || !otherMembers.some((member) => member.user_id === successor)) {
       throw new Error("Choose a valid group member to become the new owner.");
@@ -1049,13 +1043,11 @@ export async function uploadChatMedia(
   // Storage RLS expects: {conversation_id}/{uploader_user_id}/{filename}
   const filePath = `${conversationId}/${user.id}/${Date.now()}-${randomPart}-${name}`;
 
-  const { data, error } = await supabase.storage
-    .from("chat-media")
-    .upload(filePath, file, {
-      contentType,
-      cacheControl: "3600",
-      upsert: false,
-    });
+  const { data, error } = await supabase.storage.from("chat-media").upload(filePath, file, {
+    contentType,
+    cacheControl: "3600",
+    upsert: false,
+  });
 
   if (error) {
     throw new Error(`Chat attachment upload failed: ${error.message}`);
@@ -1266,7 +1258,8 @@ export async function deleteMessageForEveryone(messageId: string): Promise<Messa
     .eq("id", messageId)
     .single();
 
-  if (fetchError || !data) throw fetchError || new Error("Message was deleted but could not be reloaded.");
+  if (fetchError || !data)
+    throw fetchError || new Error("Message was deleted but could not be reloaded.");
   return data;
 }
 
@@ -1635,7 +1628,8 @@ export function subscribeToConversationChannel(
         filter: `conversation_id=eq.${conversationId}`,
       },
       (payload) => {
-        const updated = payload.new as { user_id?: string; last_read_at?: string | null } | undefined;
+        const updated = payload.new as
+          { user_id?: string; last_read_at?: string | null } | undefined;
         if (updated?.user_id && updated.last_read_at && handlers.onMemberReadUpdate) {
           handlers.onMemberReadUpdate({
             userId: updated.user_id,
@@ -1807,4 +1801,52 @@ export async function getOrCreateDirectConversation(
       lastMessage: null,
     }
   );
+}
+
+/**
+ * Send a reply or reaction to a user's story directly into a 1-on-1 DM conversation.
+ */
+export async function sendStoryReplyDM(input: {
+  storyId: string;
+  ownerId: string;
+  ownerUsername: string;
+  mediaType: "image" | "video";
+  mediaPath?: string | undefined;
+  caption?: string | undefined;
+  expiresAt?: string | undefined;
+  replyText: string;
+}): Promise<{ conversation: Conversation; message: Message }> {
+  const cleanReply = input.replyText.trim();
+  if (!cleanReply) {
+    throw new Error("Please write a reply before sending.");
+  }
+
+  const user = await getCurrentUser();
+  if (user.id === input.ownerId) {
+    throw new Error("You cannot reply to your own story.");
+  }
+
+  const conversation = await createDirectConversation(input.ownerId);
+  const encodedContent = encodeStoryReplyContent(
+    {
+      storyId: input.storyId,
+      ownerId: input.ownerId,
+      ownerUsername: input.ownerUsername,
+      mediaType: input.mediaType,
+      mediaPath: input.mediaPath,
+      caption: input.caption,
+      expiresAt: input.expiresAt,
+    },
+    cleanReply,
+  );
+
+  const sentMessage = await sendMessage(conversation.id, {
+    content: encodedContent,
+    messageType: "text",
+  });
+
+  return {
+    conversation,
+    message: sentMessage,
+  };
 }

@@ -91,16 +91,16 @@ export function ChatHeader({
 
   return (
     <>
-      <div className="flex items-center justify-between border-b border-border p-3 sm:px-4 bg-card select-none">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center justify-between border-b border-border px-2.5 pt-[max(env(safe-area-inset-top),0.625rem)] pb-2.5 sm:px-4 md:py-3 bg-card select-none">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {/* Back button for mobile */}
           <button
             type="button"
             onClick={onBack}
-            className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground md:hidden"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-secondary hover:text-foreground active:scale-95 transition-all md:hidden"
             aria-label="Back to conversations list"
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={19} />
           </button>
 
           {/* Conversation Avatar with Online Indicator */}
@@ -170,12 +170,13 @@ export function ChatHeader({
         </div>
 
         {/* WhatsApp-Style Chat Management Menu for both Direct and Group chats */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary transition"
+                aria-label="Chat options"
+                className="flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary active:scale-95 transition-all"
                 title="Chat options"
               >
                 <MoreVertical size={18} />

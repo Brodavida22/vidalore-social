@@ -50,6 +50,7 @@ import {
   extractProfileLastSeen,
   getEffectiveLastSeen,
 } from "@/lib/onlinePresence";
+import { formatMessageTextForPreview } from "@/lib/storyReplyPayload";
 import { PresenceDot, PresenceStatusText } from "@/components/social/PresenceIndicator";
 import { ChatHeader } from "@/components/messages/ChatHeader";
 import { ChatComposer } from "@/components/messages/ChatComposer";
@@ -77,7 +78,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export const Route = createFileRoute("/_authenticated/messages")({
   component: MessagesPage,
@@ -1159,7 +1160,7 @@ function MessagesPage() {
                 } else if (conv.lastMessage.message_type === "audio") {
                   lastMsgSnippet = "🎤 Voice note";
                 } else {
-                  lastMsgSnippet = conv.lastMessage.content || "Message";
+                  lastMsgSnippet = formatMessageTextForPreview(conv.lastMessage.content);
                 }
               }
 
@@ -1250,10 +1251,11 @@ function MessagesPage() {
                       <button
                         type="button"
                         onClick={(e) => e.stopPropagation()}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary opacity-0 group-hover:opacity-100 transition shrink-0 ml-1"
+                        aria-label="Chat options"
+                        className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shrink-0 ml-1"
                         title="Chat options"
                       >
-                        <MoreVertical size={14} />
+                        <MoreVertical size={15} />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-44 text-xs">

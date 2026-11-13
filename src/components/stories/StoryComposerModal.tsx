@@ -1,6 +1,6 @@
 import { useState, useRef, type ChangeEvent } from "react";
 import { Camera, Upload, X, Loader2, Smile, Type, CheckCircle2, RotateCcw } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   Dialog,
   DialogContent,

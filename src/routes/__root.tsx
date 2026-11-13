@@ -12,6 +12,8 @@ import { useEffect, type ReactNode } from "react";
 
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { initPWAInstallListener } from "@/lib/pwaInstall";
+import { useVisualKeyboard } from "@/lib/useVisualKeyboard";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
@@ -144,7 +146,17 @@ export const Route = createRootRouteWithContext<{
       },
       {
         name: "theme-color",
+        media: "(prefers-color-scheme: dark)",
         content: "#080808",
+      },
+      {
+        name: "theme-color",
+        media: "(prefers-color-scheme: light)",
+        content: "#ffffff",
+      },
+      {
+        name: "mobile-web-app-capable",
+        content: "yes",
       },
       {
         title: "VIDALORE SOCIAL",
@@ -244,14 +256,29 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
 
+  useVisualKeyboard();
+
   useEffect(() => {
-    // Register PWA service worker for offline resilience
+    initPWAInstallListener();
+
+    // Register PWA service worker for offline resilience and installability
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js").catch((err) => {
-          console.debug("ServiceWorker registration skipped or failed:", err);
-        });
-      });
+      const registerSw = () => {
+        navigator.serviceWorker
+          .register("/sw.js")
+          .then((registration) => {
+            registration.update().catch(() => {});
+          })
+          .catch((err) => {
+            console.debug("ServiceWorker registration skipped or failed:", err);
+          });
+      };
+
+      if (document.readyState === "complete") {
+        registerSw();
+      } else {
+        window.addEventListener("load", registerSw, { once: true });
+      }
     }
 
     const { data } = supabase.auth.onAuthStateChange((event) => {
@@ -293,7 +320,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
-      <Toaster position="top-center" richColors />
+      <Toaster />
     </QueryClientProvider>
   );
 }

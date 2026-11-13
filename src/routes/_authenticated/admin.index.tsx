@@ -16,7 +16,7 @@ import {
   XCircle,
   Clock,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { subscribeOnlineUsersCount } from "@/lib/onlinePresence";
 import { Button } from "@/components/ui/button";
 import { myProfileQuery } from "@/services/profiles";

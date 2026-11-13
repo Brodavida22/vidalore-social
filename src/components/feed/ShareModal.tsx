@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Copy, Check, Repeat, Share2, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,

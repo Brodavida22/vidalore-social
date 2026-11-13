@@ -68,6 +68,7 @@ export interface StoryItem {
   id: string;
   userId: string;
   mediaUrl: string;
+  mediaPath?: string | undefined;
   mediaType: "image" | "video";
   caption?: string | undefined;
   sticker?: string | undefined;
@@ -93,10 +94,81 @@ export const REEL_VIEW_THRESHOLD_MS = 2000;
 
 const sessionRecordedViews = new Map<string, number>();
 const inFlightReelViews = new Map<string, Promise<number>>();
+const LOCAL_REEL_VIEWS_KEY = "vidalore_local_reel_views_v1";
+
+function loadLocalViewedReels(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(LOCAL_REEL_VIEWS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, number>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLocalViewedReel(viewKey: string, count: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    const current = loadLocalViewedReels();
+    current[viewKey] = count;
+    window.localStorage.setItem(LOCAL_REEL_VIEWS_KEY, JSON.stringify(current));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function clearLocalViewedReel(viewKey: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const current = loadLocalViewedReels();
+    if (viewKey in current) {
+      delete current[viewKey];
+      window.localStorage.setItem(LOCAL_REEL_VIEWS_KEY, JSON.stringify(current));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function extractViewsCountFromData(data: unknown): number | null {
+  if (typeof data === "number" && Number.isFinite(data) && data >= 0) {
+    return Math.floor(data);
+  }
+  if (typeof data === "string" && data.trim() !== "") {
+    const parsed = Number(data);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return Math.floor(parsed);
+    }
+  }
+  if (Array.isArray(data) && data.length > 0) {
+    return extractViewsCountFromData(data[0]);
+  }
+  if (data && typeof data === "object") {
+    const obj = data as Record<string, unknown>;
+    for (const key of ["views_count", "viewsCount", "count", "record_reel_view"]) {
+      if (key in obj) {
+        const extracted = extractViewsCountFromData(obj[key]);
+        if (extracted !== null) return extracted;
+      }
+    }
+  }
+  return null;
+}
 
 export function __resetRecordedReelViewsForTests(): void {
   sessionRecordedViews.clear();
   inFlightReelViews.clear();
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.removeItem(LOCAL_REEL_VIEWS_KEY);
+    } catch {
+      // Ignore storage errors
+    }
+  }
 }
 
 export interface StoryCompressionResult {
@@ -123,7 +195,6 @@ function notifyUpdated() {
     window.dispatchEvent(new Event("vidalore:reels-updated"));
   }
 }
-
 
 function message(error: unknown, fallback: string): never {
   console.error(`[VIDALORE DATABASE ERROR] ${fallback}`, error);
@@ -230,6 +301,59 @@ async function signedMediaUrl(bucket: string, path: string): Promise<string> {
   });
 
   return data.signedUrl;
+}
+
+async function batchSignedMediaUrls(bucket: string, paths: string[]): Promise<void> {
+  const uncached: string[] = [];
+  const seen = new Set<string>();
+  const now = Date.now();
+
+  for (const p of paths) {
+    if (!p || p.startsWith("http") || seen.has(p)) continue;
+    seen.add(p);
+    const cached = signedUrlCache.get(p);
+    if (!cached || cached.expiresAt - 5 * 60 * 1000 <= now) {
+      uncached.push(p);
+    }
+  }
+
+  if (uncached.length === 0) return;
+
+  const storageBucket = supabase.storage.from(bucket) as unknown as {
+    createSignedUrls?: (
+      paths: string[],
+      expiresIn: number,
+    ) => Promise<{
+      data: Array<{
+        path?: string | null;
+        signedUrl?: string | null;
+        error?: string | null;
+      }> | null;
+      error: unknown;
+    }>;
+  };
+
+  if (typeof storageBucket.createSignedUrls === "function") {
+    try {
+      const { data, error } = await storageBucket.createSignedUrls(uncached, 60 * 60 * 24);
+      if (!error && Array.isArray(data)) {
+        const expiresAt = Date.now() + 60 * 60 * 24 * 1000;
+        for (let i = 0; i < data.length; i++) {
+          const entry = data[i];
+          const path = entry?.path || uncached[i];
+          if (path && entry?.signedUrl) {
+            signedUrlCache.set(path, { url: entry.signedUrl, expiresAt });
+          }
+        }
+        return;
+      }
+    } catch (err) {
+      console.warn(`Batch signed URL generation failed for ${bucket}:`, err);
+    }
+  }
+
+  // Fallback to parallel individual signing when createSignedUrls is unavailable
+  await Promise.all(uncached.map((p) => signedMediaUrl(bucket, p)));
 }
 
 export async function uploadReelVideo(
@@ -358,7 +482,6 @@ export function removePersistentReel(reelId: string): void {
   const current = loadPersistentReels();
   savePersistentReels(current.filter((r) => r.id !== reelId));
 }
-
 
 export async function updateReelVideo(
   reelId: string,
@@ -644,6 +767,13 @@ export async function getStoredReels(): Promise<ReelItem[]> {
       .map((x) => x.reel_id),
   );
 
+  await batchSignedMediaUrls(
+    REEL_BUCKET,
+    rows.map((r) => r.video_url),
+  );
+
+  const localViewedReels = loadLocalViewedReels();
+
   const items = await Promise.all(
     rows.map(async (row) => {
       const profile = profiles.get(row.creator_id);
@@ -664,6 +794,12 @@ export async function getStoredReels(): Promise<ReelItem[]> {
       const likesCount = Math.max(0, Number(row.likes_count ?? 0));
       const commentsCount = Math.max(0, Number(row.comments_count ?? 0));
       const savesCount = Math.max(0, Number(row.saves_count ?? 0));
+      const localViewFloor = userId ? (localViewedReels[`${userId}:${row.id}`] ?? 0) : 0;
+      const viewsCount = Math.max(
+        0,
+        Number(row.views_count ?? cached?.viewsCount ?? 0),
+        localViewFloor,
+      );
 
       const item: ReelItem = {
         id: row.id,
@@ -681,7 +817,7 @@ export async function getStoredReels(): Promise<ReelItem[]> {
         commentsCount,
         sharesCount: row.shares_count ?? cached?.sharesCount ?? 0,
         savesCount,
-        viewsCount: row.views_count ?? cached?.viewsCount ?? 0,
+        viewsCount,
         hasLiked: Boolean(userId && liked.has(row.id)),
         hasSaved: Boolean(userId && saved.has(row.id)),
         isFollowing: false,
@@ -920,20 +1056,154 @@ export async function recordReelView(
       args: Record<string, unknown>,
     ) => Promise<{ data: unknown; error: unknown }>;
 
-    const { data, error } = await rpc("record_reel_view", {
-      _reel_id: cleanReelId,
-    });
+    let normalizedCount: number | null = null;
+    let rpcError: unknown = null;
 
-    if (error) {
-      message(error, "Could not record reel view.");
+    try {
+      const { data, error } = await rpc("record_reel_view", {
+        _reel_id: cleanReelId,
+      });
+
+      if (!error) {
+        normalizedCount = extractViewsCountFromData(data);
+        if (normalizedCount === null) {
+          // RPC succeeded (e.g. returned void/null) -> read latest views_count from reels
+          try {
+            const reelsTable = supabase.from("reels") as unknown as {
+              select?: (cols: string) => {
+                eq: (
+                  col: string,
+                  val: string,
+                ) => {
+                  maybeSingle: () => Promise<{ data: { views_count?: number } | null }>;
+                };
+              };
+            };
+            if (typeof reelsTable?.select === "function") {
+              const { data: row } = await reelsTable
+                .select("views_count")
+                .eq("id", cleanReelId)
+                .maybeSingle();
+              if (row && Number.isFinite(Number(row.views_count))) {
+                normalizedCount = Math.max(0, Math.floor(Number(row.views_count)));
+              }
+            }
+          } catch {
+            // Ignore secondary read failure
+          }
+        }
+        if (normalizedCount !== null) {
+          clearLocalViewedReel(viewKey);
+        }
+      } else {
+        rpcError = error;
+      }
+    } catch (err) {
+      rpcError = err;
     }
 
-    const viewsCount = Number(data);
-    if (!Number.isFinite(viewsCount) || viewsCount < 0) {
-      throw new Error("The Reel view count returned an invalid value.");
+    // Fallback when record_reel_view RPC is absent (PGRST202/42883) or fails
+    if (normalizedCount === null) {
+      console.warn("record_reel_view RPC unavailable or failed; using table fallback:", rpcError);
+
+      let dbBaseCount = Math.max(0, Number(sessionReelsCache.get(cleanReelId)?.viewsCount ?? 0));
+      try {
+        const reelsTable = supabase.from("reels") as unknown as {
+          select?: (cols: string) => {
+            eq: (
+              col: string,
+              val: string,
+            ) => {
+              maybeSingle: () => Promise<{ data: { views_count?: number } | null; error: unknown }>;
+            };
+          };
+        };
+        if (typeof reelsTable?.select === "function") {
+          const { data: currentRow } = await reelsTable
+            .select("views_count")
+            .eq("id", cleanReelId)
+            .maybeSingle();
+          if (currentRow && Number.isFinite(Number(currentRow.views_count))) {
+            dbBaseCount = Math.max(dbBaseCount, Math.floor(Number(currentRow.views_count)));
+          }
+        }
+      } catch {
+        // Ignore read error and rely on cached base count
+      }
+
+      const localViewed = loadLocalViewedReels();
+      const priorLocalCount = localViewed[viewKey];
+      const nextCount =
+        priorLocalCount !== undefined ? Math.max(dbBaseCount, priorLocalCount) : dbBaseCount + 1;
+
+      // Best-effort insert into reel_views if table exists
+      try {
+        const viewsTable = supabase.from("reel_views" as never) as unknown as {
+          upsert?: (
+            values: Record<string, unknown>,
+            opts?: Record<string, unknown>,
+          ) => Promise<{ error: unknown }>;
+        };
+        if (typeof viewsTable?.upsert === "function") {
+          await viewsTable.upsert(
+            { reel_id: cleanReelId, user_id: userId },
+            { onConflict: "reel_id,user_id", ignoreDuplicates: true },
+          );
+        }
+      } catch {
+        // Table may not exist in all deployments
+      }
+
+      // Best-effort direct update on reels.views_count if permitted by RLS
+      let persistedToDb = false;
+      try {
+        const reelsTable = supabase.from("reels") as unknown as {
+          update?: (values: Record<string, unknown>) => {
+            eq: (
+              col: string,
+              val: string,
+            ) => Promise<{ error: unknown }> & {
+              select?: (cols: string) => {
+                maybeSingle: () => Promise<{
+                  data: { views_count?: number } | null;
+                  error: unknown;
+                }>;
+              };
+            };
+          };
+        };
+        if (typeof reelsTable?.update === "function" && priorLocalCount === undefined) {
+          const eqResult = reelsTable.update({ views_count: nextCount }).eq("id", cleanReelId);
+          if (typeof eqResult?.select === "function") {
+            const { data: updatedRow, error: updateErr } = await eqResult
+              .select("views_count")
+              .maybeSingle();
+            if (!updateErr && updatedRow && Number.isFinite(Number(updatedRow.views_count))) {
+              persistedToDb = true;
+              normalizedCount = Math.max(nextCount, Math.floor(Number(updatedRow.views_count)));
+            }
+          } else {
+            const { error: updateErr } = await eqResult;
+            if (!updateErr) {
+              persistedToDb = true;
+            }
+          }
+        }
+      } catch {
+        // Ignore RLS / schema fallback failure
+      }
+
+      if (normalizedCount === null) {
+        normalizedCount = nextCount;
+      }
+
+      if (!persistedToDb) {
+        saveLocalViewedReel(viewKey, normalizedCount);
+      } else {
+        clearLocalViewedReel(viewKey);
+      }
     }
 
-    const normalizedCount = Math.floor(viewsCount);
     sessionRecordedViews.set(viewKey, normalizedCount);
 
     const cached = sessionReelsCache.get(cleanReelId);
@@ -1095,6 +1365,11 @@ export async function getSavedReels(): Promise<ReelItem[]> {
   );
   const byId = new Map(reelRows.map((r) => [r.id, r]));
 
+  await batchSignedMediaUrls(
+    REEL_BUCKET,
+    reelRows.map((r) => r.video_url),
+  );
+
   const result: ReelItem[] = [];
   for (const save of saves) {
     const row = byId.get(save.reel_id);
@@ -1160,10 +1435,7 @@ export async function removeSavedReel(reelId: string): Promise<void> {
   const cached = sessionReelsCache.get(reelId);
   if (cached) {
     cached.hasSaved = false;
-    cached.savesCount = Math.max(
-      0,
-      Number(reelRow?.saves_count ?? cached.savesCount ?? 0),
-    );
+    cached.savesCount = Math.max(0, Number(reelRow?.saves_count ?? cached.savesCount ?? 0));
     sessionReelsCache.set(reelId, { ...cached });
   }
 
@@ -1446,7 +1718,10 @@ export async function deleteReelComment(commentId: string, reelId: string): Prom
     .maybeSingle();
 
   if (countError) {
-    console.warn("Comment was deleted, but its aggregate count could not be refreshed:", countError);
+    console.warn(
+      "Comment was deleted, but its aggregate count could not be refreshed:",
+      countError,
+    );
   }
 
   const cached = sessionReelsCache.get(reelId);
@@ -1465,6 +1740,8 @@ export interface ReelEngagementCallbacks {
   onLikesCountChange?: (count: number) => void;
   onCommentsCountChange?: (count: number) => void;
   onSavesCountChange?: (count: number) => void;
+  onViewsCountChange?: (count: number) => void;
+  onSharesCountChange?: (count: number) => void;
   onCommentInserted?: (commentId: string) => void;
   onCommentDeleted?: (commentId: string) => void;
 }
@@ -1480,6 +1757,46 @@ export function subscribeToReelEngagement(
   const channelName = `reel_engagement_${reelId}_${Math.random().toString(36).slice(2, 8)}`;
   const channel = supabase
     .channel(channelName)
+    .on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "reels",
+        filter: `id=eq.${reelId}`,
+      },
+      (payload) => {
+        try {
+          const row = payload.new as {
+            views_count?: number;
+            shares_count?: number;
+            likes_count?: number;
+            saves_count?: number;
+            comments_count?: number;
+          };
+          const cached = sessionReelsCache.get(reelId);
+          if (row.views_count !== undefined && Number.isFinite(Number(row.views_count))) {
+            const viewsCount = Math.max(0, Number(row.views_count));
+            callbacks.onViewsCountChange?.(viewsCount);
+            if (cached) {
+              cached.viewsCount = viewsCount;
+            }
+          }
+          if (row.shares_count !== undefined && Number.isFinite(Number(row.shares_count))) {
+            const sharesCount = Math.max(0, Number(row.shares_count));
+            callbacks.onSharesCountChange?.(sharesCount);
+            if (cached) {
+              cached.sharesCount = sharesCount;
+            }
+          }
+          if (cached) {
+            sessionReelsCache.set(reelId, { ...cached });
+          }
+        } catch (e) {
+          console.warn("Failed to process realtime reel update:", e);
+        }
+      },
+    )
     .on(
       "postgres_changes",
       {
@@ -1652,6 +1969,11 @@ export async function getStoredStories(): Promise<StoryItem[]> {
     viewers.set(view.story_id, [...(viewers.get(view.story_id) ?? []), view.viewer_id]);
   });
 
+  await batchSignedMediaUrls(
+    STORY_BUCKET,
+    (rows ?? []).map((r) => r.media_url),
+  );
+
   return Promise.all(
     (rows ?? []).map(async (row) => ({
       id: row.id,
@@ -1659,6 +1981,7 @@ export async function getStoredStories(): Promise<StoryItem[]> {
       mediaUrl: row.media_url.startsWith("http")
         ? row.media_url
         : await signedMediaUrl(STORY_BUCKET, row.media_url),
+      mediaPath: row.media_url,
       mediaType: row.media_type === "video" ? ("video" as const) : ("image" as const),
       caption: row.caption ?? undefined,
       sticker: row.sticker ?? undefined,
@@ -1716,6 +2039,7 @@ export async function addStory(
       id: existing.id,
       userId,
       mediaUrl,
+      mediaPath,
       mediaType: data.mediaType,
       caption: data.caption,
       sticker: data.sticker,
@@ -1756,6 +2080,7 @@ export async function addStory(
         id: verified.id,
         userId,
         mediaUrl,
+        mediaPath,
         mediaType: data.mediaType,
         caption: data.caption,
         sticker: data.sticker,
@@ -1778,6 +2103,7 @@ export async function addStory(
     id: storyId,
     userId,
     mediaUrl,
+    mediaPath,
     mediaType: data.mediaType,
     caption: data.caption,
     sticker: data.sticker,

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, type ChangeEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Image as ImageIcon, Smile, X, Loader2, Send } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { UserAvatar } from "@/components/profile/UserAvatar";

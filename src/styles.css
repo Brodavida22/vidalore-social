@@ -198,6 +198,7 @@
     color-scheme: dark light;
     touch-action: manipulation;
     -webkit-text-size-adjust: 100%;
+    overflow-x: clip;
   }
 
   body {
@@ -206,6 +207,14 @@
     font-family: var(--font-sans);
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+    overflow-x: clip;
+  }
+
+  @media (display-mode: standalone) {
+    html,
+    body {
+      overscroll-behavior-y: contain;
+    }
   }
 
   h1,
@@ -215,7 +224,7 @@
     letter-spacing: -0.015em;
   }
 
-  /* Mobile active conversation rules: hide bottom navigation bar and mobile header */
+  /* Mobile active conversation & soft-keyboard rules */
   @media (max-width: 767px) {
     body[data-active-chat="true"] header.sticky,
     body[data-active-chat="true"] nav[aria-label="Mobile Navigation"] {
@@ -224,5 +233,116 @@
     body[data-active-chat="true"] main {
       padding-bottom: 0 !important;
     }
+    body[data-keyboard-open="true"] nav[aria-label="Mobile Navigation"] {
+      display: none !important;
+    }
+    body[data-keyboard-open="true"] main {
+      padding-bottom: 1rem !important;
+    }
   }
 }
+
+/* ============================================================================
+   VIDALORE SOCIAL Unified Toast Notification Styling (Light & Dark Themes)
+   ============================================================================ */
+@keyframes vidalore-toast-progress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.vidalore-toaster[data-sonner-toaster] {
+  --width: min(calc(100vw - 1.5rem), 24rem);
+  z-index: 100 !important;
+}
+
+@media (max-width: 767px) {
+  .vidalore-toaster[data-sonner-toaster] {
+    top: calc(env(safe-area-inset-top, 0px) + 4.15rem) !important;
+  }
+  body[data-active-chat="true"] .vidalore-toaster[data-sonner-toaster] {
+    top: calc(env(safe-area-inset-top, 0px) + 4.35rem) !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .vidalore-toaster[data-sonner-toaster] {
+    top: 1rem !important;
+    right: 1rem !important;
+  }
+}
+
+.vidalore-toast[data-sonner-toast] {
+  --toast-accent: #e91e63;
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem !important;
+  background-color: var(--card) !important;
+  color: var(--card-foreground) !important;
+  border: 1px solid var(--border) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-family: var(--font-sans);
+  transition:
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms ease,
+    height 240ms ease;
+}
+
+.vidalore-toast[data-sonner-toast][data-type="success"],
+.vidalore-toast.vidalore-toast-success {
+  --toast-accent: #22c55e;
+  border-color: rgba(34, 197, 94, 0.35) !important;
+}
+
+.vidalore-toast[data-sonner-toast][data-type="error"],
+.vidalore-toast.vidalore-toast-error {
+  --toast-accent: #ef4444;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+}
+
+.vidalore-toast[data-sonner-toast][data-type="warning"],
+.vidalore-toast.vidalore-toast-warning {
+  --toast-accent: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.4) !important;
+}
+
+.vidalore-toast[data-sonner-toast][data-type="info"],
+.vidalore-toast.vidalore-toast-info {
+  --toast-accent: #e91e63;
+  border-color: rgba(233, 30, 99, 0.35) !important;
+}
+
+.vidalore-toast.vidalore-toast-timed::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2.5px;
+  transform-origin: left center;
+  background: var(--toast-accent, #e91e63);
+  opacity: 0.92;
+  animation: vidalore-toast-progress var(--toast-duration, 3500ms) linear forwards;
+  pointer-events: none;
+}
+
+.vidalore-toast.vidalore-toast-timed:hover::after,
+.vidalore-toast.vidalore-toast-timed:focus-within::after {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vidalore-toast[data-sonner-toast] {
+    transition: opacity 120ms ease !important;
+  }
+  .vidalore-toast.vidalore-toast-timed::after {
+    animation-duration: 0ms !important;
+    transform: scaleX(1);
+    opacity: 0.45;
+  }
+}
+

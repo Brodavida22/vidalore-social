@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Heart, Reply, Trash2, Send, CornerDownRight, X, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/profile/UserAvatar";
 import type { Profile } from "@/services/profiles";
@@ -174,8 +174,9 @@ export function CommentsSection({
                         <button
                           type="button"
                           onClick={() => handleDelete(parent.id)}
-                          className="hover:text-destructive transition-colors ml-auto opacity-0 group-hover:opacity-100"
+                          className="hover:text-destructive transition-colors ml-auto opacity-100 md:opacity-0 md:group-hover:opacity-100 min-h-[28px] px-1"
                           title="Delete comment"
+                          aria-label="Delete comment"
                         >
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -240,8 +241,9 @@ export function CommentsSection({
                                 <button
                                   type="button"
                                   onClick={() => handleDelete(reply.id)}
-                                  className="hover:text-destructive ml-auto opacity-0 group-hover/rep:opacity-100"
+                                  className="hover:text-destructive ml-auto opacity-100 md:opacity-0 md:group-hover/rep:opacity-100 min-h-[28px] px-1"
                                   title="Delete reply"
+                                  aria-label="Delete reply"
                                 >
                                   <Trash2 className="h-2.5 w-2.5" />
                                 </button>

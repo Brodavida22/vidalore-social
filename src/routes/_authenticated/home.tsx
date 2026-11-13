@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Flame, Users, Compass, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import { PostComposer } from "@/components/feed/PostComposer";
 import { PostCard } from "@/components/feed/PostCard";
 import { StoriesBar } from "@/components/stories/StoriesBar";
@@ -43,108 +44,118 @@ function HomePage() {
   const posts = allFeedPosts.filter((p) => !blockedSet.has(p.authorId));
 
   async function handleRefresh() {
-    await queryClient.invalidateQueries({ queryKey: postsKeys.all });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: postsKeys.all }),
+      queryClient.invalidateQueries({ queryKey: ["stories"] }),
+      queryClient.invalidateQueries({ queryKey: ["blocked-ids"] }),
+    ]);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("vidalore:reels-updated"));
+    }
     await refetch();
   }
 
   return (
-    <div className="flex justify-center mx-auto max-w-7xl px-3 sm:px-4 lg:px-6">
-      {/* Central feed column */}
-      <div className="w-full max-w-2xl min-w-0 space-y-4 py-3 sm:py-5">
-        {/* 2. Stories Section */}
-        <StoriesBar me={me} />
+    <PullToRefresh onRefresh={handleRefresh} isRefreshing={isRefetching}>
+      <div className="flex justify-center mx-auto max-w-7xl px-3 sm:px-4 lg:px-6">
+        {/* Central feed column */}
+        <div className="w-full max-w-2xl min-w-0 space-y-4 py-3 sm:py-5">
+          {/* 2. Stories Section */}
+          <StoriesBar me={me} />
 
-        {/* 3. Create Post / Composer Section */}
-        {me && <PostComposer me={me} onPostCreated={handleRefresh} />}
+          {/* 3. Create Post / Composer Section */}
+          {me && <PostComposer me={me} onPostCreated={handleRefresh} />}
 
-        {/* 4. Feed Filter Tabs */}
-        <div className="flex items-center justify-between border-b border-border pb-2 px-1">
-          <div className="flex items-center gap-1 bg-secondary p-1 rounded-lg">
+          {/* 4. Feed Filter Tabs */}
+          <div className="flex items-center justify-between gap-2 border-b border-border pb-2 px-1">
+            <div className="flex items-center gap-1 bg-secondary p-1 rounded-lg overflow-x-auto scrollbar-none">
+              <button
+                type="button"
+                onClick={() => setFeedFilter("for-you")}
+                className={`flex min-h-[38px] items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                  feedFilter === "for-you"
+                    ? "bg-card text-[#E91E63] shadow-sm font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Compass className="h-3.5 w-3.5" /> For You
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFeedFilter("following")}
+                className={`flex min-h-[38px] items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                  feedFilter === "following"
+                    ? "bg-card text-[#E91E63] shadow-sm font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Users className="h-3.5 w-3.5" /> Following
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFeedFilter("trending")}
+                className={`flex min-h-[38px] items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                  feedFilter === "trending"
+                    ? "bg-card text-[#E91E63] shadow-sm font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Flame className="h-3.5 w-3.5" /> Trending
+              </button>
+            </div>
+
             <button
               type="button"
-              onClick={() => setFeedFilter("for-you")}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                feedFilter === "for-you"
-                  ? "bg-card text-[#E91E63] shadow-sm font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+              onClick={handleRefresh}
+              title="Refresh feed"
+              aria-label="Refresh feed"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-secondary hover:text-foreground active:scale-95 transition-all"
             >
-              <Compass className="h-3.5 w-3.5" /> For You
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFeedFilter("following")}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                feedFilter === "following"
-                  ? "bg-card text-[#E91E63] shadow-sm font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Users className="h-3.5 w-3.5" /> Following
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFeedFilter("trending")}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                feedFilter === "trending"
-                  ? "bg-card text-[#E91E63] shadow-sm font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Flame className="h-3.5 w-3.5" /> Trending
+              <RefreshCw
+                className={`h-4 w-4 ${
+                  loadingPosts || isRefetching ? "animate-spin text-[#E91E63]" : ""
+                }`}
+              />
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={handleRefresh}
-            title="Refresh feed"
-            className="rounded-lg p-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-          >
-            <RefreshCw
-              className={`h-3.5 w-3.5 ${
-                loadingPosts || isRefetching ? "animate-spin text-[#E91E63]" : ""
-              }`}
-            />
-          </button>
+          {/* 5. Actual Posts from Users / Clean Empty State */}
+          {loadingPosts ? (
+            <div className="space-y-4">
+              <Skeleton className="h-44 rounded-xl" />
+              <Skeleton className="h-56 rounded-xl" />
+            </div>
+          ) : posts.length === 0 ? (
+            <section className="rounded-xl p-10 text-center space-y-2 border border-border bg-card">
+              <h2 className="font-display text-base font-semibold text-foreground">No posts yet</h2>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                Posts from people you follow will appear here.
+              </p>
+            </section>
+          ) : (
+            <div className="space-y-4">
+              {posts.map((post) => (
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  me={me ?? null}
+                  onDeleted={() => {
+                    refetch();
+                  }}
+                  onPostUpdated={() => {
+                    refetch();
+                  }}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* 5. Actual Posts from Users / Clean Empty State */}
-        {loadingPosts ? (
-          <div className="space-y-4">
-            <Skeleton className="h-44 rounded-xl" />
-            <Skeleton className="h-56 rounded-xl" />
-          </div>
-        ) : posts.length === 0 ? (
-          <section className="rounded-xl p-10 text-center space-y-2 border border-border bg-card">
-            <h2 className="font-display text-base font-semibold text-foreground">No posts yet</h2>
-            <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
-              Posts from people you follow will appear here.
-            </p>
-          </section>
-        ) : (
-          <div className="space-y-4">
-            {posts.map((post) => (
-              <PostCard
-                key={post.id}
-                post={post}
-                me={me ?? null}
-                onDeleted={() => {
-                  refetch();
-                }}
-                onPostUpdated={() => {
-                  refetch();
-                }}
-              />
-            ))}
-          </div>
-        )}
+        {/* Right discovery sidebar on desktop */}
+        <RightSidebar me={me} />
       </div>
-
-      {/* Right discovery sidebar on desktop */}
-      <RightSidebar me={me} />
-    </div>
+    </PullToRefresh>
   );
 }

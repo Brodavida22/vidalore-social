@@ -9,6 +9,7 @@ import {
   Loader2,
   AlertCircle,
 } from "lucide-react";
+import { useVideoAudioPreference } from "@/lib/videoAudioPreference";
 import { getFreshSignedUrl } from "@/services/posts";
 
 interface PostVideoPlayerProps {
@@ -30,9 +31,10 @@ export function PostVideoPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const playerId = useRef(`vp-${Math.random().toString(36).slice(2, 9)}`);
 
+  const { preferredMuted, setPreferredMuted, togglePreferredMuted } = useVideoAudioPreference();
   const [src, setSrc] = useState(url);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const [soundBlockedByBrowser, setSoundBlockedByBrowser] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isBuffering, setIsBuffering] = useState(false);
@@ -40,6 +42,8 @@ export function PostVideoPlayer({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const effectiveMuted = preferredMuted || soundBlockedByBrowser;
 
   // Sync if prop url changes
   useEffect(() => {
@@ -86,37 +90,86 @@ export function PostVideoPlayer({
     return () => window.removeEventListener("vidalore:feed-video-play", handleOtherPlay);
   }, []);
 
+  // Sync muted DOM state when user preference changes across components
+  useEffect(() => {
+    if (videoRef.current && !soundBlockedByBrowser) {
+      videoRef.current.muted = preferredMuted;
+    }
+  }, [preferredMuted, soundBlockedByBrowser]);
+
+  async function startVideoPlayback(video: HTMLVideoElement): Promise<void> {
+    window.dispatchEvent(
+      new CustomEvent("vidalore:feed-video-play", { detail: { playerId: playerId.current } }),
+    );
+    video.muted = preferredMuted;
+    try {
+      await video.play();
+      setIsPlaying(true);
+      setSoundBlockedByBrowser(false);
+      setIsBuffering(false);
+    } catch (err) {
+      console.warn("Playback error/autoplay prevented:", err);
+      if (!video.muted) {
+        video.muted = true;
+        setSoundBlockedByBrowser(true);
+        try {
+          await video.play();
+          setIsPlaying(true);
+          setIsBuffering(false);
+          return;
+        } catch {
+          // Fall through to paused state
+        }
+      }
+      setIsPlaying(false);
+    }
+  }
+
   // Handle play/pause toggle safely
   async function togglePlay() {
     const video = videoRef.current;
     if (!video) return;
 
     if (video.paused || video.ended) {
-      try {
-        await video.play();
-        setIsPlaying(true);
-      } catch (err) {
-        console.warn("Playback error/autoplay prevented:", err);
-        setIsPlaying(false);
-      }
+      await startVideoPlayback(video);
     } else {
       video.pause();
       setIsPlaying(false);
     }
   }
 
-  function toggleMute() {
+  function handleSoundToggle(e?: React.MouseEvent) {
+    e?.stopPropagation();
     const video = videoRef.current;
-    if (!video) return;
-    const nextMuted = !video.muted;
-    video.muted = nextMuted;
-    setIsMuted(nextMuted);
+
+    if (soundBlockedByBrowser) {
+      setSoundBlockedByBrowser(false);
+      setPreferredMuted(false);
+      if (video) {
+        video.muted = false;
+        if (video.paused) {
+          void video.play().catch(() => {});
+        }
+      }
+      return;
+    }
+
+    const nextMuted = togglePreferredMuted();
+    if (video) {
+      video.muted = nextMuted;
+      if (!nextMuted && video.paused) {
+        void video.play().catch(() => {});
+      }
+    }
   }
 
   function handleTimeUpdate() {
     const video = videoRef.current;
     if (!video) return;
     setCurrentTime(video.currentTime);
+    if (video.readyState >= 2) {
+      setIsBuffering(false);
+    }
   }
 
   function handleLoadedMetadata() {
@@ -126,10 +179,7 @@ export function PostVideoPlayer({
     setHasError(false);
     setIsBuffering(false);
     if (autoPlay) {
-      video
-        .play()
-        .then(() => setIsPlaying(true))
-        .catch(() => setIsPlaying(false));
+      void startVideoPlayback(video);
     }
   }
 
@@ -164,13 +214,12 @@ export function PostVideoPlayer({
       if (fresh) {
         setSrc(fresh);
         setHasError(false);
-        setTimeout(() => {
-          videoRef.current?.load();
-          videoRef.current
-            ?.play()
-            .then(() => setIsPlaying(true))
-            .catch(() => {});
-        }, 100);
+        const video = videoRef.current;
+        if (video) {
+          video.src = fresh;
+          video.load();
+          void startVideoPlayback(video);
+        }
       }
     } catch {
       // keep error state
@@ -237,6 +286,32 @@ export function PostVideoPlayer({
         </div>
       ) : null}
 
+      {/* Always-visible Sound Control in Top-Right */}
+      <div className="absolute top-2.5 right-2.5 z-30 flex items-center gap-1.5 pointer-events-auto">
+        {soundBlockedByBrowser && (
+          <button
+            type="button"
+            onClick={handleSoundToggle}
+            className="rounded-full bg-black/75 border border-[#E91E63]/60 px-2.5 py-1 text-[11px] font-semibold text-white shadow-md backdrop-blur-sm hover:bg-black/90 transition-colors"
+          >
+            Tap for sound
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={handleSoundToggle}
+          data-testid="post-video-sound-toggle"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-black/70 border border-white/15 text-white shadow-md backdrop-blur-sm hover:bg-black/90 transition-colors"
+          aria-label={effectiveMuted ? "Unmute audio" : "Mute audio"}
+        >
+          {effectiveMuted ? (
+            <VolumeX className="h-4 w-4" />
+          ) : (
+            <Volume2 className="h-4 w-4 text-[#E91E63]" />
+          )}
+        </button>
+      </div>
+
       {/* Video Element */}
       {src ? (
         <video
@@ -244,10 +319,16 @@ export function PostVideoPlayer({
           src={src}
           preload="metadata"
           playsInline
-          muted={isMuted}
+          muted={effectiveMuted}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
-          onWaiting={() => setIsBuffering(true)}
+          onLoadedData={() => setIsBuffering(false)}
+          onCanPlay={() => setIsBuffering(false)}
+          onWaiting={() => {
+            if (videoRef.current && videoRef.current.readyState < 3) {
+              setIsBuffering(true);
+            }
+          }}
           onPlaying={() => {
             setIsBuffering(false);
             setIsPlaying(true);
@@ -318,11 +399,15 @@ export function PostVideoPlayer({
 
             <button
               type="button"
-              onClick={toggleMute}
+              onClick={handleSoundToggle}
               className="p-1 hover:text-[#E91E63] transition-colors rounded"
-              aria-label={isMuted ? "Unmute" : "Mute"}
+              aria-label={effectiveMuted ? "Unmute" : "Mute"}
             >
-              {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+              {effectiveMuted ? (
+                <VolumeX className="h-4 w-4" />
+              ) : (
+                <Volume2 className="h-4 w-4 text-[#E91E63]" />
+              )}
             </button>
 
             <span className="text-[11px] font-mono text-white/80">

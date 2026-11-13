@@ -13,7 +13,8 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
+import { useAndroidBackNavigation } from "@/lib/useAndroidBackNavigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -55,6 +56,12 @@ function CommunitiesPage() {
   const [description, setDescription] = useState("");
   const [privacy, setPrivacy] = useState<"public" | "private">("public");
   const [creating, setCreating] = useState(false);
+
+  useAndroidBackNavigation(
+    showCreate && !creating,
+    () => setShowCreate(false),
+    "createCommunityModal",
+  );
 
   const {
     data: communities = [],
@@ -414,10 +421,10 @@ function CommunitiesPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-community-title"
-            className="w-full max-w-lg rounded-2xl border border-border bg-background p-5 shadow-2xl sm:p-6"
+            className="w-full max-w-lg max-h-[calc(100dvh-2rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-background p-5 shadow-2xl sm:p-6"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="mb-5 flex items-center justify-between">
+            <div className="mb-5 flex items-center justify-between gap-2">
               <div>
                 <h2 id="create-community-title" className="text-xl font-bold text-foreground">
                   Create a community
@@ -430,6 +437,8 @@ function CommunitiesPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                className="h-11 w-11 shrink-0 rounded-xl"
+                aria-label="Close modal"
                 disabled={creating}
                 onClick={() => setShowCreate(false)}
               >
